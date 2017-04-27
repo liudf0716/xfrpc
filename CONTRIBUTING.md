@@ -1,7 +1,7 @@
 Contributing
 ================================================================================
 
-If you want to contribute to [apfree wifidog](https://github.com/liudf0716/apfree_wifidog), please follow these simple rules:
+If you want to contribute to [xfrp](https://github.com/kuntengrom/xfrp), please follow these simple rules:
 
 1. Press the fork button:
 
@@ -10,13 +10,13 @@ If you want to contribute to [apfree wifidog](https://github.com/liudf0716/apfre
 2. Clone the repository from your account with:
 
     ```
-    git clone git@github.com:your_github_username/apfree_wifidog.git
+    git clone git@github.com:your_github_username/xfrp.git
     ```
 
 3. Create a new branch with:
 
     ```
-    git checkout -b "apfree_wifidog-1-fix"
+    git checkout -b "xfrp-1-fix"
     ```
     You can name it however you want.
 

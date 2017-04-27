@@ -27,6 +27,10 @@
 #ifndef _WIFIDOG_DEBUG_H_
 #define _WIFIDOG_DEBUG_H_
 
+#include <string.h>
+
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+
 typedef struct _debug_conf {
     int debuglevel;      /**< @brief Debug information verbosity */
     int log_stderr;      /**< @brief Output log to stdout */

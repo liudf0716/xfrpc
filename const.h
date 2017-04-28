@@ -25,27 +25,25 @@
 */
 
 // server status
-const (
-	Idle = iota
-	Working
+enum server_status {
+	Idle,
+	Working,
 	Closed
-)
+};
 
-var (
-	StatusStr = []string{
-		"idle",
-		"working",
-		"closed",
-	}
-)
+char *status_str[] = {
+	"idle",
+	"working",
+	"closed"
+};
 
 // msg type
-const (
-	NewCtlConn = iota
-	NewWorkConn
-	NoticeUserConn
-	NewCtlConnRes
-	HeartbeatReq
-	HeartbeatRes
+enum msg_type {
+	NewCtlConn,
+	NewWorkConn,
+	NoticeUserConn,
+	NewCtlConnRes,
+	HeartbeatReq,
+	HeartbeatRes,
 	NewWorkConnUdp
-)
+};

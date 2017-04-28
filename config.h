@@ -23,3 +23,22 @@
     @brief xfrp client config related
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
+#ifndef _CONFIG_H_
+#define _CONFIG_H_
+
+struct base_conf{
+	char	*name;
+	char	*auth_token;
+	char	*type;
+	int		use_encryption;
+	int		use_gzip;
+	int		privilege_mode;
+	char	*privilege_token;
+	int		pool_count;
+	char	*host_header_rewrite;
+	char	*http_username;
+	char	*http_password;
+	char	subdomain;
+};
+
+#endif

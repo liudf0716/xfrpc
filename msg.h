@@ -31,29 +31,25 @@ struct general_response {
 };
 
 // messages between control connections of frpc and frps
-type ControlReq struct {
-	Type          int64  `json:"type"`
-	ProxyName     string `json:"proxy_name"`
-	AuthKey       string `json:"auth_key"`
-	UseEncryption bool   `json:"use_encryption"`
-	UseGzip       bool   `json:"use_gzip"`
-	PoolCount     int64  `json:"pool_count"`
-
-	// configures used if privilege_mode is enabled
-	PrivilegeMode     bool     `json:"privilege_mode"`
-	PrivilegeKey      string   `json:"privilege_key"`
-	ProxyType         string   `json:"proxy_type"`
-	RemotePort        int64    `json:"remote_port"`
-	CustomDomains     []string `json:"custom_domains, omitempty"`
-	Locations         []string `json:"locations"`
-	HostHeaderRewrite string   `json:"host_header_rewrite"`
-	HttpUserName      string   `json:"http_username"`
-	HttpPassWord      string   `json:"http_password"`
-	SubDomain         string   `json:"subdomain"`
-	Timestamp         int64    `json:"timestamp"`
-}
-
 struct control_request {
+	int		type;
+	char	*proxy_name;
+	char	*auth_key;
+	int		use_encryption;
+	int		use_gzip;
+	int		pool_count;
+	
+	int		privilege_mode;
+	char	*privilege_key;
+	char	*proxy_type;
+	int		remote_port;
+	char	**custom_domains;
+	char	**locations;
+	char	*host_header_rewrite;
+	char	*http_username;
+	char	*http_password;
+	char	*subdomain;
+	long	timestamp;
 };
 
 

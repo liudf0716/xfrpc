@@ -26,7 +26,7 @@
 
 // server status
 enum server_status {
-	Idle,
+	Idle = 0,
 	Working,
 	Closed
 };
@@ -39,7 +39,7 @@ char *status_str[] = {
 
 // msg type
 enum msg_type {
-	NewCtlConn,
+	NewCtlConn = 0,
 	NewWorkConn,
 	NoticeUserConn,
 	NewCtlConnRes,

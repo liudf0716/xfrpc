@@ -41,4 +41,18 @@ struct base_conf{
 	char	subdomain;
 };
 
+// common config
+struct common_conf {
+	char	*server_addr; /* default 0.0.0.0 */
+	int		server_port; /* default 7000 */
+	char	*http_proxy;
+	char	*log_file; /* default consol */
+	char	*log_way; /* default console */
+	char	*log_level; /* default info */
+	int		log_max_days;	/* default 3 */
+	char	*privilege_token;
+	int		heartbeat_interval; /* default 10 */
+	int		heartbeat_timeout;	/* default 30 */
+};
+	
 #endif

@@ -59,6 +59,8 @@ struct control_response {
 	char	*msg;
 };
 
+// tranlate control request to json string
 char *control_request_marshal(const struct control_request *req);
 
-char *control_response_unmarshal(const struct control_response *res);
+// parse json string to control response
+int control_response_unmarshal(const char *jres, struct control_response *res);

@@ -31,7 +31,6 @@
 
 struct proxy_client {
 	struct base_conf	*bconf;
-	
 	char	*local_addr;
 	int		local_port;
 	int		remote_port;

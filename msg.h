@@ -58,3 +58,7 @@ struct control_response {
 	int		code;
 	char	*msg;
 };
+
+char *control_request_marshal(const struct control_request *req);
+
+char *control_response_unmarshal(const struct control_response *res);

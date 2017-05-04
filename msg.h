@@ -43,8 +43,8 @@ struct control_request {
 	char	*privilege_key;
 	char	*proxy_type;
 	int		remote_port;
-	char	**custom_domains;
-	char	**locations;
+	char	*custom_domains;
+	char	*locations;
 	char	*host_header_rewrite;
 	char	*http_username;
 	char	*http_password;

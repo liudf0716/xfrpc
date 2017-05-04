@@ -27,7 +27,17 @@
 #ifndef _CLIENT_H_
 #define _CLIENT_H_
 
+#include "config.h"
+
 struct proxy_client {
+	struct base_conf	*bconf;
+	
+	char	*local_addr;
+	int		local_port;
+	int		remote_port;
+	
+	char	*custom_domains;
+	char	*locations;
 };
 
 #endif

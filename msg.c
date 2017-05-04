@@ -28,10 +28,10 @@
 
 #include "msg.h"
 
-char *msg_marshal()
+char *control_request_marshal(const struct control_request *req)
 {
 }
 
-char *msg_unmarshal()
+int control_response_unmarshal(const char *jres, struct control_response *res);
 {
 }

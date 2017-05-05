@@ -51,7 +51,7 @@
 
 static struct event timeout;
 
-void send_msg_frp_server(const struct bufferevent *bev, msg_type type, const struct proxy_client *client)
+void send_msg_frp_server(const struct bufferevent *bev, enum msg_type type, const struct proxy_client *client)
 {
 	char *msg = NULL;
 	struct control_request *req = get_control_request(type, client); // get control request by client

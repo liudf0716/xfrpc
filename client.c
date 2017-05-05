@@ -65,30 +65,8 @@ void connect_local_server()
 }
 
 // create frp tunnel for service
-static void start_frp_tunnel()
+void start_frp_tunnel()
 {
 }
 
-// first connect frp server
-static void login_frp_server(const struct event_base *base, const char *frp_name, const int frp_port, const struct control_request *req)
-{
-	struct bufferevent *bev = connect_server(base, frp_name, frp_prt);
-	if (!bev) {
-		return;
-	}
-	
-	bufferevent_setcb(bev, xfrp_read_msg_cb, NULL, xfrp_event_cb, NULL);
-	bufferevent_enable(bev, EV_READ|EV_WRITE);
-	
-	char *msg = NULL;
-	int len = control_request_marshal(req, &msg);
-	assert(msg);
-	bufferevent_write(bev, msg, len);
-	free(msg);
-}
-
-void xkrp_client()
-{
-	
-}
 

@@ -35,17 +35,19 @@
 #include "debug.h"
 #include "version.h"
 
+char *APP_NAME = "xfrpc";
+
 static void usage(void);
 
 /** @internal
  * @brief Print usage
  *
- * Prints usage, called when wifidog is run with -h or with an unknown option
+ * Prints usage, called when xfrpc is run with -h or with an unknown option
  */
 static void
 usage(void)
 {
-    fprintf(stdout, "Usage: xkcp_client [options]\n");
+    fprintf(stdout, "Usage: %s [options]\n", APP_NAME);
     fprintf(stdout, "\n");
     fprintf(stdout, "options:\n");
     fprintf(stdout, "  -c [filename] Use this config file\n");

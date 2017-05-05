@@ -30,24 +30,22 @@
 #include <string.h>
 #include <syslog.h>
 
-#include "xkcp_config.h"
+#include "config.h"
 #include "commandline.h"
 #include "debug.h"
 #include "version.h"
 
-char *APP_NAME = "xfrpc";
-
-static void usage(void);
+static void usage(const char *appname);
 
 /** @internal
  * @brief Print usage
  *
- * Prints usage, called when xfrpc is run with -h or with an unknown option
+ * Prints usage, called when wifidog is run with -h or with an unknown option
  */
-static void
-usage(void)
+void
+usage(const char *appname)
 {
-    fprintf(stdout, "Usage: %s [options]\n", APP_NAME);
+    fprintf(stdout, "Usage: %s [options]\n", appname);
     fprintf(stdout, "\n");
     fprintf(stdout, "options:\n");
     fprintf(stdout, "  -c [filename] Use this config file\n");
@@ -75,7 +73,7 @@ parse_commandline(int argc, char **argv)
         switch (c) {
 
         case 'h':
-            usage();
+            usage(argv[0]);
             exit(1);
             break;
 
@@ -98,12 +96,12 @@ parse_commandline(int argc, char **argv)
             break;
 
         case 'v':
-            fprintf(stdout, "This is xkcp client version " VERSION "\n");
+            fprintf(stdout, "This is %s version " VERSION "\n", argv[0]);
             exit(1);
             break;
 
         default:
-            usage();
+            usage(argv[0]);
             exit(1);
             break;
 

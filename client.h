@@ -28,6 +28,7 @@
 #define _CLIENT_H_
 
 #include "config.h"
+#include "uthash.h"
 
 struct event_base;
 
@@ -41,6 +42,8 @@ struct proxy_client {
 	
 	char	*custom_domains;
 	char	*locations;
+	
+	UT_hash_handle hh;
 };
 
 // after frp server accept client connection request

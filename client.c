@@ -44,29 +44,117 @@
 #include "debug.h"
 #include "client.h"
 #include "uthash.h"
+#include "control.h"
+#include "config.h"
 
-// connect to server
-static struct bufferevent *connect_server(const struct event_base *base, const char *name, const int port)
+#define MAX_OUTPUT (512*1024)
+
+static void drained_writecb(struct bufferevent *bev, void *ctx);
+static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx);
+
+static void
+xfrp_read_cb(struct bufferevent *bev, void *ctx)
 {
-	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
-	assert(bev);
-	
-	if (bufferevent_socket_connect_hostname(bev, NULL, AF_INET, name, port)<0) {
-		bufferevent_free(bev);
-		return NULL;
+	struct bufferevent *partner = ctx;
+	struct evbuffer *src, *dst;
+	size_t len;
+	src = bufferevent_get_input(bev);
+	len = evbuffer_get_length(src);
+	if (!partner) {
+		evbuffer_drain(src, len);
+		return;
 	}
-	
-	return bev;
+	dst = bufferevent_get_output(partner);
+	evbuffer_add_buffer(dst, src);
+
+	if (evbuffer_get_length(dst) >= MAX_OUTPUT) {
+		/* We're giving the other side data faster than it can
+		 * pass it on.  Stop reading here until we have drained the
+		 * other side to MAX_OUTPUT/2 bytes. */
+		bufferevent_setcb(partner, xfrp_read_cb, drained_writecb,
+		    xfrp_event_cb, bev);
+		bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2,
+		    MAX_OUTPUT);
+		bufferevent_disable(bev, EV_READ);
+	}
 }
 
-// xfrp client connect to local server
-void connect_local_server()
+static void
+drained_writecb(struct bufferevent *bev, void *ctx)
 {
+	struct bufferevent *partner = ctx;
+
+	/* We were choking the other side until we drained our outbuf a bit.
+	 * Now it seems drained. */
+	bufferevent_setcb(bev, xfrp_read_cb, NULL, xfrp_event_cb, partner);
+	bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
+	if (partner)
+		bufferevent_enable(partner, EV_READ);
+}
+
+static void
+close_on_finished_writecb(struct bufferevent *bev, void *ctx)
+{
+	struct evbuffer *b = bufferevent_get_output(bev);
+
+	if (evbuffer_get_length(b) == 0) {
+		bufferevent_free(bev);
+	}
+}
+
+static void
+xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+	struct bufferevent *partner = ctx;
+
+	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		if (partner) {
+			/* Flush all pending data */
+			xfrp_read_cb(bev, ctx);
+
+			if (evbuffer_get_length(
+				    bufferevent_get_output(partner))) {
+				/* We still have to flush data from the other
+				 * side, but when that's done, close the other
+				 * side. */
+				bufferevent_setcb(partner,
+				    NULL, close_on_finished_writecb,
+				    xfrp_event_cb, NULL);
+				bufferevent_disable(partner, EV_READ);
+			} else {
+				/* We have nothing left to say to the other
+				 * side; close it. */
+				bufferevent_free(partner);
+			}
+		}
+		bufferevent_free(bev);
+	}
 }
 
 // create frp tunnel for service
-void start_frp_tunnel()
+void start_frp_tunnel(const struct proxy_client *client)
 {
+	struct event_base *base = client->base;
+	struct common_conf *c_conf = get_common_conf();
+	
+	struct bufferevent *b_svr = connect_server(base, c_conf->server_addr, c_conf->server_port);
+	if (!b_svr) {
+		return;
+	}
+	
+	struct bufferevent *b_clt = connect_server(base, client->local_addr, client->local_port);
+	if (!b_clt) {
+		bufferevent_free(b_svr);
+		return;
+	}
+	
+	bufferevent_setcb(b_svr, xfrp_read_cb, NULL, xfrp_event_cb, b_clt);
+	bufferevent_setcb(b_clt, xfrp_read_cb, NULL, xfrp_event_cb, b_svr);
+	
+	bufferevent_enable(b_svr, EV_READ|EV_WRITE);
+	bufferevent_enable(b_clt, EV_READ|EV_WRITE);
+	
+	send_msg_frp_server(b_svr, NewWorkConn, client);
 }
 
 

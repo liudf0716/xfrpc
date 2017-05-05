@@ -43,6 +43,7 @@
 
 #include "debug.h"
 #include "client.h"
+#include "uthash.h"
 
 // connect to server
 static struct bufferevent *connect_server(const struct event_base *base, const char *name, const int port)

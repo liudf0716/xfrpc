@@ -43,4 +43,10 @@ struct proxy_client {
 	char	*locations;
 };
 
+// after frp server accept client connection request
+// frp server send xfrp client NoticeUserConn request
+// when xfrp client receive that request, it will start
+// frp tunnel
+void start_frp_tunnel(const struct proxy_client *client);
+
 #endif

@@ -25,6 +25,7 @@
 */
 
 
-void xfrp_client_loop()
+void xfrp_client_loop(int argc, char **argv)
 {
+	parse_commandline(argc, argv);
 }

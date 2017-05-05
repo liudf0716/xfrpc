@@ -29,8 +29,12 @@
 
 #include "config.h"
 
+struct event_base;
+
 struct proxy_client {
+	struct event_base 	*base;
 	struct base_conf	*bconf;
+	
 	char	*local_addr;
 	int		local_port;
 	int		remote_port;

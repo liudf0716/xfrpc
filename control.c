@@ -51,7 +51,7 @@
 
 static struct event timeout;
 
-static void send_msg_frp_server(const struct bufferevent *bev, msg_type type, const struct proxy_client *client)
+void send_msg_frp_server(const struct bufferevent *bev, msg_type type, const struct proxy_client *client)
 {
 	char *msg = NULL;
 	struct control_request *req = get_control_request(type, client); // get control request by client
@@ -102,6 +102,9 @@ static void heartbeat_sender(const struct event_base *base, struct bufferevent *
 
 static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
+	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		bufferevent_free(bev);
+	}
 }
 
 static void process_frp_msg(char *res, struct proxy_client *client)
@@ -137,10 +140,10 @@ static void xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 	free(buf);
 }
 
-static struct bufferevent *login_frp_server(const struct event_base *base, struct proxy_client *client)
+static struct bufferevent *login_frp_server(struct proxy_client *client)
 {
 	struct common_conf *c_conf = get_common_conf();
-	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
+	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
 	
 	bufferevent_setcb(bev, xfrp_read_msg_cb, NULL, xfrp_event_cb, client);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
@@ -150,9 +153,9 @@ static struct bufferevent *login_frp_server(const struct event_base *base, struc
 	return bev;
 }
 
-void control_process(const struct event_base *base, struct proxy_client *client)
+void control_process(struct proxy_client *client)
 {
-	struct bufferevent *b_svr = login_frp_server(base, client);
+	struct bufferevent *b_svr = login_frp_server(client);
 	if (b_svr) {
 		heartbeat_sender(base, b_svr);
 	}

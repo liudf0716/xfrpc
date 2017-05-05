@@ -48,6 +48,7 @@
 #include "uthash.h"
 #include "config.h"
 #include "const.h"
+#include "msg.h"
 
 static struct event timeout;
 

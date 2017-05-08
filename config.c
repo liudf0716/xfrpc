@@ -32,6 +32,9 @@
 
 #include "ini.h"
 #include "uthash.h"
+#include "config.h"
+#include "client.h"
+#include "debug.h"
 
 static struct common_conf 	*c_conf;
 static struct proxy_client 	*p_clients;
@@ -47,20 +50,113 @@ void free_common_config()
 	
 };
 
-static int service_handler(void* user, const char* section, const char* name, const char* value)
+struct proxy_client *get_all_pc()
+{
+	return p_clients;
+}
+
+static int is_true(const char *val)
+{
+	if (val && (strcmp(val, "true") == 0 || strcmp(val, "1") == 0))
+		return 1;
+		
+	return 0;
+}
+
+static char *get_valid_type(const char *val)
+{
+	if (!val)
+		return NULL;
+	
+	#define MATCH_VALUE(s) strcmp(val, s) == 0
+	if (MATCH_VALUE("tcp") || MATCH_VALUE("http") || MATCH_VALUE("https") || MATCH_VALUE("udp")) {
+		return strdup(val);
+	}
+	
+	return NULL;
+}
+
+static void dump_common_conf()
+{
+	if(!c_conf)
+		return;
+	
+	debug(LOG_DEBUG, 
+		  "common_conf {server_addr:%s,server_port:%d,privilege_token:%s,heartbeat_interval:%d,heartbeat_timeout:%d}",
+		 c_conf->server_addr, c_conf->server_port, c_conf->privilege_token, c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
+}
+
+static void dump_proxy_client(const int index, const struct proxy_client *pc)
+{
+	if (!pc || !pc->bconf)
+		return;
+	
+	debug(LOG_DEBUG, "client %d :", index);
+	debug(LOG_DEBUG, "base_conf {name:%s,auth_token:%s,type:%s}",
+		 pc->bconf->name, pc->bconf->auth_token, pc->bconf->type);
+	debug(LOG_DEBUG, "pc {local_ip:%s,local_port:%d}",
+		 pc->local_ip, pc->local_port);
+}
+
+static void dump_all_pc()
+{
+	struct proxy_client *s = NULL, *tmp = NULL;
+	
+	int index = 0;
+	HASH_ITER(hh, p_clients, s, tmp) {
+		dump_proxy_client(index++, s);
+	}
+}
+
+static struct proxy_client *new_proxy_client(const char *name)
+{
+	struct proxy_client *pc = calloc(sizeof(struct proxy_client), 1);
+	assert(pc);
+	struct base_conf	*bc = calloc(sizeof(struct base_conf), 1);
+	assert(bc);
+	assert(c_conf);
+	
+	bc->name 			= strdup(name);
+	bc->auth_token 		= strdup(c_conf->auth_token);
+	bc->use_encryption 	= 0;
+	bc->use_gzip		= 0;
+	bc->privilege_mode	= 0;
+	bc->pool_count		= 0;
+	
+	pc->bconf = bc;
+	
+	return pc;
+}
+
+static int service_handler(void *user, const char *section, const char *name, const char *value)
 {
  	struct proxy_client	*pc;
 	
 	HASH_FIND_STR(p_clients, section, pc);
 	if (!pc) {
-		pc = new_proxy_client();
+		pc = new_proxy_client(section);
 		HASH_ADD_STR(p_clients, section, pc);
 	} 
 	
-	pc->
+	#define MATCH_NAME(s) strcmp(name, s) == 0
+	if (MATCH_NAME("type")) {
+		pc->bconf->type = get_valid_type(value);
+	} else if (MATCH_NAME("local_ip")) {
+		pc->local_ip = strdup(value);
+	} else if (MATCH_NAME("local_port")) {
+		pc->local_port = atoi(value);
+	} else if (MATCH_NAME("use_encryption")) {
+		pc->bconf->use_encryption = is_true(value);
+	} else if (MATCH_NAME("use_gzip")) {
+		pc->bconf->use_gzip = is_true(value);
+	} else if (MATCH_NAME("privilege_mode")) {
+		pc->bconf->privilege_mode = is_true(value);
+	} else if (MATCH_NAME("pool_count")) {
+		pc->bconf->pool_count = atoi(value);
+	} 
 }
 
-static int common_handler(void* user, const char* section, const char* name, const char* value)
+static int common_handler(void *user, const char *section, const char *name, const char *value)
 {
 	struct common_conf *config = (struct common_conf *)user;
 	
@@ -97,5 +193,17 @@ void load_config(const char *confile)
 		exit(0);
 	}
 	
+	dump_common_conf();
+	
+	if (c_conf->heartbeat_interval <= 0) {
+		exit(0);
+	}
+	
+	if (c_conf->heartbeat_timeout < c_conf->heartbeat_interval) {
+		exit(0);
+	}
+	
 	init_parse(confile, service_handle, NULL);
+	
+	dump_all_pc();
 }

@@ -51,6 +51,7 @@ struct common_conf {
 	char	*log_level; /* default info */
 	int		log_max_days;	/* default 3 */
 	char	*privilege_token;
+	char	*auth_token;
 	int		heartbeat_interval; /* default 10 */
 	int		heartbeat_timeout;	/* default 30 */
 };

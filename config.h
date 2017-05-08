@@ -38,7 +38,7 @@ struct base_conf{
 	char	*host_header_rewrite;
 	char	*http_username;
 	char	*http_password;
-	char	subdomain;
+	char	*subdomain;
 };
 
 // common config

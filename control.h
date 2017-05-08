@@ -27,9 +27,10 @@
 struct proxy_client;
 struct bufferevent;
 struct event_base;
+enum msg_type;
 
 void control_process(struct proxy_client *client);
 
 struct bufferevent *connect_server(const struct event_base *base, const char *name, const int port);
 
-void send_msg_frp_server(const struct bufferevent *bev, enum msg_type type, const struct proxy_client *client)
+void send_msg_frp_server(const struct bufferevent *bev, enum msg_type type, const struct proxy_client *client);

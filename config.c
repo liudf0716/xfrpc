@@ -135,7 +135,7 @@ static int service_handler(void *user, const char *section, const char *name, co
 	HASH_FIND_STR(p_clients, section, pc);
 	if (!pc) {
 		pc = new_proxy_client(section);
-		HASH_ADD_STR(p_clients, section, pc);
+		HASH_ADD_STR(p_clients, name, pc);
 	} 
 	
 	#define MATCH_NAME(s) strcmp(name, s) == 0
@@ -181,6 +181,8 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->heartbeat_interval = atoi(value);
 	} else if (MATCH("common", "heartbeat_timeout")) {
 		config->heartbeat_timeout = atoi(value);
+	} else if (MATCH("common", "auth_token")) {
+		config->auth_token = strdup(value);
 	} else {
 	}
 }
@@ -203,7 +205,7 @@ void load_config(const char *confile)
 		exit(0);
 	}
 	
-	init_parse(confile, service_handle, NULL);
+	ini_parse(confile, service_handler, NULL);
 	
 	dump_all_pc();
 }

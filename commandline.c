@@ -37,6 +37,13 @@
 
 static void usage(const char *appname);
 
+static int is_daemon = 1;
+
+int get_daemon_status()
+{
+	return is_daemon;
+}
+
 /** @internal
  * @brief Print usage
  *
@@ -65,7 +72,6 @@ parse_commandline(int argc, char **argv)
     int c;
     int i;
 
-    xkcp_config *config = xkcp_get_config();
 
     while (-1 != (c = getopt(argc, argv, "c:hfd:sw:vx:i:a:"))) {
 
@@ -79,13 +85,12 @@ parse_commandline(int argc, char **argv)
 
         case 'c':
             if (optarg) {
-                free(config->config_file);
-                config->config_file = safe_strdup(optarg);
+                load_config(optarg);
             }
             break;
 
         case 'f':
-            config->daemon = 0;
+            is_daemon = 0;
             debugconf.log_stderr = 1;
             break;
 

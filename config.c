@@ -124,6 +124,7 @@ static struct proxy_client *new_proxy_client(const char *name)
 	bc->pool_count		= 0;
 	
 	pc->bconf = bc;
+	pc->name  = bc->name;
 	
 	return pc;
 }

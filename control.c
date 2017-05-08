@@ -80,7 +80,7 @@ struct bufferevent *connect_server(const struct event_base *base, const char *na
 static void set_hearbeat_interval(struct event *timeout)
 {
 	struct timeval tv;
-	struct common_conf *c_conf = get_common_conf();
+	struct common_conf *c_conf = get_common_config();
 	evutil_timerclear(&tv);
 	tv.tv_sec = c_conf->heartbeat_interval;
 	event_add(timeout, &tv);
@@ -143,7 +143,7 @@ static void xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 
 static struct bufferevent *login_frp_server(struct proxy_client *client)
 {
-	struct common_conf *c_conf = get_common_conf();
+	struct common_conf *c_conf = get_common_config();
 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
 	
 	bufferevent_setcb(bev, xfrp_read_msg_cb, NULL, xfrp_event_cb, client);

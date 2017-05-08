@@ -72,7 +72,8 @@ parse_commandline(int argc, char **argv)
     int c;
     int i;
 
-
+	int flag = 0;
+	
     while (-1 != (c = getopt(argc, argv, "c:hfd:sw:vx:i:a:"))) {
 
 
@@ -86,6 +87,7 @@ parse_commandline(int argc, char **argv)
         case 'c':
             if (optarg) {
                 load_config(optarg);
+				flag = 1;
             }
             break;
 
@@ -112,4 +114,9 @@ parse_commandline(int argc, char **argv)
 
         }
     }
+	
+	if (!flag) {
+		usage(argv[0]);
+		exit(0);
+	}
 }

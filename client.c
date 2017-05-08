@@ -46,6 +46,7 @@
 #include "uthash.h"
 #include "control.h"
 #include "config.h"
+#include "const.h"
 
 #define MAX_OUTPUT (512*1024)
 
@@ -142,7 +143,7 @@ void start_frp_tunnel(const struct proxy_client *client)
 		return;
 	}
 	
-	struct bufferevent *b_clt = connect_server(base, client->local_addr, client->local_port);
+	struct bufferevent *b_clt = connect_server(base, client->local_ip, client->local_port);
 	if (!b_clt) {
 		bufferevent_free(b_svr);
 		return;

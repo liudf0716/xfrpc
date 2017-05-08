@@ -135,7 +135,7 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 void start_frp_tunnel(const struct proxy_client *client)
 {
 	struct event_base *base = client->base;
-	struct common_conf *c_conf = get_common_conf();
+	struct common_conf *c_conf = get_common_config();
 	
 	struct bufferevent *b_svr = connect_server(base, c_conf->server_addr, c_conf->server_port);
 	if (!b_svr) {

@@ -42,4 +42,6 @@ extern pid_t restart_orig_pid;
 /** @brief Parses the command line and set the config accordingly */
 void parse_commandline(int, char **);
 
+int get_daemon_status();
+
 #endif                          /* _COMMANDLINE_H_ */

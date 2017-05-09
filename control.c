@@ -123,7 +123,6 @@ get_control_request(enum msg_type type, const struct proxy_client *client)
 			break;
 	}
 	
-	req->name = strdup(client->name);
 	req->privilege_mode = client->bconf->privilege_mode;
 	req->timestamp = ntime;
 	if (req->privilege_mode) {

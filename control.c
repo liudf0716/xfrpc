@@ -125,7 +125,7 @@ static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 
 static void process_frp_msg(char *res, struct proxy_client *client)
 {
-	struct control_response *c_res = control_respons_unmarshal(res);
+	struct control_response *c_res = control_response_unmarshal(res);
 	if (c_res == NULL)
 		return;
 	

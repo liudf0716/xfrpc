@@ -37,3 +37,7 @@ struct control_response *control_response_unmarshal(const char *jres)
 {
 	return NULL;
 }
+
+void control_response_free(struct control_response *res)
+{
+}

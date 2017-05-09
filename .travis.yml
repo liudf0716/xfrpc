@@ -13,6 +13,7 @@ addons:
     - build-essential
     - libjson-c-dev
     - libevent-dev
+    - libopenssl-dev
 
 script:
   - cmake .

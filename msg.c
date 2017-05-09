@@ -24,9 +24,11 @@
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
+#include <string.h>
 #include <json-c/json.h>
 
 #include "msg.h"
+#include "const.h"
 
 int control_request_marshal(const struct control_request *req, char **msg)
 {
@@ -58,19 +60,19 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	json_object_object_add(j_ctl_req, "http_password", 
 						   json_object_new_string(req->http_password?req->http_password:""));
 	json_object_object_add(j_ctl_req, "subdomain", 
-						   json_object_new_string(req->subdomain?req->sbudomain:""));
+						   json_object_new_string(req->subdomain?req->subdomain:""));
 	json_object_object_add(j_ctl_req, "timestamp", json_object_new_int(req->timestamp));
 	
 	
 end_process:
 	*msg = json_object_to_json_string(j_ctl_req);
-	json_object_put(j_clt_req);
+	json_object_put(j_ctl_req);
 	return strlen(*msg);;
 }
 
 struct control_response *control_response_unmarshal(const char *jres)
 {
-	struct json_object *j_ctl_res = json_object_parse(jres);
+	struct json_object *j_ctl_res = json_tokener_parse(jres);
 	if (is_error(j_ctl_res))
 		return NULL;
 	struct control_response *ctl_res = calloc(sizeof(struct control_response), 1);

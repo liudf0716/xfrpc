@@ -26,6 +26,7 @@
 
 #include <string.h>
 #include <json-c/json.h>
+#include <json-c/bits.h>
 
 #include "msg.h"
 #include "const.h"

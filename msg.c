@@ -30,14 +30,80 @@
 
 int control_request_marshal(const struct control_request *req, char **msg)
 {
-	return 0;
+	struct json_object *j_ctl_req = json_object_new_object();
+	if (!j_ctl_req)
+		return 0;
+	
+	json_object_object_add(j_ctl_req, "type", json_object_new_int(req->type));
+	if (req->type == HeartbeatReq)
+		goto end_process;
+	json_object_object_add(j_ctl_req, "proxy_name", json_object_new_string(req->proxy_name));
+	json_object_object_add(j_ctl_req, "auth_key", json_object_new_string(req->auth_key));
+	json_object_object_add(j_ctl_req, "use_encryption", json_object_new_boolean(req->use_encryption));
+	json_object_object_add(j_ctl_req, "use_gzip", json_object_new_boolean(req->use_gzip));
+	json_object_object_add(j_ctl_req, "pool_count", json_object_new_int(req->pool_count));
+	json_object_object_add(j_ctl_req, "privilege_mode", json_object_new_boolean(req->privilege_mode));
+	json_object_object_add(j_ctl_req, "privilege_key", 
+						   json_object_new_string(req->privilege_key?req->privilege_key:""));
+	json_object_object_add(j_ctl_req, "proxy_type", json_object_new_string(req->proxy_type));
+	json_object_object_add(j_ctl_req, "remote_port", json_object_new_int(req->remote_port));
+	if (!req->custom_domains)
+		json_object_object_add(j_ctl_req, "custom_domains", json_object_new_object());
+	if (!req->locations)
+		json_object_object_add(j_ctl_req, "locations", json_object_new_object());
+	json_object_object_add(j_ctl_req, "host_header_rewrite", 
+						   json_object_new_string(req->host_header_rewrite?req->host_header_rewrite:""));
+	json_object_object_add(j_ctl_req, "http_username", 
+						   json_object_new_string(req->http_username?req->http_username:""));
+	json_object_object_add(j_ctl_req, "http_password", 
+						   json_object_new_string(req->http_password?req->http_password:""));
+	json_object_object_add(j_ctl_req, "subdomain", 
+						   json_object_new_string(req->subdomain?req->sbudomain:""));
+	json_object_object_add(j_ctl_req, "timestamp", json_object_new_int(req->timestamp));
+	
+	
+end_process:
+	*msg = json_object_to_json_string(j_ctl_req);
+	json_object_put(j_clt_req);
+	return strlen(*msg);;
 }
 
 struct control_response *control_response_unmarshal(const char *jres)
 {
-	return NULL;
+	struct json_object *j_ctl_res = json_object_parse(jres);
+	if (is_error(j_ctl_res))
+		return NULL;
+	struct control_response *ctl_res = calloc(sizeof(struct control_response), 1);
+	if (ctl_res == NULL) {
+		goto error;
+	}
+	
+	struct json_object *jtype = json_object_object_get(j_ctl_res, "type");
+	if (jtype == NULL) {
+		goto error;
+	}
+	ctl_res->type = json_object_get_int(jtype);
+	
+	struct json_object *jcode = json_object_object_get(j_ctl_res, "code");
+	if (jcode == NULL)
+		goto error;
+	ctl_res->code = json_object_get_int(jcode);
+	
+	struct json_object *jmsg = json_object_object_get(j_ctl_res, "msg");
+	if (jmsg)
+		ctl_res->msg = strdup(json_object_get_string(jmsg));
+	
+error:
+	json_object_put(j_ctl_res);
+	return ctl_res;
 }
 
 void control_response_free(struct control_response *res)
 {
+	if (!res)
+		return;
+	
+	if (res->msg) free(res->msg);
+	
+	free(res);
 }

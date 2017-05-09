@@ -154,7 +154,10 @@ static int service_handler(void *user, const char *section, const char *name, co
 		pc->bconf->privilege_mode = is_true(value);
 	} else if (MATCH_NAME("pool_count")) {
 		pc->bconf->pool_count = atoi(value);
-	} 
+	} else
+		return 0;
+	
+	return 1;
 }
 
 static int common_handler(void *user, const char *section, const char *name, const char *value)
@@ -185,7 +188,10 @@ static int common_handler(void *user, const char *section, const char *name, con
 	} else if (MATCH("common", "auth_token")) {
 		config->auth_token = strdup(value);
 	} else {
+		return 0;
 	}
+	
+	return 1;
 }
 
 void load_config(const char *confile)

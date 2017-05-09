@@ -28,7 +28,7 @@
 
 #include "msg.h"
 
-int control_request_marshal(const struct control_request *req, char *msg)
+int control_request_marshal(const struct control_request *req, char **msg)
 {
 	return 0;
 }

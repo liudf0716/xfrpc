@@ -49,6 +49,7 @@
 #include "uthash.h"
 #include "control.h"
 #include "debug.h"
+#include "xfrp_client.h"
 
 static void start_xfrp_client(struct event_base *base)
 {

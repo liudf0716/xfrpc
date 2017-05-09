@@ -78,7 +78,7 @@ static char *calc_md5(const char *data, int datalen)
 static char *get_auth_key(const char *name, const char *token)
 {
 	char seed[128] = {0};
-	snprintf(seed, 128, "%s%s%d", name, token, time(NULL));
+	snprintf(seed, 128, "%s%s%ld", name, token, time(NULL));
 	
 	return calc_md5(seed, strlen(seed));
 }

@@ -15,7 +15,8 @@ set(src_xfrp_client
 	)
 	
 set(libs
-	openssl
+	ssl
+	crypto
 	event
 	json-c)
 

@@ -67,7 +67,7 @@ control_request_free(struct control_request *req)
 	
 }
 
-void send_msg_frp_server(const struct bufferevent *bev, enum msg_type type, const struct proxy_client *client)
+void send_msg_frp_server(struct bufferevent *bev, enum msg_type type, const struct proxy_client *client)
 {
 	char *msg = NULL;
 	struct control_request *req = get_control_request(type, client); // get control request by client
@@ -79,7 +79,7 @@ void send_msg_frp_server(const struct bufferevent *bev, enum msg_type type, cons
 }
 
 // connect to server
-struct bufferevent *connect_server(const struct event_base *base, const char *name, const int port)
+struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
 {
 	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
@@ -110,7 +110,7 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	set_heartbeat_interval(&timeout);	
 }
 
-static void heartbeat_sender(const struct event_base *base, struct bufferevent *bev)
+static void heartbeat_sender(struct event_base *base, struct bufferevent *bev)
 {
 	event_assign(&timeout, base, -1, EV_PERSIST, hb_sender_cb, (void*) bev);
 	set_heartbeat_interval(&timeout);
@@ -146,7 +146,7 @@ static void process_frp_msg(char *res, struct proxy_client *client)
 static void xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
-	int len = bufferevent_get_length(input);
+	int len = evbuffer_get_length(input);
 	if (len <= 0)
 		return;
 	

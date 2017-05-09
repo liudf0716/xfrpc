@@ -58,6 +58,8 @@ struct common_conf {
 	
 struct common_conf *get_common_config();
 
+void free_common_config();
+
 struct proxy_client *get_all_pc();
 
 void load_config(const char *confile);

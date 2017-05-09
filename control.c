@@ -49,6 +49,7 @@
 #include "config.h"
 #include "const.h"
 #include "msg.h"
+#include "control.h"
 
 static struct event timeout;
 
@@ -91,7 +92,7 @@ struct bufferevent *connect_server(const struct event_base *base, const char *na
 	return bev;
 }
 
-static void set_hearbeat_interval(struct event *timeout)
+static void set_heartbeat_interval(struct event *timeout)
 {
 	struct timeval tv;
 	struct common_conf *c_conf = get_common_config();
@@ -163,7 +164,7 @@ static struct bufferevent *login_frp_server(struct proxy_client *client)
 	bufferevent_setcb(bev, xfrp_read_msg_cb, NULL, xfrp_event_cb, client);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 	
-	send_msg_frp_server(bev, newCltConn, client);
+	send_msg_frp_server(bev, NewCtlConn, client);
 	
 	return bev;
 }

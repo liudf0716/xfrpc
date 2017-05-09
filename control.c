@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
+#include <time.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -45,6 +46,8 @@
 #include <event2/event.h>
 #include <event2/event_struct.h>
 
+#include <openssl/md5.h>
+
 #include "debug.h"
 #include "client.h"
 #include "uthash.h"
@@ -55,18 +58,100 @@
 
 static struct event timeout;
 
+static char *calc_md5(const char *data, int datalen)
+{
+	unsigned char digest[16] = {0};
+	char *out = (char*)malloc(33);
+	MD5Context md5;
+	
+	MD5Init(&md5);
+	MD5Update(&md5, data, datalen);
+	MD5Final(digest, &md5);
+	
+	for (int n = 0; n < 16; ++n) {
+        snprintf(&(out[n*2]), 3, "%02x", (unsigned int)digest[n]);
+    }
+
+    return out;
+}
+
+static char *get_auth_key(const char *name, const char *token)
+{
+	char seed[128] = {0};
+	snprintf(seed, 128, "%s%s%d", name, token, time(NULL));
+	
+	return calc_md5(seed, strlen(seed));
+}
+
 static struct control_request *
 get_control_request(enum msg_type type, const struct proxy_client *client)
 {
-	struct control_request *req = calloc(sizeof(struct control_request), 1);
+	if (!client)
+		return NULL;
 	
+	struct control_request *req = calloc(sizeof(struct control_request), 1);
+	long ntime = time(NULL);
+	req->type = type;
+	switch(type) {
+		case NewCtlConn:
+			req->use_encryption = client->bconf->use_encryption;
+			req->use_gzip = client->bconf->use_gzip;
+			req->pool_count = client->bconf->pool_count;
+			req->privilege_mode = client->bconf->privilege_mode;
+			req->proxy_type = strdup(client->bconf->type);
+			req->host_header_rewrite = strdup(client->bconf->host_header_rewrite);
+			req->http_username = strdup(client->bconf->http_username);
+			req->http_password = strdup(client->bconf->http_password);
+			req->subdomain = strdup(client->bconf->subdomain);
+			if (req->privilege_mode) {
+				req->remote_port = client->remote_port;
+				req->custom_domains = strdup(client->custom_domains);
+				req->locations = strdup(client->locations);
+			}
+			break;
+		case NewWorkConn:	
+			break;
+		case NoticeUserConn:
+			break;
+		case NewCtlConnRes:
+			break;
+		case HeartbeatReq:
+			break;
+		case HeartbeatRes:
+			break;
+		case NewWorkConnUdp:
+			break;
+	}
+	
+	req->name = strdup(client->name);
+	req->privilege_mode = client->bconf->privilege_mode;
+	req->timestamp = ntime;
+	if (req->privilege_mode) {
+		req->privilege_key = get_auth_key(client->name, client->bconf->privilege_token);
+	} else {
+		req->auth_key = get_auth_key(client->name, client->bconf->auth_token);
+	}
 	return req;
 }
 
 static void
 control_request_free(struct control_request *req)
 {
+	if (!req)
+		return;
 	
+	if (req->proxy_name) free(req->proxy_name);
+	if (req->auth_key) free(req->auth_key);
+	if (req->privilege_key) free(req->privilege_key);
+	if (req->proxy_type) free(req->proxy_type);
+	if (req->custom_domains) free(req->custom_domains);
+	if (req->locations) free(req->locations);
+	if (req->host_header_rewrite) free(req->host_header_rewrite);
+	if (req->http_username) free(req->http_username);
+	if (req->http_password) free(req->http_password);
+	if (req->subdomain) free(req->subdomain);
+	
+	free(req);
 }
 
 void send_msg_frp_server(struct bufferevent *bev, enum msg_type type, const struct proxy_client *client)

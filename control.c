@@ -137,6 +137,7 @@ static void process_frp_msg(char *res, struct proxy_client *client)
 		start_frp_tunnel(client);
 		break;
 	default:
+		break;
 	}
 	
 	control_response_free(c_res);
@@ -172,7 +173,7 @@ static struct bufferevent *login_frp_server(struct proxy_client *client)
 void control_process(struct proxy_client *client)
 {
 	struct bufferevent *b_svr = login_frp_server(client);
-	if (b_svr) {
-		heartbeat_sender(base, b_svr);
+	if (b_svr && client->base) {
+		heartbeat_sender(client->base, b_svr);
 	}
 }

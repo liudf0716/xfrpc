@@ -3,18 +3,19 @@ cmake_minimum_required(VERSION 2.6)
 project(xfrp C)
 
 set(src_xfrp_client
-  main.c
-  client.c
-  config.c
-  control.c
-  ini.c
-  msg.c
+	main.c
+  	client.c
+  	config.c
+  	control.c
+  	ini.c
+  	msg.c
 	xfrp_client.c
 	debug.c
 	commandline.c
 	)
 	
 set(libs
+	openssl
 	event
 	json-c)
 

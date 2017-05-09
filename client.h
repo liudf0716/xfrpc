@@ -27,10 +27,10 @@
 #ifndef _CLIENT_H_
 #define _CLIENT_H_
 
-#include "config.h"
 #include "uthash.h"
 
 struct event_base;
+struct base_conf;
 
 struct proxy_client {
 	struct event_base 	*base;

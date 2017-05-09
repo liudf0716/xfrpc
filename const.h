@@ -34,12 +34,6 @@ enum server_status {
 	Closed
 };
 
-char *status_str[] = {
-	"idle",
-	"working",
-	"closed"
-};
-
 // msg type
 enum msg_type {
 	NewCtlConn = 0,

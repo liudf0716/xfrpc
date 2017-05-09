@@ -62,11 +62,11 @@ static char *calc_md5(const char *data, int datalen)
 {
 	unsigned char digest[16] = {0};
 	char *out = (char*)malloc(33);
-	MD5Context md5;
+	MD5_CTX md5;
 	
-	MD5Init(&md5);
-	MD5Update(&md5, data, datalen);
-	MD5Final(digest, &md5);
+	MD5_Init(&md5);
+	MD5_Update(&md5, data, datalen);
+	MD5_Final(digest, &md5);
 	
 	for (int n = 0; n < 16; ++n) {
         snprintf(&(out[n*2]), 3, "%02x", (unsigned int)digest[n]);

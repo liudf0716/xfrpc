@@ -64,3 +64,5 @@ int control_request_marshal(const struct control_request *req, char **msg);
 
 // parse json string to control response
 struct control_response *control_response_unmarshal(const char *jres);
+
+void control_response_free(struct control_response *res);

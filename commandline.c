@@ -70,8 +70,6 @@ void
 parse_commandline(int argc, char **argv)
 {
     int c;
-    int i;
-
 	int flag = 0;
 	
     while (-1 != (c = getopt(argc, argv, "c:hfd:sw:vx:i:a:"))) {

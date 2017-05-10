@@ -143,7 +143,7 @@ static int service_handler(void *user, const char *section, const char *name, co
 	HASH_FIND_STR(p_clients, section, pc);
 	if (!pc) {
 		pc = new_proxy_client(section);
-		HASH_ADD_STR(p_clients, name, pc);
+		HASH_ADD_STR(p_clients, section, pc);
 	} 
 	
 	#define MATCH_NAME(s) strcmp(name, s) == 0

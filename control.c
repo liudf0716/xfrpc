@@ -92,6 +92,7 @@ get_control_request(enum msg_type type, const struct proxy_client *client)
 	struct control_request *req = calloc(sizeof(struct control_request), 1);
 	long ntime = time(NULL);
 	req->type = type;
+	req->proxy_name = strdup(client->name);
 	#define	STRDUP(v)	v?strdup(v):NULL
 	switch(type) {
 		case NewCtlConn:

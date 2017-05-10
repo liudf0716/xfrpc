@@ -131,7 +131,7 @@ static struct proxy_client *new_proxy_client(const char *name)
 	return pc;
 }
 
-static int service_handler(void *user, const char *section, const char *name, const char *value)
+static int service_handler(void *user, const char *section, const char *nm, const char *value)
 {
  	struct proxy_client	*pc = NULL;
 	
@@ -143,10 +143,10 @@ static int service_handler(void *user, const char *section, const char *name, co
 	HASH_FIND_STR(p_clients, section, pc);
 	if (!pc) {
 		pc = new_proxy_client(section);
-		HASH_ADD_STR(p_clients, section, pc);
+		HASH_ADD_STR(p_clients, name, pc);
 	} 
 	
-	#define MATCH_NAME(s) strcmp(name, s) == 0
+	#define MATCH_NAME(s) strcmp(nm, s) == 0
 	if (MATCH_NAME("type")) {
 		pc->bconf->type = get_valid_type(value);
 	} else if (MATCH_NAME("local_ip")) {

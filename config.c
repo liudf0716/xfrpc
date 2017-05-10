@@ -135,8 +135,6 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 {
  	struct proxy_client	*pc = NULL;
 	
-	debug(LOG_DEBUG, "section:%s name:%s value:%s", section, name, value);
-	
 	if (strcmp(section, "common") == 0)
 		return 0;
 	

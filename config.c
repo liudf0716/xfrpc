@@ -138,7 +138,7 @@ static int service_handler(void *user, const char *section, const char *name, co
 	debug(LOG_DEBUG, "section:%s name:%s value:%s", section, name, value);
 	
 	if (strcmp(section, "common") == 0)
-		return ;
+		return 0;
 	
 	HASH_FIND_STR(p_clients, section, pc);
 	if (!pc) {

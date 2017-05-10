@@ -75,7 +75,7 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	
 	
 end_process:
-	*msg = json_object_to_json_string(j_ctl_req);
+	*msg = strdup(json_object_to_json_string(j_ctl_req));
 	json_object_put(j_ctl_req);
 	return strlen(*msg);;
 }

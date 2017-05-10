@@ -78,8 +78,10 @@ static char *get_valid_type(const char *val)
 
 static void dump_common_conf()
 {
-	if(!c_conf)
+	if(!c_conf) {
+		debug(LOG_ERR, "Error: c_conf is NULL");
 		return;
+	}
 	
 	debug(LOG_DEBUG, 
 		  "common_conf {server_addr:%s,server_port:%d,privilege_token:%s,heartbeat_interval:%d,heartbeat_timeout:%d}",
@@ -168,16 +170,20 @@ static int common_handler(void *user, const char *section, const char *name, con
 	
 	#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 	if (MATCH("common", "server_addr")) {
+		if (config->server_addr) free(config->sever_addr);
 		config->server_addr = strdup(value);
 	} else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
 	} else if (MATCH("common", "http_proxy")) {
 		config->http_proxy = strdup(value);
 	} else if (MATCH("common", "log_file")) {
+		if (config->log_file) free(config->log_file);
 		config->log_file = strdup(value);
 	} else if (MATCH("common", "log_way")) {
+		if (config->log_way) free(config->log_way);
 		config->log_way = strdup(value);
 	} else if (MATCH("common", "log_level")) {
+		if (config->log_level) free(config->log_level);
 		config->log_level = strdup(value);
 	} else if (MATCH("common", "log_max_days")) {
 		config->log_max_days = atoi(value);
@@ -197,10 +203,30 @@ static int common_handler(void *user, const char *section, const char *name, con
 	return 1;
 }
 
+static void init_common_conf(struct common_conf *config)
+{
+	if (!config)
+		return;
+	
+	config->server_addr			= strdup("0.0.0.0");
+	config->server_port			= 7000;
+	config->log_file			= strdup("console");
+	config->log_way				= strdup("console");
+	config->log_level			= strdup("info");
+	config->log_max_days		= 3;
+	config->heartbeat_interval 	= 10;
+	config->heartbeat_timeout	= 30;
+}
+
 void load_config(const char *confile)
 {
 	c_conf = calloc(sizeof(struct common_conf), 1);
 	assert(c_conf);
+	
+	init_common_config(c_conf);
+	
+	debug(LOG_DEBUG, "confile is %s", confile);
+	
 	if (ini_parse(confile, common_handler, c_conf) < 0) {
 		debug(LOG_ERR, "ini file parse failed");
 		exit(0);

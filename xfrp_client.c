@@ -56,6 +56,8 @@ static void start_xfrp_client(struct event_base *base)
 	struct proxy_client *all_pc = get_all_pc();
 	struct proxy_client *pc = NULL, *tmp = NULL;
 	
+	debug(LOG_DEBUG, "start xfrp client");
+	
 	HASH_ITER(hh, all_pc, pc, tmp) {
 		debug(LOG_INFO, "start control process %s", pc->bconf->name);
 		pc->base = base;
@@ -63,7 +65,7 @@ static void start_xfrp_client(struct event_base *base)
 	}
 }
 
-void xfrp_client_loop(int argc, char **argv)
+void xfrp_client_loop()
 {
 	struct event_base *base = NULL;
 	

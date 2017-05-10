@@ -36,6 +36,8 @@
 #include "debug.h"
 #include "version.h"
 
+typedef void signal_func (int);
+
 static signal_func *set_signal_handler (int signo, signal_func * func);
 static void usage(const char *appname);
 

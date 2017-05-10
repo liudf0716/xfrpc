@@ -161,8 +161,7 @@ void send_msg_frp_server(struct bufferevent *bev, enum msg_type type, const stru
 	struct control_request *req = get_control_request(type, client); // get control request by client
 	int len = control_request_marshal(req, &msg); // marshal control request to json string
 	assert(msg);
-	struct evbuffer *out = bufferevent_get_output(bev);
-	evbuffer_add_printf(out, "%s", msg);
+	bufferevent_write(bev, msg, len);
 	free(msg);
 	control_request_free(req); // free control request
 }

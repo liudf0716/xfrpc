@@ -141,7 +141,7 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 	HASH_FIND_STR(p_clients, section, pc);
 	if (!pc) {
 		pc = new_proxy_client(section);
-		HASH_ADD_KEYPTR(p_clients, name, pc);
+		HASH_ADD_KEYPTR(hh, p_clients, pc->name, strlen(pc->name), pc);
 		debug(LOG_DEBUG, "section[%s] not found in p_clients, add pc[%s]", 
 			  section, pc->name);
 	} 

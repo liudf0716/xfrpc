@@ -133,7 +133,12 @@ static struct proxy_client *new_proxy_client(const char *name)
 
 static int service_handler(void *user, const char *section, const char *name, const char *value)
 {
- 	struct proxy_client	*pc;
+ 	struct proxy_client	*pc = NULL;
+	
+	debug(LOG_DEBUG, "section:%s name:%s value:%s", section, name, value);
+	
+	if (strcmp(section, "common") == 0)
+		return ;
 	
 	HASH_FIND_STR(p_clients, section, pc);
 	if (!pc) {
@@ -156,10 +161,7 @@ static int service_handler(void *user, const char *section, const char *name, co
 		pc->bconf->privilege_mode = is_true(value);
 	} else if (MATCH_NAME("pool_count")) {
 		pc->bconf->pool_count = atoi(value);
-	} else {
-		debug(LOG_ERR, "service not support [%s:%s]", section, name);
-		return 0;
-	}
+	} 
 	
 	return 1;
 }
@@ -195,9 +197,6 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->heartbeat_timeout = atoi(value);
 	} else if (MATCH("common", "auth_token")) {
 		config->auth_token = strdup(value);
-	} else {
-		debug(LOG_ERR, "common not support [%s:%s]", section, name);
-		return 0;
 	}
 	
 	return 1;

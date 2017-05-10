@@ -170,7 +170,7 @@ static int common_handler(void *user, const char *section, const char *name, con
 	
 	#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 	if (MATCH("common", "server_addr")) {
-		if (config->server_addr) free(config->sever_addr);
+		if (config->server_addr) free(config->server_addr);
 		config->server_addr = strdup(value);
 	} else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
@@ -223,7 +223,7 @@ void load_config(const char *confile)
 	c_conf = calloc(sizeof(struct common_conf), 1);
 	assert(c_conf);
 	
-	init_common_config(c_conf);
+	init_common_conf(c_conf);
 	
 	debug(LOG_DEBUG, "confile is %s", confile);
 	

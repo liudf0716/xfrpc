@@ -24,4 +24,4 @@
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
-void xfrp_client_loop(int argc, char **argv);
+void xfrp_client_loop();

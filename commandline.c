@@ -30,6 +30,9 @@
 #include <string.h>
 #include <signal.h>
 #include <syslog.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
 
 #include "config.h"
 #include "commandline.h"

@@ -154,8 +154,10 @@ static int service_handler(void *user, const char *section, const char *name, co
 		pc->bconf->privilege_mode = is_true(value);
 	} else if (MATCH_NAME("pool_count")) {
 		pc->bconf->pool_count = atoi(value);
-	} else
+	} else {
+		debug(LOG_ERR, "service not support [%s:%s]", section, name);
 		return 0;
+	}
 	
 	return 1;
 }
@@ -188,6 +190,7 @@ static int common_handler(void *user, const char *section, const char *name, con
 	} else if (MATCH("common", "auth_token")) {
 		config->auth_token = strdup(value);
 	} else {
+		debug(LOG_ERR, "common not support [%s:%s]", section, name);
 		return 0;
 	}
 	
@@ -199,16 +202,19 @@ void load_config(const char *confile)
 	c_conf = calloc(sizeof(struct common_conf), 1);
 	assert(c_conf);
 	if (ini_parse(confile, common_handler, c_conf) < 0) {
+		debug(LOG_ERR, "ini file parse failed");
 		exit(0);
 	}
 	
 	dump_common_conf();
 	
 	if (c_conf->heartbeat_interval <= 0) {
+		debug(LOG_ERR, "Error: heartbeat_interval <= 0");
 		exit(0);
 	}
 	
 	if (c_conf->heartbeat_timeout < c_conf->heartbeat_interval) {
+		debug(LOG_ERR, "Error: heartbeat_timeout < heartbeat_interval");
 		exit(0);
 	}
 	

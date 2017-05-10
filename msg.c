@@ -51,9 +51,18 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	json_object_object_add(j_ctl_req, "proxy_type", json_object_new_string(req->proxy_type));
 	json_object_object_add(j_ctl_req, "remote_port", json_object_new_int(req->remote_port));
 	if (!req->custom_domains)
-		json_object_object_add(j_ctl_req, "custom_domains", json_object_new_object());
+		json_object_object_add(j_ctl_req, "custom_domains", NULL);
+	else {
+		// need to implement it
+		;
+	}
 	if (!req->locations)
-		json_object_object_add(j_ctl_req, "locations", json_object_new_object());
+		json_object_object_add(j_ctl_req, "locations", NULL);
+	else {
+		// need to implement it
+		;
+	}
+		
 	json_object_object_add(j_ctl_req, "host_header_rewrite", 
 						   json_object_new_string(req->host_header_rewrite?req->host_header_rewrite:""));
 	json_object_object_add(j_ctl_req, "http_username", 

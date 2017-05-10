@@ -126,7 +126,7 @@ static struct proxy_client *new_proxy_client(const char *name)
 	bc->pool_count		= 0;
 	
 	pc->bconf = bc;
-	pc->name  = bc->name;
+	pc->name  = strdup(name);
 	
 	return pc;
 }
@@ -142,6 +142,8 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 	if (!pc) {
 		pc = new_proxy_client(section);
 		HASH_ADD_STR(p_clients, name, pc);
+		debug(LOG_DEBUG, "section[%s] not found in p_clients, add pc[%s]", 
+			  section, pc->name);
 	} 
 	
 	#define MATCH_NAME(s) strcmp(nm, s) == 0

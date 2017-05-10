@@ -92,21 +92,22 @@ get_control_request(enum msg_type type, const struct proxy_client *client)
 	struct control_request *req = calloc(sizeof(struct control_request), 1);
 	long ntime = time(NULL);
 	req->type = type;
+	#define	STRDUP(v)	v?strdup(v):NULL
 	switch(type) {
 		case NewCtlConn:
 			req->use_encryption = client->bconf->use_encryption;
 			req->use_gzip = client->bconf->use_gzip;
 			req->pool_count = client->bconf->pool_count;
 			req->privilege_mode = client->bconf->privilege_mode;
-			req->proxy_type = strdup(client->bconf->type);
-			req->host_header_rewrite = strdup(client->bconf->host_header_rewrite);
-			req->http_username = strdup(client->bconf->http_username);
-			req->http_password = strdup(client->bconf->http_password);
-			req->subdomain = strdup(client->bconf->subdomain);
+			req->proxy_type = STRDUP(client->bconf->type);
+			req->host_header_rewrite = STRDUP(client->bconf->host_header_rewrite);
+			req->http_username = STRDUP(client->bconf->http_username);
+			req->http_password = STRDUP(client->bconf->http_password);
+			req->subdomain = STRDUP(client->bconf->subdomain);
 			if (req->privilege_mode) {
 				req->remote_port = client->remote_port;
-				req->custom_domains = strdup(client->custom_domains);
-				req->locations = strdup(client->locations);
+				req->custom_domains = STRDUP(client->custom_domains);
+				req->locations = STRDUP(client->locations);
 			}
 			break;
 		case NewWorkConn:	

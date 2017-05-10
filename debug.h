@@ -45,7 +45,7 @@ extern debugconf_t debugconf;
  * @param level Debug level
  * @param format... sprintf like format string
  */
-#define debug(level, format...) _debug(__FILE__, __LINE__, level, format)
+#define debug(level, format...) _debug(__FILENAME__ , __LINE__, level, format)
 
 /** @internal */
 void _debug(const char *, int, int, const char *, ...);

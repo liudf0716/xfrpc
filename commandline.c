@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
 #include <syslog.h>
 
 #include "config.h"
@@ -35,11 +36,66 @@
 #include "debug.h"
 #include "version.h"
 
+static signal_func *set_signal_handler (int signo, signal_func * func);
 static void usage(const char *appname);
 
 static int is_daemon = 1;
 
-int get_daemon_status()
+static char *confile = NULL;
+
+/*
+ * Fork a child process and then kill the parent so make the calling
+ * program a daemon process.
+ */
+static void 
+makedaemon (void)
+{
+	if (fork () != 0)
+			exit (0);
+
+	setsid ();
+	set_signal_handler (SIGHUP, SIG_IGN);
+
+	if (fork () != 0)
+			exit (0);
+
+	umask (0177);
+
+	close (0);
+	close (1);
+	close (2);
+}
+
+/*
+ * Pass a signal number and a signal handling function into this function
+ * to handle signals sent to the process.
+ */
+static signal_func *
+set_signal_handler (int signo, signal_func * func)
+{
+        struct sigaction act, oact;
+
+        act.sa_handler = func;
+        sigemptyset (&act.sa_mask);
+        act.sa_flags = 0;
+        if (signo == SIGALRM) {
+#ifdef SA_INTERRUPT
+                act.sa_flags |= SA_INTERRUPT;   /* SunOS 4.x */
+#endif
+        } else {
+#ifdef SA_RESTART
+                act.sa_flags |= SA_RESTART;     /* SVR4, 4.4BSD */
+#endif
+        }
+
+        if (sigaction (signo, &act, &oact) < 0)
+                return SIG_ERR;
+
+        return oact.sa_handler;
+}
+
+int 
+get_daemon_status()
 {
 	return is_daemon;
 }
@@ -49,7 +105,7 @@ int get_daemon_status()
  *
  * Prints usage, called when wifidog is run with -h or with an unknown option
  */
-void
+static void
 usage(const char *appname)
 {
     fprintf(stdout, "Usage: %s [options]\n", appname);
@@ -84,7 +140,7 @@ parse_commandline(int argc, char **argv)
 
         case 'c':
             if (optarg) {
-                load_config(optarg);
+				confile = strdup(optarg);          
 				flag = 1;
             }
             break;
@@ -116,5 +172,11 @@ parse_commandline(int argc, char **argv)
 	if (!flag) {
 		usage(argv[0]);
 		exit(0);
+	}
+	
+	load_config(confile);
+	
+	if (is_daemon) {
+		makedaemon();
 	}
 }

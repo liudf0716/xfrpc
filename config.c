@@ -50,6 +50,11 @@ void free_common_config()
 	
 };
 
+void free_base_config(struct base_conf *bconf)
+{
+	
+}
+
 struct proxy_client *get_all_pc()
 {
 	return p_clients;

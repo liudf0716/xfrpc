@@ -31,10 +31,13 @@
 
 struct event_base;
 struct base_conf;
+struct bufferevent;
+struct event;
 
 struct proxy_client {
 	struct event_base 	*base;
 	struct event		ev_timeout;
+	struct bufferevent	*bev;
 	
 	struct base_conf	*bconf;
 	char	*name; // pointer to bconf->name

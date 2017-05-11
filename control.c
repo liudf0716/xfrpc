@@ -155,13 +155,13 @@ control_request_free(struct control_request *req)
 	free(req);
 }
 
-void send_msg_frp_server(struct bufferevent *bev, enum msg_type type, const struct proxy_client *client)
+void send_msg_frp_server(enum msg_type type, const struct proxy_client *client)
 {
 	char *msg = NULL;
 	struct control_request *req = get_control_request(type, client); // get control request by client
 	int len = control_request_marshal(req, &msg); // marshal control request to json string
 	assert(msg);
-	bufferevent_write(bev, msg, len);
+	bufferevent_write(client->bev, msg, len);
 	free(msg);
 	control_request_free(req); // free control request
 }
@@ -191,16 +191,16 @@ static void set_heartbeat_interval(struct event *timeout)
 
 static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
-	struct bufferevent *bev = arg;
+	struct proxy_client *client = arg;
 	
-	send_msg_frp_server(bev, HeartbeatReq, NULL);
+	send_msg_frp_server(HeartbeatReq, client);
 	
-	set_heartbeat_interval(&timeout);	
+	set_heartbeat_interval(&client->ev_timeout);	
 }
 
-static void heartbeat_sender(struct event_base *base, struct bufferevent *bev)
+static void heartbeat_sender(struct proxy_client *client)
 {
-	event_assign(&timeout, base, -1, 0, hb_sender_cb, (void*) bev);
+	event_assign(&timeout, base, -1, 0, hb_sender_cb, (void*) client);
 	set_heartbeat_interval(&timeout);
 }
 
@@ -245,7 +245,7 @@ static void xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 	free(buf);
 }
 
-static struct bufferevent *login_frp_server(struct proxy_client *client)
+static void login_frp_server(struct proxy_client *client)
 {
 	struct common_conf *c_conf = get_common_config();
 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
@@ -255,13 +255,12 @@ static struct bufferevent *login_frp_server(struct proxy_client *client)
 	
 	send_msg_frp_server(bev, NewCtlConn, client);
 	
-	return bev;
+	client->bev = bev;
 }
 
 void control_process(struct proxy_client *client)
 {
-	struct bufferevent *b_svr = login_frp_server(client);
-	if (b_svr && client->base) {
-		heartbeat_sender(client->base, b_svr);
-	}
+	login_frp_server(client);
+	
+	heartbeat_sender(client);	
 }

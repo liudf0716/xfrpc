@@ -57,4 +57,8 @@ struct proxy_client {
 // frp tunnel
 void start_frp_tunnel(const struct proxy_client *client);
 
+void del_proxy_client(struct proxy_client *client);
+
+void free_proxy_client(struct proxy_client *client);
+
 #endif

@@ -47,6 +47,7 @@
 #include "control.h"
 #include "config.h"
 #include "const.h"
+#include "uthash.h"
 
 #define MAX_OUTPUT (512*1024)
 
@@ -158,4 +159,25 @@ void start_frp_tunnel(const struct proxy_client *client)
 	send_msg_frp_server(b_svr, NewWorkConn, client);
 }
 
+void free_proxy_client(struct proxy_client *client)
+{
+	if (client->name) free(client->name);
+	if (client->local_ip) free(client->local_ip);
+	if (client->custom_domains) free(client->custom_domains);
+	if (client->locations) free(client->locations);
+	
+	free_base_conf(client->bconf);
+}
 
+void del_proxy_client(struct proxy_client *client)
+{
+	struct proxy_client *all_pc = get_all_pc();
+	if (!client || !all_pc ) {
+		debug(LOG_INFO, "Error: all_pc or client is NULL");
+		return;
+	}
+	
+	HASH_DEL(all_pc, client);
+	
+	free_proxy_client(client);
+}

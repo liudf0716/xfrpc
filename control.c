@@ -214,6 +214,8 @@ static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 		}
 		bufferevent_free(bev);
 		free_proxy_client(client);
+	} else (what & BEV_EVENT_CONNECTED) {
+		send_msg_frp_server(NewCtlConn, client);
 	}
 }
 
@@ -260,8 +262,6 @@ static void login_frp_server(struct proxy_client *client)
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 	
 	client->ctl_bev = bev;
-	
-	send_msg_frp_server(NewCtlConn, client);
 }
 
 void control_process(struct proxy_client *client)

@@ -200,7 +200,7 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 
 static void heartbeat_sender(struct event_base *base, struct bufferevent *bev)
 {
-	event_assign(&timeout, base, -1, EV_PERSIST, hb_sender_cb, (void*) bev);
+	event_assign(&timeout, base, -1, 0, hb_sender_cb, (void*) bev);
 	set_heartbeat_interval(&timeout);
 }
 

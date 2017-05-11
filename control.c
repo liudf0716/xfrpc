@@ -57,8 +57,6 @@
 #include "control.h"
 #include "uthash.h"
 
-static struct event timeout;
-
 static char *calc_md5(const char *data, int datalen)
 {
 	unsigned char digest[16] = {0};

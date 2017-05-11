@@ -40,6 +40,7 @@
 #include <event2/buffer.h>
 #include <event2/listener.h>
 #include <event2/util.h>
+#include <events/event.h>
 
 #include "debug.h"
 #include "client.h"
@@ -166,7 +167,7 @@ void free_proxy_client(struct proxy_client *client)
 	if (client->custom_domains) free(client->custom_domains);
 	if (client->locations) free(client->locations);
 	
-	free_base_conf(client->bconf);
+	free_base_config(client->bconf);
 }
 
 void del_proxy_client(struct proxy_client *client)

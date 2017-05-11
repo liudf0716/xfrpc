@@ -214,7 +214,7 @@ static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 		}
 		bufferevent_free(bev);
 		free_proxy_client(client);
-	} else (what & BEV_EVENT_CONNECTED) {
+	} else if (what & BEV_EVENT_CONNECTED) {
 		send_msg_frp_server(NewCtlConn, client);
 	}
 }

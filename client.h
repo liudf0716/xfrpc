@@ -36,8 +36,8 @@ struct event;
 
 struct proxy_client {
 	struct event_base 	*base;
-	struct event		ev_timeout;
 	struct bufferevent	*ctl_bev;
+	struct event		*ev_timeout;
 	
 	struct base_conf	*bconf;
 	char	*name; // pointer to bconf->name

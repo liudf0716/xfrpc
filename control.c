@@ -265,11 +265,16 @@ static void login_frp_server(struct proxy_client *client)
 {
 	struct common_conf *c_conf = get_common_config();
 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+	if (!bev) {
+		debug(LOG_DEBUG, "connect server failed");
+		return;
+	}
 	
+	client->ctl_bev = bev;
 	bufferevent_setcb(bev, login_xfrp_read_msg_cb, login_xfrp_write_msg_cb, login_xfrp_event_cb, client);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 	
-	client->ctl_bev = bev;
+	
 }
 
 void control_process(struct proxy_client *client)

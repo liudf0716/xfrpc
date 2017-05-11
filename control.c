@@ -196,13 +196,13 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	
 	send_msg_frp_server(HeartbeatReq, client);
 	
-	set_heartbeat_interval(&client->ev_timeout);	
+	set_heartbeat_interval(client->ev_timeout);	
 }
 
 static void heartbeat_sender(struct proxy_client *client)
 {
-	event_assign(&client->ev_timeout, client->base, -1, 0, hb_sender_cb, (void*) client);
-	set_heartbeat_interval(&client->ev_timeout);
+	client->ev_timeout = evtimer_new(client->base, hb_sender_cb, client);
+	set_heartbeat_interval(client->ev_timeout);
 }
 
 static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)

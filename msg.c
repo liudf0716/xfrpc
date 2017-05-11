@@ -38,10 +38,10 @@ int control_request_marshal(const struct control_request *req, char **msg)
 		return 0;
 	
 	json_object_object_add(j_ctl_req, "type", json_object_new_int(req->type));
-	if (req->type == HeartbeatReq)
-		goto end_process;
 	json_object_object_add(j_ctl_req, "proxy_name", json_object_new_string(req->proxy_name));
 	json_object_object_add(j_ctl_req, "auth_key", json_object_new_string(req->auth_key));
+	if (req->type == HeartbeatReq)
+		goto end_process;
 	json_object_object_add(j_ctl_req, "use_encryption", json_object_new_boolean(req->use_encryption));
 	json_object_object_add(j_ctl_req, "use_gzip", json_object_new_boolean(req->use_gzip));
 	json_object_object_add(j_ctl_req, "pool_count", json_object_new_int(req->pool_count));

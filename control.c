@@ -55,6 +55,7 @@
 #include "const.h"
 #include "msg.h"
 #include "control.h"
+#include "uthash.h"
 
 static struct event timeout;
 
@@ -161,7 +162,7 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client)
 	struct control_request *req = get_control_request(type, client); // get control request by client
 	int len = control_request_marshal(req, &msg); // marshal control request to json string
 	assert(msg);
-	bufferevent_write(client->bev, msg, len);
+	bufferevent_write(client->ctl_bev, msg, len);
 	free(msg);
 	control_request_free(req); // free control request
 }
@@ -200,14 +201,21 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 
 static void heartbeat_sender(struct proxy_client *client)
 {
-	event_assign(&timeout, base, -1, 0, hb_sender_cb, (void*) client);
-	set_heartbeat_interval(&timeout);
+	event_assign(&client->ev_timeout, client->base, -1, 0, hb_sender_cb, (void*) client);
+	set_heartbeat_interval(&client->ev_timeout);
 }
 
-static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
+static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
+	struct proxy_client *client = ctx;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		if (client->ctl_bev != bev) {
+			debug(LOG_ERR, "Error: should be equal");
+			bufferevent_free(client->ctl_bev);
+			client->ctl_bev = NULL;
+		}
 		bufferevent_free(bev);
+		free_proxy_client(client);
 	}
 }
 
@@ -231,7 +239,7 @@ static void process_frp_msg(char *res, struct proxy_client *client)
 	control_response_free(c_res);
 }
 
-static void xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
+static void login_xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
@@ -250,12 +258,12 @@ static void login_frp_server(struct proxy_client *client)
 	struct common_conf *c_conf = get_common_config();
 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
 	
-	bufferevent_setcb(bev, xfrp_read_msg_cb, NULL, xfrp_event_cb, client);
+	bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 	
-	send_msg_frp_server(bev, NewCtlConn, client);
+	client->ctl_bev = bev;
 	
-	client->bev = bev;
+	send_msg_frp_server(NewCtlConn, client);
 }
 
 void control_process(struct proxy_client *client)

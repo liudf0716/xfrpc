@@ -34,7 +34,7 @@
 
 int control_request_marshal(const struct control_request *req, char **msg)
 {
-	char *tmp = NULL;
+	const char *tmp = NULL;
 	int  nret = 0;
 	struct json_object *j_ctl_req = json_object_new_object();
 	if (!j_ctl_req)
@@ -82,7 +82,7 @@ end_process:
 	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp) + 2;
 		*msg = calloc(nret, 1);
-		snprintf(msg, nret, "%s\n", tmp);
+		snprintf(*msg, nret, "%s\n", tmp);
 	}
 	json_object_put(j_ctl_req);
 	return nret;

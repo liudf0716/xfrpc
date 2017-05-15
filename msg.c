@@ -80,9 +80,8 @@ int control_request_marshal(const struct control_request *req, char **msg)
 end_process:
 	tmp = json_object_to_json_string(j_ctl_req);
 	if (tmp && strlen(tmp) > 0) {
-		nret = strlen(tmp) + 2;
-		*msg = calloc(nret, 1);
-		snprintf(*msg, nret, "%s\n", tmp);
+		nret = strlen(tmp);
+		*msg = strdup(tmp);
 	}
 	json_object_put(j_ctl_req);
 	return nret;

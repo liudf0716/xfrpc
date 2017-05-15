@@ -42,7 +42,8 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	
 	json_object_object_add(j_ctl_req, "type", json_object_new_int(req->type));
 	json_object_object_add(j_ctl_req, "proxy_name", json_object_new_string(req->proxy_name));
-	json_object_object_add(j_ctl_req, "auth_key", json_object_new_string(req->auth_key));
+	json_object_object_add(j_ctl_req, "auth_key", 
+						   json_object_new_string(req->auth_key?req->auth_key:""));
 	if (req->type == HeartbeatReq)
 		goto end_process;
 	json_object_object_add(j_ctl_req, "use_encryption", json_object_new_boolean(req->use_encryption));
@@ -51,7 +52,8 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	json_object_object_add(j_ctl_req, "privilege_mode", json_object_new_boolean(req->privilege_mode));
 	json_object_object_add(j_ctl_req, "privilege_key", 
 						   json_object_new_string(req->privilege_key?req->privilege_key:""));
-	json_object_object_add(j_ctl_req, "proxy_type", json_object_new_string(req->proxy_type));
+	json_object_object_add(j_ctl_req, "proxy_type", 
+						   json_object_new_string(req->proxy_type?req->proxy_type:""));
 	json_object_object_add(j_ctl_req, "remote_port", json_object_new_int(req->remote_port));
 	if (!req->custom_domains)
 		json_object_object_add(j_ctl_req, "custom_domains", NULL);

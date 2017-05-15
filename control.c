@@ -161,7 +161,7 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client)
 	int len = control_request_marshal(req, &msg); // marshal control request to json string
 	assert(msg);
 	bufferevent_write(client->ctl_bev, msg, len);
-	bufferevent_write(client->clt_bev, "\n", 1);
+	bufferevent_write(client->ctl_bev, "\n", 1);
 	debug(LOG_DEBUG, "send msg to frp server [%s]", msg);
 	free(msg);
 	control_request_free(req); // free control request

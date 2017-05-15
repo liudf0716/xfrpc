@@ -75,9 +75,15 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	
 	
 end_process:
-	*msg = strdup(json_object_to_json_string(j_ctl_req));
+	char *tmp = json_object_to_json_string(j_ctl_req);
+	int nret = 0;
+	if (tmp && strlen(tmp) > 0) {
+		nret = strlen(tmp) + 2;
+		*msg = calloc(nret, 1);
+		snprintf(msg, nret, "%s\n", tmp);
+	}
 	json_object_put(j_ctl_req);
-	return strlen(*msg);;
+	return nret;
 }
 
 struct control_response *control_response_unmarshal(const char *jres)

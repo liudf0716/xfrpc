@@ -25,6 +25,7 @@
 */
 
 #include <string.h>
+#include <stdio.h>
 #include <json-c/json.h>
 #include <json-c/bits.h>
 
@@ -33,6 +34,8 @@
 
 int control_request_marshal(const struct control_request *req, char **msg)
 {
+	char *tmp = NULL;
+	int  nret = 0;
 	struct json_object *j_ctl_req = json_object_new_object();
 	if (!j_ctl_req)
 		return 0;
@@ -75,8 +78,7 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	
 	
 end_process:
-	char *tmp = json_object_to_json_string(j_ctl_req);
-	int nret = 0;
+	tmp = json_object_to_json_string(j_ctl_req);
 	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp) + 2;
 		*msg = calloc(nret, 1);

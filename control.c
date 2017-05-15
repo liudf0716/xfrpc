@@ -203,22 +203,6 @@ static void heartbeat_sender(struct proxy_client *client)
 	set_heartbeat_interval(client->ev_timeout);
 }
 
-static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
-{
-	struct proxy_client *client = ctx;
-	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		if (client->ctl_bev != bev) {
-			debug(LOG_ERR, "Error: should be equal");
-			bufferevent_free(client->ctl_bev);
-			client->ctl_bev = NULL;
-		}
-		bufferevent_free(bev);
-		free_proxy_client(client);
-	} else if (what & BEV_EVENT_CONNECTED) {
-		send_msg_frp_server(NewCtlConn, client);
-	}
-}
-
 static void process_frp_msg(char *res, struct proxy_client *client)
 {
 	struct control_response *c_res = control_response_unmarshal(res);
@@ -253,11 +237,23 @@ static void login_xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 	free(buf);
 }
 
-static void login_xfrp_write_msg_cb(struct bufferevent *bev, void *ctx) {
-	struct evbuffer *b = bufferevent_get_output(bev);
-	int len = evbuffer_get_length(b);
-	if (len > 0) {
-		evbuffer_drain(b, len);
+
+static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+	struct proxy_client *client = ctx;
+	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		if (client->ctl_bev != bev) {
+			debug(LOG_ERR, "Error: should be equal");
+			bufferevent_free(client->ctl_bev);
+			client->ctl_bev = NULL;
+		}
+		bufferevent_free(bev);
+		free_proxy_client(client);
+	} else if (what & BEV_EVENT_CONNECTED) {
+		debug(LOG_DEBUG, "connected: send msg to frp server");
+		send_msg_frp_server(NewCtlConn, client);
+		bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);
+		bufferevent_enable(bev, EV_READ|EV_WRITE);
 	}
 }
 
@@ -271,10 +267,8 @@ static void login_frp_server(struct proxy_client *client)
 	}
 	
 	client->ctl_bev = bev;
-	bufferevent_setcb(bev, login_xfrp_read_msg_cb, login_xfrp_write_msg_cb, login_xfrp_event_cb, client);
-	bufferevent_enable(bev, EV_READ|EV_WRITE);
-	
-	
+	bufferevent_enable(bev, EV_WRITE);
+	bufferevent_setcb(bev, NULL, NULL, login_xfrp_event_cb, client);
 }
 
 void control_process(struct proxy_client *client)

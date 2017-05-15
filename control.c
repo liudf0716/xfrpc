@@ -252,9 +252,10 @@ static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 		free_proxy_client(client);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "connected: send msg to frp server");
-		send_msg_frp_server(NewCtlConn, client);
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
+		
+		send_msg_frp_server(NewCtlConn, client);
 	}
 }
 

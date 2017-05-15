@@ -33,7 +33,7 @@ ADD_DEFINITIONS(-Wall -g  --std=gnu99 -Wmissing-declarations)
 add_executable(xfrp_client ${src_xfrp_client})
 target_link_libraries(xfrp_client ${libs})
 
-add_executable(xfrp_client ${src_xfrp_test_server})
+add_executable(xfrp_test_server ${src_xfrp_test_server})
 target_link_libraries(xfrp_test_server ${test_libs})
 
 install(TARGETS xfrp_client xfrp_test_server

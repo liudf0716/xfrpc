@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 2.6)
 
 project(xfrp C)
 
+set(src_xfrp_test_server
+	xfrp_test_server.c
+	)
+
 set(src_xfrp_client
 	main.c
   	client.c
@@ -19,12 +23,19 @@ set(libs
 	crypto
 	event
 	json-c)
+	
+set(test_libs
+	event
+	)
 
 ADD_DEFINITIONS(-Wall -g  --std=gnu99 -Wmissing-declarations)
 
 add_executable(xfrp_client ${src_xfrp_client})
 target_link_libraries(xfrp_client ${libs})
 
-install(TARGETS xfrp_client 
+add_executable(xfrp_client ${src_xfrp_test_server})
+target_link_libraries(xfrp_test_server ${test_libs})
+
+install(TARGETS xfrp_client xfrp_test_server
         RUNTIME DESTINATION bin
 )

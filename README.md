@@ -15,35 +15,40 @@ the motivation to start xfrp project is that we are OpenWRTer, and openwrt usual
 
 xfrp need [libevent](https://github.com/libevent/libevent) [openssl-dev](https://github.com/openssl/openssl) and [json-c](https://github.com/json-c/json-c) support
 
-before compile xfrp, please install libevent openssl-dev and json-c in your system
+before compile xfrp, please install `libevent` `openssl-dev` and `json-c` in your system
 
 git clone https://github.com/KunTengRom/xfrp.git
 
+```shell
 cd xfrp
 
 cmake .
 
 make
-
+```
 
 ## quick start
 
 
 run in debug mode :
 
+```shell
 xfrp_client -c frpc_mini.ini -f -d 7 
+```
 
 run in release mode :
 
+```shell
 xfrp_client -c frpc_mini.ini -d 0
+```
 
 
 
 ## todo list
 
-1, support compression
+- support compression
 
-2, support encrypt
+- support encrypt
 
 
 ## how to contribute our project

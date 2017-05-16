@@ -3,12 +3,13 @@
 [1]: https://travis-ci.org/KunTengRom/xfrp.svg?branch=master
 [2]: https://travis-ci.org/KunTengRom/xfrp
 
-## xfrp was frp's client implemented by c for OpenWRT system
+## what is xfrp and why start xfrp
 
-xfrp was [frp](https://github.com/fatedier/frp) client for OpenWRT system
+xfrp was [frp](https://github.com/fatedier/frp) client implemented by c for OpenWRT system
 
 if you dont know what is frp, please visit [this](https://github.com/fatedier/frp)
 
+the motivation to start xfrp project is that we are OpenWRTer, and openwrt usually ran in wireless router which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrp project
 
 ## compile
 

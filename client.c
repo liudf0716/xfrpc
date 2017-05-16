@@ -49,6 +49,7 @@
 #include "config.h"
 #include "const.h"
 #include "uthash.h"
+#include "compress.h"
 
 #define MAX_OUTPUT (512*1024)
 

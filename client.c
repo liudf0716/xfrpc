@@ -187,7 +187,7 @@ void start_frp_tunnel(const struct proxy_client *client)
 	bufferevent_enable(b_svr, EV_READ|EV_WRITE);
 	bufferevent_enable(b_clt, EV_READ|EV_WRITE);
 	
-	send_msg_frp_server(NewWorkConn, client);
+	send_msg_frp_server(NewWorkConn, client, b_ctl);
 }
 
 void free_proxy_client(struct proxy_client *client)

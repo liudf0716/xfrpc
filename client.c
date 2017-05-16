@@ -134,6 +134,36 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
+static void
+xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
+{
+	struct bufferevent *partner = ctx;
+	struct evbuffer *src, *dst;
+	size_t len;
+	src = bufferevent_get_input(bev);
+	len = evbuffer_get_length(src);
+	if (len > 4) {
+		dst = bufferevent_get_output(partner);
+		evbuffer_drain(src, 4);
+		evbuffer_add_buffer(dst, src);
+	}
+}
+
+static void
+xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
+{
+	struct bufferevent *partner = ctx;
+	struct evbuffer *src, *dst;
+	size_t len;
+	src = bufferevent_get_input(bev);
+	len = evbuffer_get_length(src);
+	if (len > 0) {
+		dst = bufferevent_get_output(partner);
+		evbuffer_prepend(src, (unsigned char *)htonl(len), 4);
+		evbuffer_add_buffer(dst, src);
+	}
+}
+
 // create frp tunnel for service
 void start_frp_tunnel(const struct proxy_client *client)
 {
@@ -151,8 +181,8 @@ void start_frp_tunnel(const struct proxy_client *client)
 		return;
 	}
 	
-	bufferevent_setcb(b_svr, xfrp_read_cb, NULL, xfrp_event_cb, b_clt);
-	bufferevent_setcb(b_clt, xfrp_read_cb, NULL, xfrp_event_cb, b_svr);
+	bufferevent_setcb(b_svr, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
+	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, b_svr);
 	
 	bufferevent_enable(b_svr, EV_READ|EV_WRITE);
 	bufferevent_enable(b_clt, EV_READ|EV_WRITE);

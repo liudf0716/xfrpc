@@ -5,8 +5,7 @@
 
 /* @(#) $Id$ */
 
-#define ZLIB_INTERNAL
-#include "zlib.h"
+#include <zlib.h>
 
 /* ===========================================================================
      Decompresses the source buffer into the destination buffer.  *sourceLen is
@@ -24,7 +23,7 @@
    Z_DATA_ERROR if the input data was corrupted, including if the input data is
    an incomplete zlib stream.
 */
-int ZEXPORT uncompress2(unsigned char *dest, size_t *destLen, const unsigned char *source, size_t *sourceLen) {
+int extern uncompress2(unsigned char *dest, size_t *destLen, const unsigned char *source, size_t *sourceLen) {
     z_stream stream;
     int err;
     const unsigned int max = (unsigned int)-1;
@@ -78,7 +77,7 @@ int ZEXPORT uncompress2(unsigned char *dest, size_t *destLen, const unsigned cha
            err;
 }
 
-int ZEXPORT uncompress(unsigned char *dest, size_t *destLen, const unsigned char *source, size_t sourceLen)
+int extern uncompress(unsigned char *dest, size_t *destLen, const unsigned char *source, size_t sourceLen)
 {
     return uncompress2(dest, destLen, source, &sourceLen);
 }

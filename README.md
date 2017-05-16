@@ -7,6 +7,8 @@
 
 xfrp was [frp](https://github.com/fatedier/frp) client for OpenWRT system
 
+if you dont know what is frp, please visit [this](https://github.com/fatedier/frp)
+
 
 ## compile
 

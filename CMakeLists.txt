@@ -15,6 +15,7 @@ set(src_xfrp_client
   	msg.c
 	xfrp_client.c
 	debug.c
+	zip.c
 	commandline.c
 	)
 	

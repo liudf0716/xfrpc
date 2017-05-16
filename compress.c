@@ -5,7 +5,6 @@
 
 /* @(#) $Id$ */
 
-#define ZLIB_INTERNAL
 #include <zlib.h>
 
 #include "compress.h"

@@ -181,13 +181,16 @@ void start_frp_tunnel(const struct proxy_client *client)
 		return;
 	}
 	
+	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
+		  c_conf->server_addr, c_conf->server_port, client->local_ip, client->local_port);
+	
 	bufferevent_setcb(b_svr, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
 	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, b_svr);
 	
 	bufferevent_enable(b_svr, EV_READ|EV_WRITE);
 	bufferevent_enable(b_clt, EV_READ|EV_WRITE);
 	
-	send_msg_frp_server(NewWorkConn, client, b_clt);
+	send_msg_frp_server(NewWorkConn, client, b_svr);
 }
 
 void free_proxy_client(struct proxy_client *client)

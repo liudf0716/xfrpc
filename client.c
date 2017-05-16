@@ -159,7 +159,9 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 	len = evbuffer_get_length(src);
 	if (len > 0) {
 		dst = bufferevent_get_output(partner);
-		evbuffer_prepend(src, (unsigned char *)htonl(len), 4);
+		unsigned char header[4] = {0};
+		memcpy(header, htonl(len), sizeof(int));
+		evbuffer_prepend(src, header, 4);
 		evbuffer_add_buffer(dst, src);
 	}
 }

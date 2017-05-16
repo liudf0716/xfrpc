@@ -15,6 +15,7 @@ set(src_xfrp_client
   	msg.c
 	xfrp_client.c
 	debug.c
+	compress.c
 	commandline.c
 	)
 	
@@ -22,6 +23,8 @@ set(libs
 	ssl
 	crypto
 	event
+	z
+	m
 	json-c)
 	
 set(test_libs

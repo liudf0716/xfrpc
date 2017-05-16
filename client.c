@@ -51,7 +51,7 @@
 #include "config.h"
 #include "const.h"
 #include "uthash.h"
-#include "compress.h"
+#include "zip.h"
 
 #define MAX_OUTPUT (512*1024)
 
@@ -149,10 +149,10 @@ xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 		dst = bufferevent_get_output(partner);
 		evbuffer_drain(src, 4);
 		unsigned char *source = calloc(len-4, 1);
-		unsigned char *dest = calloc(len*2, 1);
+		unsigned char *dest = NULL;
 		int olen = 0;
 		evbuffer_copyout(src, source, len-4);
-		uncompress(dest, &olen, source, len-4);
+		deflate_write(source, len-4, &dest, &olen, 1);
 		evbuffer_add(dst, dest, olen);
 		free(source);
 		free(dest);
@@ -170,10 +170,10 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 	if (len > 0) {
 		dst = bufferevent_get_output(partner);
 		unsigned char *source = calloc(len-4, 1);
-		unsigned char *dest = calloc(len-4, 1);
+		unsigned char *dest = NULL;
 		int olen = 0;
 		evbuffer_copyout(src, source, len-4);
-		compress(dest, &olen, source, len-4);
+		inflate_read(source, len-4, &dest, &olen, 1);
 		unsigned int header = htonl(olen);
 		evbuffer_add(dst, dest, olen);
 		evbuffer_prepend(dst, &header, sizeof(unsigned int));

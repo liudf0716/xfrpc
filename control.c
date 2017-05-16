@@ -154,14 +154,20 @@ control_request_free(struct control_request *req)
 	free(req);
 }
 
-void send_msg_frp_server(enum msg_type type, const struct proxy_client *client)
+void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
 {
 	char *msg = NULL;
 	struct control_request *req = get_control_request(type, client); // get control request by client
 	int len = control_request_marshal(req, &msg); // marshal control request to json string
 	assert(msg);
-	bufferevent_write(client->ctl_bev, msg, len);
-	bufferevent_write(client->ctl_bev, "\n", 1);
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = client->ctl_bev;
+	}
+	bufferevent_write(bout, msg, len);
+	bufferevent_write(bout, "\n", 1);
 	debug(LOG_DEBUG, "send msg to frp server [%s]", msg);
 	free(msg);
 	control_request_free(req); // free control request
@@ -194,7 +200,7 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
 	struct proxy_client *client = arg;
 	
-	send_msg_frp_server(HeartbeatReq, client);
+	send_msg_frp_server(HeartbeatReq, client, NULL);
 	
 	set_heartbeat_interval(client->ev_timeout);	
 }
@@ -256,7 +262,7 @@ static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
-		send_msg_frp_server(NewCtlConn, client);
+		send_msg_frp_server(NewCtlConn, client, NULL);
 	}
 }
 

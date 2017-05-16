@@ -32,7 +32,7 @@ run in debug mode :
 
 xfrp_client -c frpc_mini.ini -f -d 7 
 
-run in release mode
+run in release mode :
 
 xfrp_client -c frpc_mini.ini -d 0
 

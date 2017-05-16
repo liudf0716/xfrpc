@@ -33,4 +33,4 @@ void control_process(struct proxy_client *client);
 
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
 
-void send_msg_frp_server(enum msg_type type, const struct proxy_client *client);
+void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev);

@@ -2,7 +2,7 @@
 
 #include <zlib.h>
 
-#include "compress.h"
+#include "zip.h"
 
 int
 deflate_write(char *source, int len, char **dest, int *wlen, int gzip)

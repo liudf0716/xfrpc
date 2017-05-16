@@ -52,4 +52,4 @@ See [CONTRIBUTING](https://github.com/KunTengRom/xfrp/blob/master/CONTRIBUTING.m
 QQ群 ： [331230369](https://jq.qq.com/?_wv=1027&k=47QGEhL)
 
 
-## Please support us, and star our project
+## Please support us and star our project

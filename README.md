@@ -52,6 +52,8 @@ xfrp_client -c frpc_mini.ini -d 0
 
 - support encrypt
 
+- support previlege mode
+
 
 ## how to contribute our project
 

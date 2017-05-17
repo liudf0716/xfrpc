@@ -31,8 +31,10 @@
 #define windowBits 		15
 #define GZIP_ENCODING 	16
 
-int deflate_write(char *source, int len, char **dest, int *wlen, int gzip);
+typdef unsigned char uint8;
 
-int inflate_read(char *source, int len, char **dest, int *rlen, int gzip);
+int deflate_write(uint8 *source, int len, uint8 **dest, int *wlen, int gzip);
+
+int inflate_read(uint8 *source, int len, uint8 **dest, int *rlen, int gzip);
 
 #endif

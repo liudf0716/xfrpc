@@ -31,7 +31,7 @@
 #define windowBits 		15
 #define GZIP_ENCODING 	16
 
-typdef unsigned char uint8;
+typedef unsigned char uint8;
 
 int deflate_write(uint8 *source, int len, uint8 **dest, int *wlen, int gzip);
 

@@ -1,3 +1,5 @@
+![xfrp](https://github.com/KunTengRom/xfrp/blob/master/logo.png)
+
 [![Build Status][1]][2]
 
 [1]: https://travis-ci.org/KunTengRom/xfrp.svg?branch=master

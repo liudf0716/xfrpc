@@ -148,14 +148,7 @@ xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 	if (len > 4) {
 		dst = bufferevent_get_output(partner);
 		evbuffer_drain(src, 4);
-		unsigned char *source = calloc(len-4, 1);
-		unsigned char *dest = NULL;
-		int olen = 0;
-		evbuffer_copyout(src, source, len-4);
-		deflate_write(source, len-4, &dest, &olen, 1);
-		evbuffer_add(dst, dest, olen);
-		free(source);
-		free(dest);
+		evbuffer_add(dst, src);
 	}
 }
 
@@ -169,13 +162,7 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 	len = evbuffer_get_length(src);
 	if (len > 0) {
 		dst = bufferevent_get_output(partner);
-		unsigned char *source = calloc(len-4, 1);
-		unsigned char *dest = NULL;
-		int olen = 0;
-		evbuffer_copyout(src, source, len-4);
-		inflate_read(source, len-4, &dest, &olen, 1);
-		unsigned int header = htonl(olen);
-		evbuffer_add(dst, dest, olen);
+		evbuffer_add(dst, src);
 		evbuffer_prepend(dst, &header, sizeof(unsigned int));
 	}
 }

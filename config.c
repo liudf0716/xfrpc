@@ -103,7 +103,7 @@ static void dump_common_conf()
 		return;
 	}
 
-	debug(LOG_DEBUG, "common_conf: {server_addr:%s, server_port:%d, auth_token:%s, privilege_token:%s, heartbeat_interval:%d, heartbeat_timeout:%d}",
+	debug(LOG_DEBUG, "Section[common]: {server_addr:%s, server_port:%d, auth_token:%s, privilege_token:%s, interval:%d, timeout:%d}",
 			 c_conf->server_addr, c_conf->server_port, c_conf->auth_token, c_conf->privilege_token, c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
 }
 
@@ -114,18 +114,18 @@ static void dump_proxy_client(const int index, const struct proxy_client *pc)
 	
 	if (1 == pc->bconf->privilege_mode) {
 		if (NULL == pc->bconf->privilege_token) {
-			debug(LOG_ERR, "proxy [%s] error: privilege_token must be set when privilege_mode = true", pc->bconf->name);
+			debug(LOG_ERR, "Proxy [%s] error: privilege_token must be set when privilege_mode = true", pc->bconf->name);
 			exit(0);
 		}
 
 		if (0 > pc->remote_port) {
-			debug(LOG_ERR, "proxy [%s] error: remote_port must be set when privilege_mode = true", pc->bconf->name);
+			debug(LOG_ERR, "Proxy [%s] error: remote_port must be set when privilege_mode = true", pc->bconf->name);
 			exit(0);
 		}
 	}
 
 	if (0 > pc->local_port) {
-		debug(LOG_ERR, "proxy [%s] error: local_port not found", pc->bconf->name);
+		debug(LOG_ERR, "Proxy [%s] error: local_port not found", pc->bconf->name);
 		exit(0);
 	}
 
@@ -184,7 +184,7 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 	if (!pc) {
 		pc = new_proxy_client(section);
 		HASH_ADD_KEYPTR(hh, p_clients, pc->name, strlen(pc->name), pc);
-		debug(LOG_DEBUG, "section[%s] not found in p_clients, add pc[%s]", 
+		debug(LOG_DEBUG, "Section[%s] not found in p_clients, add pc[%s]",
 			  section, pc->name);
 	} 
 	
@@ -279,11 +279,11 @@ void load_config(const char *confile)
 	assert(c_conf);
 	
 	init_common_conf(c_conf);
-	
-	debug(LOG_DEBUG, "confile is %s", confile);
+
+	debug(LOG_INFO, "Reading configuration file '%s'", confile);
 	
 	if (ini_parse(confile, common_handler, c_conf) < 0) {
-		debug(LOG_ERR, "ini file parse failed");
+		debug(LOG_ERR, "Config file parse failed");
 		exit(0);
 	}
 	

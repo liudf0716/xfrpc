@@ -168,7 +168,7 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, 
 	}
 	bufferevent_write(bout, msg, len);
 	bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, "send msg to frp server [%s]", msg);
+	debug(LOG_DEBUG, "Send msg to frp server [%s]", msg);
 	free(msg);
 	control_request_free(req); // free control request
 }
@@ -249,16 +249,19 @@ static void login_xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	struct proxy_client *client = ctx;
+	struct common_conf 	*c_conf = get_common_config();
+
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		if (client->ctl_bev != bev) {
 			debug(LOG_ERR, "Error: should be equal");
 			bufferevent_free(client->ctl_bev);
 			client->ctl_bev = NULL;
 		}
+		debug(LOG_ERR, "Proxy [%s]: connect server [%s:%d] error", client->name, c_conf->server_addr, c_conf->server_port);
 		bufferevent_free(bev);
 		free_proxy_client(client);
 	} else if (what & BEV_EVENT_CONNECTED) {
-		debug(LOG_DEBUG, "connected: send msg to frp server");
+		debug(LOG_INFO, "Proxy [%s] connected: send msg to frp server", client->name);
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
@@ -271,10 +274,12 @@ static void login_frp_server(struct proxy_client *client)
 	struct common_conf *c_conf = get_common_config();
 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
-		debug(LOG_DEBUG, "connect server failed");
+		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
 		return;
 	}
-	
+
+	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+
 	client->ctl_bev = bev;
 	bufferevent_enable(bev, EV_WRITE);
 	bufferevent_setcb(bev, NULL, NULL, login_xfrp_event_cb, client);

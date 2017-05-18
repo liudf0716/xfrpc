@@ -37,3 +37,7 @@ CMakeFiles/
 CMakeCache.txt
 Makefile
 cmake_install.cmake
+
+# bin generated
+xfrp_client
+xfrp_test_server

@@ -47,12 +47,27 @@ struct common_conf *get_common_config()
 
 void free_common_config()
 {
-	
+	struct common_conf *c_conf = get_common_config();
+
+	if (c_conf->server_addr) free(c_conf->server_addr);
+	if (c_conf->http_proxy) free(c_conf->http_proxy);
+	if (c_conf->log_file) free(c_conf->log_file);
+	if (c_conf->log_way) free(c_conf->log_way);
+	if (c_conf->log_level) free(c_conf->log_level);
+	if (c_conf->auth_token) free(c_conf->auth_token);
+	if (c_conf->privilege_token) free(c_conf->privilege_token);
 };
 
 void free_base_config(struct base_conf *bconf)
 {
-	
+	if (bconf->name) free(bconf->name);
+	if (bconf->auth_token) free(bconf->auth_token);
+	if (bconf->type) free(bconf->type);
+	if (bconf->privilege_token) free(bconf->privilege_token);
+	if (bconf->host_header_rewrite) free(bconf->host_header_rewrite);
+	if (bconf->http_username) free(bconf->http_username);
+	if (bconf->http_password) free(bconf->http_password);
+	if (bconf->subdomain) free(bconf->subdomain);
 }
 
 struct proxy_client *get_all_pc()
@@ -87,10 +102,9 @@ static void dump_common_conf()
 		debug(LOG_ERR, "Error: c_conf is NULL");
 		return;
 	}
-	
-	debug(LOG_DEBUG, 
-		  "common_conf {server_addr:%s,server_port:%d,privilege_token:%s,heartbeat_interval:%d,heartbeat_timeout:%d}",
-		 c_conf->server_addr, c_conf->server_port, c_conf->privilege_token, c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
+
+	debug(LOG_DEBUG, "common_conf: {server_addr:%s, server_port:%d, auth_token:%s, privilege_token:%s, heartbeat_interval:%d, heartbeat_timeout:%d}",
+			 c_conf->server_addr, c_conf->server_port, c_conf->auth_token, c_conf->privilege_token, c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
 }
 
 static void dump_proxy_client(const int index, const struct proxy_client *pc)
@@ -98,11 +112,28 @@ static void dump_proxy_client(const int index, const struct proxy_client *pc)
 	if (!pc || !pc->bconf)
 		return;
 	
-	debug(LOG_DEBUG, "client %d :", index);
-	debug(LOG_DEBUG, "base_conf {name:%s,auth_token:%s,type:%s}",
-		 pc->bconf->name, pc->bconf->auth_token, pc->bconf->type);
-	debug(LOG_DEBUG, "pc {local_ip:%s,local_port:%d}",
-		 pc->local_ip, pc->local_port);
+	if (1 == pc->bconf->privilege_mode) {
+		if (NULL == pc->bconf->privilege_token) {
+			debug(LOG_ERR, "proxy [%s] error: privilege_token must be set when privilege_mode = true", pc->bconf->name);
+			exit(0);
+		}
+
+		if (0 > pc->remote_port) {
+			debug(LOG_ERR, "proxy [%s] error: remote_port must be set when privilege_mode = true", pc->bconf->name);
+			exit(0);
+		}
+	}
+
+	if (0 > pc->local_port) {
+		debug(LOG_ERR, "proxy [%s] error: local_port not found", pc->bconf->name);
+		exit(0);
+	}
+
+	if (NULL == pc->bconf->type) {
+		pc->bconf->type = strdup("tcp");
+	}
+
+	debug(LOG_DEBUG, "Proxy %d: {name:%s, local_port:%d, type:%s}", index, pc->bconf->name, pc->local_port, pc->bconf->type);
 }
 
 static void dump_all_pc()
@@ -124,22 +155,28 @@ static struct proxy_client *new_proxy_client(const char *name)
 	assert(c_conf);
 	
 	bc->name 			= strdup(name);
-	bc->auth_token 		= strdup(c_conf->auth_token);
 	bc->use_encryption 	= 0;
 	bc->use_gzip		= 0;
 	bc->privilege_mode	= 0;
 	bc->pool_count		= 0;
-	
-	pc->bconf = bc;
-	pc->name  = strdup(name);
-	
+
+	pc->bconf			= bc;
+	pc->name			= strdup(name);
+	pc->local_port		= -1;
+	pc->remote_port		= -1;
+
+	if (c_conf->auth_token)
+		bc->auth_token	= strdup(c_conf->auth_token);
+	if (c_conf->privilege_token)
+		bc->privilege_token = strdup(c_conf->privilege_token);
+
 	return pc;
 }
 
 static int service_handler(void *user, const char *section, const char *nm, const char *value)
 {
  	struct proxy_client	*pc = NULL;
-	
+
 	if (strcmp(section, "common") == 0)
 		return 0;
 	
@@ -166,7 +203,21 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 		pc->bconf->privilege_mode = is_true(value);
 	} else if (MATCH_NAME("pool_count")) {
 		pc->bconf->pool_count = atoi(value);
-	} 
+	} else if (MATCH_NAME("remote_port")) {
+		pc->remote_port = atoi(value);
+	} else if (MATCH_NAME("http_user")) {
+		pc->bconf->http_username = strdup(value);
+	} else if (MATCH_NAME("http_pwd")) {
+		pc->bconf->http_password = strdup(value);
+	} else if (MATCH_NAME("subdomain")) {
+		pc->bconf->subdomain= strdup(value);
+	} else if (MATCH_NAME("custom_domains")) {
+		pc->custom_domains= strdup(value);
+	} else if (MATCH_NAME("locations")) {
+		pc->locations= strdup(value);
+	} else if (MATCH_NAME("host_header_rewrite")) {
+		pc->bconf->host_header_rewrite= strdup(value);
+	}
 	
 	return 1;
 }

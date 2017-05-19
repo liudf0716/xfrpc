@@ -31,6 +31,83 @@
 
 #include "msg.h"
 #include "const.h"
+#include "config.h"
+
+/*
+const (
+	TypeLogin         = 'o'
+	TypeLoginResp     = '1'
+	TypeNewProxy      = 'p'
+	TypeNewProxyResp  = '2'
+	TypeNewWorkConn   = 'w'
+	TypeReqWorkConn   = 'r'
+	TypeStartWorkConn = 's'
+	TypePing          = 'h'
+	TypePong          = '4'
+	TypeUdpPacket     = 'u'
+)
+*/
+
+
+/*
+struct login {
+	char		*version;
+	char		*hostname;
+	char 		*os;
+	char		*arch;
+	char 		*user;
+	char 		*privilege_key;
+	long int 	timestamp;
+	char 		*run_id;
+	int 		*pool_count;
+};
+
+	lg->version 		= strdup(PROTOCOL_VERESION);
+	lg->hostname 		= NULL;
+	lg->os 				= strdup(uname_buf.sysname);
+	lg->arch 			= strdup(uname_buf.machine);
+	lg->user 			= NULL;
+
+	lg->timestamp 		= time(NULL);
+	lg->run_id 			= NULL;
+	lg->pool_count 		= 0;//TODO
+	lg->privilege_key 	= NULL; //TODO
+*/
+
+#define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
+json_object_object_add(jobj, key, json_object_new_##jtype((item)));
+
+
+int login_request_marshal(char **msg)
+{
+	int nret = 0;
+	struct json_object *j_login_req = json_object_new_object();
+	if (is_error(j_login_req))
+		return 0;
+	
+	struct login *lg = get_common_login_config();
+	if (!lg)
+		return 0;
+	
+	JSON_MARSHAL_TYPE(j_login_req, "version", string, lg->version);
+	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, lg->hostname?lg->hostname:"\0");
+	JSON_MARSHAL_TYPE(j_login_req, "os", string, lg->os);
+	JSON_MARSHAL_TYPE(j_login_req, "arch", string, lg->arch);
+	JSON_MARSHAL_TYPE(j_login_req, "user", string, lg->user?lg->user:"\0");
+	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, lg->privilege_key? lg->privilege_key:"\0");
+	JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
+	JSON_MARSHAL_TYPE(j_login_req, "run_id", string, lg->run_id?lg->run_id:"\0");
+	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
+
+	const char *tmp = NULL;
+	tmp = json_object_to_json_string(j_login_req);
+	if (tmp && strlen(tmp) > 0) {
+		nret = strlen(tmp);
+		*msg = strdup(tmp);
+	}
+	json_object_put(j_login_req);
+	return nret;
+}
 
 int control_request_marshal(const struct control_request *req, char **msg)
 {
@@ -44,8 +121,8 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	json_object_object_add(j_ctl_req, "proxy_name", json_object_new_string(req->proxy_name));
 	json_object_object_add(j_ctl_req, "auth_key", 
 						   json_object_new_string(req->auth_key?req->auth_key:""));
-	if (req->type == HeartbeatReq)
-		goto end_process;
+	if (req->type == TypeLogin)
+		goto END_PROCESS; //TODO
 	json_object_object_add(j_ctl_req, "use_encryption", json_object_new_boolean(req->use_encryption));
 	json_object_object_add(j_ctl_req, "use_gzip", json_object_new_boolean(req->use_gzip));
 	json_object_object_add(j_ctl_req, "pool_count", json_object_new_int(req->pool_count));
@@ -78,8 +155,7 @@ int control_request_marshal(const struct control_request *req, char **msg)
 						   json_object_new_string(req->subdomain?req->subdomain:""));
 	json_object_object_add(j_ctl_req, "timestamp", json_object_new_int(req->timestamp));
 	
-	
-end_process:
+END_PROCESS:
 	tmp = json_object_to_json_string(j_ctl_req);
 	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp);
@@ -96,25 +172,25 @@ struct control_response *control_response_unmarshal(const char *jres)
 		return NULL;
 	struct control_response *ctl_res = calloc(sizeof(struct control_response), 1);
 	if (ctl_res == NULL) {
-		goto error;
+		goto END_ERROR;
 	}
 	
 	struct json_object *jtype = json_object_object_get(j_ctl_res, "type");
 	if (jtype == NULL) {
-		goto error;
+		goto END_ERROR;
 	}
 	ctl_res->type = json_object_get_int(jtype);
 	
 	struct json_object *jcode = json_object_object_get(j_ctl_res, "code");
 	if (jcode == NULL)
-		goto error;
+		goto END_ERROR;
 	ctl_res->code = json_object_get_int(jcode);
 	
 	struct json_object *jmsg = json_object_object_get(j_ctl_res, "msg");
 	if (jmsg)
 		ctl_res->msg = strdup(json_object_get_string(jmsg));
 	
-error:
+END_ERROR:
 	json_object_put(j_ctl_res);
 	return ctl_res;
 }

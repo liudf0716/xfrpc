@@ -54,6 +54,11 @@ char *get_run_id()
 	return c_login->run_id;
 }
 
+struct login *get_common_login_config()
+{
+	return c_login;
+}
+
 void free_common_config()
 {
 	struct common_conf *c_conf = get_common_config();
@@ -294,20 +299,23 @@ static void init_login(struct login *lg)
 		return;
 	}
 
-	lg->version 	= strdup(PROTOCOL_VERESION);
-	lg->hostname 	= NULL;
-	lg->os 			= strdup(uname_buf.sysname);
-	lg->arch 		= strdup(uname_buf.machine);
-	lg->user 		= NULL;
+	lg->version 		= strdup(PROTOCOL_VERESION);
+	lg->hostname 		= NULL;
+	lg->os 				= strdup(uname_buf.sysname);
+	lg->arch 			= strdup(uname_buf.machine);
+	lg->user 			= NULL;
 
-	lg->timestamp 	= time(NULL);
-	lg->run_id 		= NULL;
+	lg->timestamp 		= time(NULL);
+	lg->run_id 			= NULL;
+	lg->pool_count 		= 0;//TODO
+	lg->privilege_key 	= NULL; //TODO
 }
 
 
 void load_config(const char *confile)
 {
 	c_conf = calloc(sizeof(struct common_conf), 1);
+	c_login = calloc(sizeof(struct login), 1);
 	assert(c_conf);
 	
 	init_common_conf(c_conf);

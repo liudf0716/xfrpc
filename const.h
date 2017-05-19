@@ -35,14 +35,29 @@ enum server_status {
 };
 
 // msg type
+// enum msg_type {
+// 	NewCtlConn = 0,
+// 	NewWorkConn,
+// 	NoticeUserConn,
+// 	NewCtlConnRes,
+// 	HeartbeatReq,
+// 	HeartbeatRes,
+// 	NewWorkConnUdp
+// };
+
+
+// msg_type match frp v0.10.0
 enum msg_type {
-	NewCtlConn = 0,
-	NewWorkConn,
-	NoticeUserConn,
-	NewCtlConnRes,
-	HeartbeatReq,
-	HeartbeatRes,
-	NewWorkConnUdp
+	TypeLogin         = 'o',
+	TypeLoginResp     = '1',
+	TypeNewProxy      = 'p',
+	TypeNewProxyResp  = '2',
+	TypeNewWorkConn   = 'w',
+	TypeReqWorkConn   = 'r',
+	TypeStartWorkConn = 's',
+	TypePing          = 'h',
+	TypePong          = '4',
+	TypeUdpPacket     = 'u',
 };
 
 #endif

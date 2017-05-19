@@ -47,6 +47,7 @@
 #include "control.h"
 #include "debug.h"
 #include "xfrp_client.h"
+#include "msg.h"
 
 static void start_xfrp_client(struct event_base *base)
 {
@@ -71,8 +72,13 @@ void xfrp_client_loop()
 		exit(0);
 	}	
 	
+	start_login_frp_server(base);
 	start_xfrp_client(base);
-		
+	if (base) {
+		printf("base 在\n");
+	} else {
+		printf("base 不在\n");
+	}
 	event_base_dispatch(base);
 	
 	event_base_free(base);

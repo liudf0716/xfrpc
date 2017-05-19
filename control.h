@@ -35,6 +35,7 @@ struct event_base;
 enum msg_type;
 
 void start_login_frp_server(struct event_base *base);
+void send_login_frp_server(struct bufferevent *bev);
 void control_process(struct proxy_client *client);
 
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);

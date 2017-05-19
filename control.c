@@ -94,7 +94,7 @@ get_control_request(enum msg_type type, const struct proxy_client *client)
 	req->proxy_name = strdup(client->name);
 	#define	STRDUP(v)	v?strdup(v):NULL
 	switch(type) {
-		case NewCtlConn:
+		case TypeLogin:
 			req->use_encryption = client->bconf->use_encryption;
 			req->use_gzip = client->bconf->use_gzip;
 			req->pool_count = client->bconf->pool_count;
@@ -110,18 +110,18 @@ get_control_request(enum msg_type type, const struct proxy_client *client)
 				req->locations = STRDUP(client->locations);
 			}
 			break;
-		case NewWorkConn:	
-			break;
-		case NoticeUserConn:
-			break;
-		case NewCtlConnRes:
-			break;
-		case HeartbeatReq:
-			break;
-		case HeartbeatRes:
-			break;
-		case NewWorkConnUdp:
-			break;
+		// case NewWorkConn:	
+		// 	break;
+		// case NoticeUserConn:
+		// 	break;
+		// case NewCtlConnRes:
+		// 	break;
+		// case HeartbeatReq:
+		// 	break;
+		// case HeartbeatRes:
+		// 	break;
+		// case NewWorkConnUdp:
+		// 	break;
 	}
 	
 	req->privilege_mode = client->bconf->privilege_mode;
@@ -173,6 +173,26 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, 
 	control_request_free(req); // free control request
 }
 
+void send_login_frp_server(struct bufferevent *bev)
+{
+	char *lg_msg = NULL;
+	int len = login_request_marshal(&lg_msg); // marshal login request to json string
+	assert(lg_msg);
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		return;
+	}
+
+	bufferevent_write(bout, lg_msg, len);
+	bufferevent_write(bout, "\n", 1);
+	debug(LOG_DEBUG, "Send msg to frp server [%s]", lg_msg);
+	// free(lg_msg);
+	// TODO CONTROL FREE
+	// control_request_free(lg_msg); // free control request
+}
+
 // connect to server
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
 {
@@ -200,7 +220,7 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
 	struct proxy_client *client = arg;
 	
-	send_msg_frp_server(HeartbeatReq, client, NULL);
+	send_msg_frp_server(TypeLogin, client, NULL);
 	
 	set_heartbeat_interval(client->ev_timeout);	
 }
@@ -218,9 +238,9 @@ static void process_frp_msg(char *res, struct proxy_client *client)
 		return;
 	
 	switch(c_res->type) {
-	case HeartbeatRes:
-		break;
-	case NoticeUserConn:
+	// case HeartbeatRes:
+	// 	break;
+	case TypeLogin:
 		// when user connect
 		start_frp_tunnel(client);
 		break;
@@ -246,9 +266,15 @@ static void login_xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
 }
 
 
+static void login_xfrp_read_msg_cb2(struct bufferevent *bev, void *ctx)
+{
+	debug(LOG_ERR, "Proxy login: connect server OKKKKKKKK!@");
+}
+
+
 static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-	struct proxy_client *client = ctx;
+	struct proxy_client *client = (struct proxy_client *)ctx;
 	struct common_conf 	*c_conf = get_common_config();
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
@@ -265,29 +291,60 @@ static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
-		send_msg_frp_server(NewCtlConn, client, NULL);
+		send_msg_frp_server(TypeLogin, client, NULL);
 	}
 }
 
-static void login_frp_server(struct proxy_client *client)
+static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+	struct common_conf 	*c_conf = get_common_config();
+	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
+	} else if (what & BEV_EVENT_CONNECTED) {
+		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
+		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
+		bufferevent_enable(bev, EV_READ|EV_WRITE);
+		
+		send_login_frp_server(bev);
+		// send_msg_frp_server(NewCtlConn, client, NULL);
+	}
+}
+
+// static void login_frp_server(struct proxy_client *client)
+// {
+// 	struct common_conf *c_conf = get_common_config();
+// 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+// 	if (!bev) {
+// 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+// 		return;
+// 	}
+
+// 	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+
+// 	client->ctl_bev = bev;
+// 	bufferevent_enable(bev, EV_WRITE);
+// 	bufferevent_setcb(bev, NULL, NULL, login_xfrp_event_cb, client);
+// }
+
+void start_login_frp_server(struct event_base *base)
 {
 	struct common_conf *c_conf = get_common_config();
-	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
 		return;
 	}
 
-	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+	debug(LOG_INFO, "Xfrpc login: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
 
-	client->ctl_bev = bev;
-	bufferevent_enable(bev, EV_WRITE);
-	bufferevent_setcb(bev, NULL, NULL, login_xfrp_event_cb, client);
+	// client->ctl_bev = bev;
+	bufferevent_enable(bev, EV_WRITE|EV_READ);
+	bufferevent_setcb(bev, NULL, NULL, login_event_cb, NULL);
 }
 
 void control_process(struct proxy_client *client)
 {
-	login_frp_server(client);
+	// login_frp_server(client);
 	
 	heartbeat_sender(client);	
 }

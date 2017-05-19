@@ -27,23 +27,32 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
 
 #include <syslog.h>
+#include <sys/utsname.h>
 
 #include "ini.h"
 #include "uthash.h"
 #include "config.h"
 #include "client.h"
 #include "debug.h"
+#include "msg.h"
+#include "version.h"
 
 static struct common_conf 	*c_conf;
 static struct proxy_client 	*p_clients;
-
+static struct login 		*c_login;
 
 struct common_conf *get_common_config()
 {
 	return c_conf;
 };
+
+char *get_run_id()
+{
+	return c_login->run_id;
+}
 
 void free_common_config()
 {
@@ -273,12 +282,36 @@ static void init_common_conf(struct common_conf *config)
 	config->heartbeat_timeout	= 30;
 }
 
+//{"version":"0.10.0","hostname":"","os":"linux","arch":"amd64","user":"","privilege_key":"9583ffe40c4f854a2aa4ba80387d5dca","timestamp":1495165129,"run_id":"","pool_count":1}
+
+static void init_login(struct login *lg)
+{
+	if (!lg)
+		return;
+	
+	struct utsname uname_buf;
+	if (uname(&uname_buf)) {
+		return;
+	}
+
+	lg->version 	= strdup(PROTOCOL_VERESION);
+	lg->hostname 	= NULL;
+	lg->os 			= strdup(uname_buf.sysname);
+	lg->arch 		= strdup(uname_buf.machine);
+	lg->user 		= NULL;
+
+	lg->timestamp 	= time(NULL);
+	lg->run_id 		= NULL;
+}
+
+
 void load_config(const char *confile)
 {
 	c_conf = calloc(sizeof(struct common_conf), 1);
 	assert(c_conf);
 	
 	init_common_conf(c_conf);
+	init_login(c_login);
 
 	debug(LOG_INFO, "Reading configuration file '%s'", confile);
 	

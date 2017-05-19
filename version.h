@@ -2,5 +2,6 @@
 #define _VERSION_H_
 
 #define VERSION   "0.05."
+#define PROTOCOL_VERESION "0.10.0"
 
-#endif
+#endif //_VERSION_H_

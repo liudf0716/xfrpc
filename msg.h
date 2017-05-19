@@ -59,6 +59,25 @@ struct control_response {
 	char	*msg;
 };
 
+
+struct login {
+	char		*version;
+	char		*hostname;
+	char 		*os;
+	char		*arch;
+	char 		*user;
+	char 		*privilege_key;
+	long int 	timestamp;
+	char 		*run_id;
+	int 		*pool_count;
+};
+
+struct login_resp {
+	char 	*version;
+	char	*run_id;
+	char 	*error;
+};
+
 // tranlate control request to json string
 int control_request_marshal(const struct control_request *req, char **msg);
 

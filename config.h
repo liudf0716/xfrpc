@@ -66,4 +66,6 @@ struct proxy_client *get_all_pc();
 
 void load_config(const char *confile);
 
-#endif
+char *get_run_id();
+
+#endif //_CONFIG_H_

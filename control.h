@@ -24,13 +24,21 @@
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
+#ifndef	_CONTROL_H_
+#define	_CONTROL_H_
+
+#include "const.h"
+
 struct proxy_client;
 struct bufferevent;
 struct event_base;
 enum msg_type;
 
+void start_login_frp_server(struct event_base *base);
 void control_process(struct proxy_client *client);
 
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
 
 void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev);
+
+#endif //_CONTROL_H_

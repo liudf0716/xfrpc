@@ -36,5 +36,7 @@ struct frame {
 // )
 struct frame *new_frame(char cmd, uint32_t sid);
 int get_header_size();
+struct frame *raw_frame(char *buf, const size_t buf_len);
+void free_frame(struct frame *f);
 
 #endif //_FRAME_H_

@@ -290,7 +290,22 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		}
 		printf("]\n");
 		/* debug show over */
-		
+		struct frame *f = raw_frame(buf, len);
+		if (f == NULL) {
+			debug(LOG_ERR, "raw_frame faild!");
+			return;
+		}
+
+		switch(f->cmd) {
+			case cmdNOP:
+				break;
+			case cmdSYN:
+				break;
+			case cmdFIN:
+			case cmdPSH:
+				break;
+		}
+
 		
 
 

@@ -60,6 +60,7 @@
 
 
 static struct control *main_ctl;
+static char *request_buf;
 
 static void start_xfrp_client(struct event_base *base)
 {
@@ -312,40 +313,51 @@ static void login_xfrp_read_msg_cb2(struct bufferevent *bev, void *ctx)
 // 	}
 // }
 
-
-static void open_session(struct bufferevent *bev)
-{
+static int 
+request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
 	} else {
-		return;
+		return 0;
 	}
+	
+	int headersize = get_header_size();
+	size_t len = (1<<16) + headersize;
+
+	memset(request_buf, 0, len);
+	request_buf[0] = f->ver;
+	request_buf[1] = f->cmd;
+	*(ushort *)(request_buf + 2) = f_data_len;
+	*(uint32_t *)(request_buf + 4) = f->sid;
+
+	size_t write_len = (size_t) (headersize + f_data_len);
+
+	bufferevent_write(bout, request_buf, write_len);
+	// bufferevent_write(bout, "\n", 1);
+	debug(LOG_DEBUG, 
+			"Send [%d] bits to frp server [%s]", 
+			write_len, 
+			request_buf);
+
+	unsigned int i = 0;
+	printf("[");
+	for(i = 0; i<headersize; i++) {
+		printf("%d ", request_buf[i]);
+	}
+	printf("]\n");
+}
+
+static void open_session(struct bufferevent *bev)
+{
+	struct bufferevent *bout = NULL;
+	if ( ! bev) 
+		return;
 
 	main_ctl->session_id += 2;
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
-
-	int headersize = get_header_size();
-	size_t len = (1<<16) + headersize;
-	char *buf = calloc(len, 1);
-
-	buf[0] = f->ver;
-	buf[1] = f->cmd;
-	*(uint32_t *)(buf + 4) = f->sid;
-	bufferevent_write(bout, buf, 2);
-	// bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, "Send msg to frp server [%s]", buf);
-
-	int i = 0;
-	for(i; i<headersize; i++) {
-		printf("%d\t", buf[i]);
-	}
-
-	printf("\n");
-	// free(lg_msg);
-	// TODO CONTROL FREE
-	// control_request_free(lg_msg); // free control request
+	request(bev, f, 0);
 }
 
 
@@ -451,6 +463,11 @@ int init_main_control() {
 		return 1;
 	}
 	main_ctl->connect_base = base;
+
+	size_t len = (1<<16) + get_header_size();
+	request_buf = calloc(len, 1);
+	assert(request_buf);
+
 #ifdef CLIENT
 	main_ctl->session_id = 1;
 #elif SERVER

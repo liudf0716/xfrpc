@@ -29,3 +29,10 @@
 #include "session.h"
 #include "uthash.h"
 
+void new_session() {
+
+}
+
+void keepalive() {
+
+}

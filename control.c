@@ -60,14 +60,18 @@
 
 static struct control *main_ctl;
 
-struct control *init_main_control() {
-	main_ctl = calloc(sizeof(struct control), 1);
-	
-	return main_ctl;
-}
 
-struct control *get_main_control() {
-	return main_ctl;
+static void start_xfrp_client(struct event_base *base)
+{
+	struct proxy_client *all_pc = get_all_pc();
+	struct proxy_client *pc = NULL, *tmp = NULL;
+	
+	debug(LOG_INFO, "Start xfrp client");
+	
+	HASH_ITER(hh, all_pc, pc, tmp) {
+		pc->base = base;
+		control_process(pc);
+	}
 }
 
 static char *calc_md5(const char *data, int datalen)
@@ -314,11 +318,27 @@ static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
 	} else if (what & BEV_EVENT_CONNECTED) {
-		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
+		debug(LOG_INFO, "Xfrp connected!");
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
 		send_login_frp_server(bev);
+		//TODO : SESSION
+		// send_msg_frp_server(NewCtlConn, client, NULL);
+	}
+}
+
+static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
+{
+	struct common_conf 	*c_conf = get_common_config();
+	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
+	} else if (what & BEV_EVENT_CONNECTED) {
+		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
+		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
+		bufferevent_enable(bev, EV_READ|EV_WRITE);
+		
+		// send_login_frp_server(bev);
 		// send_msg_frp_server(NewCtlConn, client, NULL);
 	}
 }
@@ -339,6 +359,8 @@ static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
 // 	bufferevent_setcb(bev, NULL, NULL, login_xfrp_event_cb, client);
 // }
 
+
+
 void start_login_frp_server(struct event_base *base)
 {
 	struct common_conf *c_conf = get_common_config();
@@ -352,7 +374,7 @@ void start_login_frp_server(struct event_base *base)
 
 	// client->ctl_bev = bev;
 	bufferevent_enable(bev, EV_WRITE|EV_READ);
-	bufferevent_setcb(bev, NULL, NULL, login_event_cb, NULL);
+	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
 }
 
 void control_process(struct proxy_client *client)
@@ -360,4 +382,51 @@ void control_process(struct proxy_client *client)
 	// login_frp_server(client);
 	
 	heartbeat_sender(client);	
+}
+
+static void start_base_connect() {
+	struct common_conf *c_conf = get_common_config();
+	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
+												c_conf->server_addr, 
+												c_conf->server_port);
+
+	if ( ! main_ctl->connect_bev) {
+		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		return;
+	}
+
+	debug(LOG_INFO, "Xfrpc: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
+
+	// client->ctl_bev = bev;
+	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
+	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, login_event_cb, NULL);
+}
+
+int init_main_control() {
+	main_ctl = calloc(sizeof(struct control), 1);
+	assert(main_ctl);
+	struct event_base *base = NULL;
+	base = event_base_new();
+	if (!base) {
+		debug(LOG_ERR, "event_base_new() error");
+		return 1;
+	}
+	main_ctl->connect_base = base;
+	return 0;
+}
+
+struct control *get_main_control() {
+	return main_ctl;
+}
+
+void close_main_control() {
+	assert(main_ctl);
+
+	event_base_dispatch(main_ctl->connect_base);
+	event_base_free(main_ctl->connect_base);
+}
+
+void run_control() {
+	start_base_connect();
+	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

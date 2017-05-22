@@ -49,37 +49,21 @@
 #include "xfrp_client.h"
 #include "msg.h"
 
-static void start_xfrp_client(struct event_base *base)
-{
-	struct proxy_client *all_pc = get_all_pc();
-	struct proxy_client *pc = NULL, *tmp = NULL;
-	
-	debug(LOG_INFO, "Start xfrp client");
-	
-	HASH_ITER(hh, all_pc, pc, tmp) {
-		pc->base = base;
-		control_process(pc);
-	}
-}
-
 void xfrp_client_loop()
 {
-	struct event_base *base = NULL;
-	
-	base = event_base_new();
-	if (!base) {
-		debug(LOG_ERR, "event_base_new() error");
-		exit(0);
-	}	
-	
-	start_login_frp_server(base);
-	start_xfrp_client(base);
-	if (base) {
-		printf("base 在\n");
-	} else {
-		printf("base 不在\n");
+	int ctl_ret = init_main_control();
+	if (ctl_ret) {
+		debug(LOG_ERR, "xfrp init faild");
 	}
-	event_base_dispatch(base);
+
+	run_control();
 	
-	event_base_free(base);
+	// start_xfrp_client(base);
+	// if (base) {
+	// 	printf("base 在\n");
+	// } else {
+	// 	printf("base 不在\n");
+	// }
+
+	close_main_control();
 }

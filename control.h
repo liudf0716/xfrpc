@@ -37,10 +37,13 @@ enum msg_type;
 
 struct control {
 	struct event_base 	*connect_base;  //main netevent base
+    struct bufferevent  *connect_bev;    //main io evet buf
 };
 
-struct control *init_main_control();
+int init_main_control();
+void run_control();
 struct control *get_main_control();
+void close_main_control();
 void start_login_frp_server(struct event_base *base);
 void send_login_frp_server(struct bufferevent *bev);
 void control_process(struct proxy_client *client);

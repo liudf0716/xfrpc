@@ -4,6 +4,7 @@
 [![license][3]][4]
 [![Build Status][1]][2] 
 [![PRs Welcome][5]][6]
+[![Supported][7]][8]
 
 [1]: https://travis-ci.org/KunTengRom/xfrp.svg?branch=master
 [2]: https://travis-ci.org/KunTengRom/xfrp
@@ -11,6 +12,8 @@
 [4]: https://github.com/KunTengRom/xfrp/blob/master/LICENSE
 [5]: https://img.shields.io/badge/PRs-welcome-brightgreen.svg
 [6]: https://github.com/KunTengRom/xfrp/pulls
+[7]: https://img.shields.io/badge/FRP-Supported-blue.svg?style=flat
+[8]: https://github.com/fatedier/frp
 
 ## What is xfrp and why start xfrp
 

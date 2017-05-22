@@ -3,8 +3,10 @@
 
 [![license][3]][4]
 [![Build Status][1]][2] 
-[![PRs Welcome][5]][6]
 [![Supported][7]][8]
+[![PRs Welcome][5]][6]
+[![Issue Welcome][9]][10]
+[![OpenWRT][11]][12]
 
 [1]: https://travis-ci.org/KunTengRom/xfrp.svg?branch=master
 [2]: https://travis-ci.org/KunTengRom/xfrp
@@ -14,6 +16,10 @@
 [6]: https://github.com/KunTengRom/xfrp/pulls
 [7]: https://img.shields.io/badge/FRP-Supported-blue.svg?style=flat
 [8]: https://github.com/fatedier/frp
+[9]: https://img.shields.io/badge/Issues-welcome-brightgreen.svg?style=flat
+[10]: https://github.com/KunTengRom/xfrp/issues/new
+[11]: https://img.shields.io/badge/Platform-%20OpenWRT%20%7CLEDE%20-brightgreen.svg
+[12]: https://github.com/gigibox/openwrt-xkcptun
 
 ## What is xfrp and why start xfrp
 

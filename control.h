@@ -28,12 +28,19 @@
 #define	_CONTROL_H_
 
 #include "const.h"
+#include "uthash.h"
 
 struct proxy_client;
 struct bufferevent;
 struct event_base;
 enum msg_type;
 
+struct control {
+	struct event_base 	*connect_base;  //main netevent base
+};
+
+struct control *init_main_control();
+struct control *get_main_control();
 void start_login_frp_server(struct event_base *base);
 void send_login_frp_server(struct bufferevent *bev);
 void control_process(struct proxy_client *client);

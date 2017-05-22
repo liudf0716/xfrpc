@@ -269,19 +269,37 @@ static void heartbeat_sender(struct proxy_client *client)
 // 	control_response_free(c_res);
 // }
 
-// static void login_xfrp_read_msg_cb(struct bufferevent *bev, void *ctx)
-// {
-// 	struct evbuffer *input = bufferevent_get_input(bev);
-// 	int len = evbuffer_get_length(input);
-// 	if (len <= 0)
-// 		return;
+static void recv_cb(struct bufferevent *bev, void *ctx)
+{
+	struct evbuffer *input = bufferevent_get_input(bev);
+	int len = evbuffer_get_length(input);
+	if (len <= 0)
+		return;
 	
-// 	char *buf = calloc(1, len+1);
-// 	if (evbuffer_remove(input, buf, len) > 0) { 
-// 		process_frp_msg(buf, ctx);
-// 	}
-// 	free(buf);
-// }
+	char *buf = calloc(1, len+1);
+	if (evbuffer_remove(input, buf, len) > 0) { 
+		debug(LOG_DEBUG, 
+			"recv [%d] bits from frp server", 
+			len);
+
+		/* debug showing */
+		unsigned int i = 0;
+		printf("[");
+		for(i = 0; i<len; i++) {
+			printf("%d ", buf[i]);
+		}
+		printf("]\n");
+		/* debug show over */
+		
+		
+
+
+	} else {
+		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
+	}
+
+	free(buf);
+}
 
 
 static void login_xfrp_read_msg_cb2(struct bufferevent *bev, void *ctx)
@@ -326,8 +344,8 @@ request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
 	size_t len = (1<<16) + headersize;
 
 	memset(request_buf, 0, len);
-	request_buf[0] = f->ver;
-	request_buf[1] = f->cmd;
+	request_buf[VERI] = f->ver;
+	request_buf[CMDI] = f->cmd;
 	*(ushort *)(request_buf + 2) = f_data_len;
 	*(uint32_t *)(request_buf + 4) = f->sid;
 
@@ -385,7 +403,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
-		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
+		bufferevent_setcb(bev, recv_cb, NULL, login_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
 		open_session(bev);

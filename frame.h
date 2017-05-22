@@ -6,6 +6,11 @@
 
 #include "uthash.h"
 
+#define VERI 0
+#define CMDI 1
+#define LENI 2
+#define SIDI 4
+
 // cmds
 enum cmd_type {
 	cmdSYN  = 0, 		// stream open
@@ -17,6 +22,7 @@ enum cmd_type {
 struct frame {
 	char ver;
 	char cmd;
+	ushort len;
 	uint32_t sid;
 	char *data;
 };

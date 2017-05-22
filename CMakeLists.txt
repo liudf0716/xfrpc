@@ -11,6 +11,7 @@ set(src_xfrp_client
   	client.c
   	config.c
   	control.c
+	frame.c
   	ini.c
   	msg.c
 	xfrp_client.c

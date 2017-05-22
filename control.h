@@ -30,6 +30,8 @@
 #include "const.h"
 #include "uthash.h"
 
+#define CLIENT 1
+
 struct proxy_client;
 struct bufferevent;
 struct event_base;
@@ -38,6 +40,7 @@ enum msg_type;
 struct control {
 	struct event_base 	*connect_base;  //main netevent base
     struct bufferevent  *connect_bev;    //main io evet buf
+    char                session_id;
 };
 
 int init_main_control();

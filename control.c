@@ -56,10 +56,10 @@
 #include "msg.h"
 #include "control.h"
 #include "uthash.h"
+#include "frame.h"
 
 
 static struct control *main_ctl;
-
 
 static void start_xfrp_client(struct event_base *base)
 {
@@ -312,6 +312,43 @@ static void login_xfrp_read_msg_cb2(struct bufferevent *bev, void *ctx)
 // 	}
 // }
 
+
+static void open_session(struct bufferevent *bev)
+{
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		return;
+	}
+
+	main_ctl->session_id += 2;
+	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
+	assert(f);
+
+	int headersize = get_header_size();
+	size_t len = (1<<16) + headersize;
+	char *buf = calloc(len, 1);
+
+	buf[0] = f->ver;
+	buf[1] = f->cmd;
+	*(uint32_t *)(buf + 4) = f->sid;
+	bufferevent_write(bout, buf, 2);
+	// bufferevent_write(bout, "\n", 1);
+	debug(LOG_DEBUG, "Send msg to frp server [%s]", buf);
+
+	int i = 0;
+	for(i; i<headersize; i++) {
+		printf("%d\t", buf[i]);
+	}
+
+	printf("\n");
+	// free(lg_msg);
+	// TODO CONTROL FREE
+	// control_request_free(lg_msg); // free control request
+}
+
+
 static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();
@@ -328,6 +365,7 @@ static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
+// copy from login_event_cb
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();
@@ -338,6 +376,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
+		open_session(bev);
 		// send_login_frp_server(bev);
 		// send_msg_frp_server(NewCtlConn, client, NULL);
 	}
@@ -399,7 +438,7 @@ static void start_base_connect() {
 
 	// client->ctl_bev = bev;
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
-	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, login_event_cb, NULL);
+	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
 }
 
 int init_main_control() {
@@ -412,6 +451,13 @@ int init_main_control() {
 		return 1;
 	}
 	main_ctl->connect_base = base;
+#ifdef CLIENT
+	main_ctl->session_id = 1;
+#elif SERVER
+	main_ctl->session_id = 0;
+#endif
+
+	debug(LOG_DEBUG, "Connect session_id %d", main_ctl->session_id);
 	return 0;
 }
 

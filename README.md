@@ -19,7 +19,7 @@
 [9]: https://img.shields.io/badge/Issues-welcome-brightgreen.svg?style=flat
 [10]: https://github.com/KunTengRom/xfrp/issues/new
 [11]: https://img.shields.io/badge/Platform-%20OpenWRT%20%7CLEDE%20-brightgreen.svg
-[12]: https://github.com/gigibox/openwrt-xkcptun
+[12]: https://github.com/KunTengRom/LEDE
 
 ## What is xfrp and why start xfrp
 

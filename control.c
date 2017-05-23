@@ -101,7 +101,7 @@ static char *get_auth_key(const char *name, const char *token)
 }
 
 static int 
-request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
+request(struct bufferevent *bev, struct frame *f) {
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
@@ -119,10 +119,11 @@ request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
 	memset(request_buf, 0, len);
 	request_buf[VERI] = f->ver;
 	request_buf[CMDI] = f->cmd;
-	*(ushort *)(request_buf + 2) = f_data_len;
-	*(uint32_t *)(request_buf + 4) = f->sid;
-
-	size_t write_len = (size_t) (headersize + f_data_len);
+	debug(LOG_DEBUG, "request data len = %u", f->len);
+	*((ushort *)(request_buf + 2)) = f->len;
+	*((uint32_t *)(request_buf + 4)) = f->sid;
+	
+	size_t write_len = (size_t) (headersize + f->len);
 
 	bufferevent_write(bout, request_buf, write_len);
 	// bufferevent_write(bout, "\n", 1);
@@ -133,8 +134,15 @@ request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
 
 	unsigned int i = 0;
 	printf("[");
-	for(i = 0; i<headersize; i++) {
-		printf("%d ", request_buf[i]);
+	for(i = 0; i<write_len; i++) {
+		if (i == 0 || i == 1)
+			printf("%d ", request_buf[i]);
+		else if (i == 2)
+			printf("%u ", *(ushort *)(request_buf + i));
+		else if (i == 4)
+			printf("%u ", request_buf[i]);
+		else if (i>=8)
+			printf("%d ", request_buf[i]);
 	}
 	printf("]\n");
 }
@@ -227,7 +235,7 @@ static void ping(struct bufferevent *bev)
 	struct frame *f = new_frame(cmdNOP, 0);
 	assert(f);
 
-	request(bout, f, 0);
+	request(bout, f);
 }
 
 // void send_m2sg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
@@ -324,7 +332,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		unsigned int i = 0;
 		printf("[");
 		for(i = 0; i<len; i++) {
-			printf("%d ", buf[i]);
+			printf("%x ", buf[i]);
 		}
 		printf("]\n");
 		/* debug show over */
@@ -390,7 +398,7 @@ static void open_session(struct bufferevent *bev)
 	main_ctl->session_id += 2;
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
-	request(bev, f, 0);
+	request(bev, f);
 }
 
 
@@ -422,6 +430,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
 		open_session(bev);
+		login();
 		// send_login_frp_server(bev);
 		// send_msg_frp_server(NewCtlConn, client, NULL);
 	}
@@ -500,7 +509,8 @@ void
 send_msg_frp_server(struct bufferevent *bev, 
 					const enum msg_type type, 
 					const char *msg, 
-					const size_t msg_len)
+					const size_t msg_len, 
+					uint32_t sid)
 {
 	debug(LOG_DEBUG, "send message to frps ...");
 	struct bufferevent *bout = NULL;
@@ -515,10 +525,12 @@ send_msg_frp_server(struct bufferevent *bev,
 	debug(LOG_DEBUG, "send message type is [%c]", type);
 
 	struct message req_msg;
-
+	char frame_type = 0;
+	struct frame *f = NULL;
 	switch (type)
 	{
 	case TypeLogin:
+		frame_type = cmdPSH;
 		req_msg.type = TypeLogin;
 
 		req_msg.data_len = msg_len;
@@ -541,14 +553,18 @@ send_msg_frp_server(struct bufferevent *bev,
 		}
 		printf("]\n");
 		/* debug show over */
+
+		f = new_frame(frame_type, sid);
+		assert(f);
+		f->len = (ushort) pack_buf_len;
+		f->data = strdup(puck_buf);
 		break;
 	default:
 		break;
 	}
-
-
+	printf("request length:%d\n", (ushort) f->len);
+	request(bout, f);
 }
-
 
 void login()
 {
@@ -560,7 +576,7 @@ void login()
 		assert(lg_msg);
 	}
 
-	send_msg_frp_server(NULL, TypeLogin, lg_msg, len);
+	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
 }
 
 void start_login_frp_server(struct event_base *base)
@@ -628,6 +644,5 @@ void close_main_control()
 void run_control() {
 	start_base_connect();
 	keep_alive();
-	login();
 	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

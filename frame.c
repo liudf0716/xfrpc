@@ -16,6 +16,7 @@ struct frame *new_frame(char cmd, uint32_t sid) {
 		f->ver = version;
 		f->cmd = cmd;
 		f->sid = sid;
+		f->len = 0;
 	}
 
 	return f;
@@ -31,6 +32,7 @@ struct frame *raw_frame(char *buf, const size_t buf_len) {
 	uint32_t sid = *(uint32_t *)(buf + SIDI);
 
 	struct frame *f = new_frame(cmd, sid);
+	f->ver = ver;
 	f->len = *(ushort *)(buf + LENI);
 	f->data = buf_len > header_size ? buf + header_size : NULL;
 

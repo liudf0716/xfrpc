@@ -100,6 +100,41 @@ static char *get_auth_key(const char *name, const char *token)
 	return calc_md5(seed, strlen(seed));
 }
 
+static int 
+request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		return 0;
+	}
+	
+	int headersize = get_header_size();
+	size_t len = (1<<16) + headersize;
+
+	memset(request_buf, 0, len);
+	request_buf[VERI] = f->ver;
+	request_buf[CMDI] = f->cmd;
+	*(ushort *)(request_buf + 2) = f_data_len;
+	*(uint32_t *)(request_buf + 4) = f->sid;
+
+	size_t write_len = (size_t) (headersize + f_data_len);
+
+	bufferevent_write(bout, request_buf, write_len);
+	// bufferevent_write(bout, "\n", 1);
+	debug(LOG_DEBUG, 
+			"Send [%d] bits to frp server [%s]", 
+			write_len, 
+			request_buf);
+
+	unsigned int i = 0;
+	printf("[");
+	for(i = 0; i<headersize; i++) {
+		printf("%d ", request_buf[i]);
+	}
+	printf("]\n");
+}
+
 static struct control_request *
 get_control_request(enum msg_type type, const struct proxy_client *client)
 {
@@ -172,45 +207,44 @@ control_request_free(struct control_request *req)
 	free(req);
 }
 
-void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
-{
-	char *msg = NULL;
-	struct control_request *req = get_control_request(type, client); // get control request by client
-	int len = control_request_marshal(req, &msg); // marshal control request to json string
-	assert(msg);
-	struct bufferevent *bout = NULL;
-	if (bev) {
-		bout = bev;
-	} else {
-		bout = client->ctl_bev;
-	}
-	bufferevent_write(bout, msg, len);
-	bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, "Send msg to frp server [%s]", msg);
-	free(msg);
-	control_request_free(req); // free control request
-}
 
-void send_login_frp_server(struct bufferevent *bev)
+static void ping(struct bufferevent *bev)
 {
-	char *lg_msg = NULL;
-	int len = login_request_marshal(&lg_msg); // marshal login request to json string
-	assert(lg_msg);
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
 	} else {
+		bout = main_ctl->connect_bev;
+	}
+
+	if ( ! bout) 
 		return;
-	}
+	
+	struct frame *f = new_frame(cmdNOP, 0);
+	assert(f);
 
-	bufferevent_write(bout, lg_msg, len);
-	bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, "Send msg to frp server [%s]", lg_msg);
-	// free(lg_msg);
-	// TODO CONTROL FREE
-	// control_request_free(lg_msg); // free control request
+	request(bout, f, 0);
 }
 
+// void send_m2sg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
+// {
+// 	debug(LOG_DEBUG, "send ping ...");
+// 	char *msg = NULL;
+// 	struct control_request *req = get_control_request(type, client); // get control request by client
+// 	int len = control_request_marshal(req, &msg); // marshal control request to json string
+// 	assert(msg);
+// 	struct bufferevent *bout = NULL;
+// 	if (bev) {
+// 		bout = bev;
+// 	} else {
+// 		bout = client->ctl_bev;
+// 	}
+// 	bufferevent_write(bout, msg, len);
+// 	bufferevent_write(bout, "\n", 1);
+// 	debug(LOG_DEBUG, "Send msg to frp server [%s]", msg);
+// 	free(msg);
+// 	control_request_free(req); // free control request
+// }
 // connect to server
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
 {
@@ -225,7 +259,7 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 	return bev;
 }
 
-static void set_heartbeat_interval(struct event *timeout)
+static void set_ticker_ping_timer(struct event *timeout)
 {
 	struct timeval tv;
 	struct common_conf *c_conf = get_common_config();
@@ -238,15 +272,15 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
 	struct proxy_client *client = arg;
 	
-	send_msg_frp_server(TypeLogin, client, NULL);
+	ping(NULL);
 	
-	set_heartbeat_interval(client->ev_timeout);	
+	set_ticker_ping_timer(main_ctl->ticker_ping);	
 }
 
 static void heartbeat_sender(struct proxy_client *client)
 {
 	client->ev_timeout = evtimer_new(client->base, hb_sender_cb, client);
-	set_heartbeat_interval(client->ev_timeout);
+	set_ticker_ping_timer(client->ev_timeout);
 }
 
 // static void process_frp_msg(char *res, struct proxy_client *client)
@@ -297,17 +331,14 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		}
 
 		switch(f->cmd) {
-			case cmdNOP:
+			case cmdNOP: //no nothing
 				break;
-			case cmdSYN:
+			case cmdSYN: //no nothing now
 				break;
 			case cmdFIN:
 			case cmdPSH:
 				break;
 		}
-
-		
-
 
 	} else {
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
@@ -345,41 +376,6 @@ static void login_xfrp_read_msg_cb2(struct bufferevent *bev, void *ctx)
 // 		send_msg_frp_server(TypeLogin, client, NULL);
 // 	}
 // }
-
-static int 
-request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
-	struct bufferevent *bout = NULL;
-	if (bev) {
-		bout = bev;
-	} else {
-		return 0;
-	}
-	
-	int headersize = get_header_size();
-	size_t len = (1<<16) + headersize;
-
-	memset(request_buf, 0, len);
-	request_buf[VERI] = f->ver;
-	request_buf[CMDI] = f->cmd;
-	*(ushort *)(request_buf + 2) = f_data_len;
-	*(uint32_t *)(request_buf + 4) = f->sid;
-
-	size_t write_len = (size_t) (headersize + f_data_len);
-
-	bufferevent_write(bout, request_buf, write_len);
-	// bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, 
-			"Send [%d] bits to frp server [%s]", 
-			write_len, 
-			request_buf);
-
-	unsigned int i = 0;
-	printf("[");
-	for(i = 0; i<headersize; i++) {
-		printf("%d ", request_buf[i]);
-	}
-	printf("]\n");
-}
 
 static void open_session(struct bufferevent *bev)
 {
@@ -444,6 +440,46 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 // }
 
 
+void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
+{
+	debug(LOG_DEBUG, "send ping ...");
+	char *msg = NULL;
+	struct control_request *req = get_control_request(type, client); // get control request by client
+	int len = control_request_marshal(req, &msg); // marshal control request to json string
+	assert(msg);
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = client->ctl_bev;
+	}
+	bufferevent_write(bout, msg, len);
+	bufferevent_write(bout, "\n", 1);
+	debug(LOG_DEBUG, "Send msg to frp server [%s]", msg);
+	free(msg);
+	control_request_free(req); // free control request
+}
+
+void send_login_frp_server(struct bufferevent *bev)
+{
+	char *lg_msg = NULL;
+	int len = login_request_marshal(&lg_msg); // marshal login request to json string
+	assert(lg_msg);
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		return;
+	}
+
+	bufferevent_write(bout, lg_msg, len);
+	bufferevent_write(bout, "\n", 1);
+	debug(LOG_DEBUG, "Send msg to frp server [%s]", lg_msg);
+	// free(lg_msg);
+	// TODO CONTROL FREE
+	// control_request_free(lg_msg); // free control request
+}
+
 
 void start_login_frp_server(struct event_base *base)
 {
@@ -468,7 +504,8 @@ void control_process(struct proxy_client *client)
 	heartbeat_sender(client);	
 }
 
-static void start_base_connect() {
+static void start_base_connect() 
+{
 	struct common_conf *c_conf = get_common_config();
 	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
 												c_conf->server_addr, 
@@ -486,7 +523,21 @@ static void start_base_connect() {
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
 }
 
-int init_main_control() {
+static void keep_alive() 
+{
+	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, 
+									hb_sender_cb, 
+									NULL);
+	if ( ! main_ctl->ticker_ping) {
+		debug(LOG_ERR, "Ping Ticker init failed!");
+		return;
+	}
+	set_ticker_ping_timer(main_ctl->ticker_ping);
+	
+}
+
+int init_main_control() 
+{
 	main_ctl = calloc(sizeof(struct control), 1);
 	assert(main_ctl);
 	struct event_base *base = NULL;
@@ -511,11 +562,13 @@ int init_main_control() {
 	return 0;
 }
 
-struct control *get_main_control() {
+struct control *get_main_control() 
+{
 	return main_ctl;
 }
 
-void close_main_control() {
+void close_main_control() 
+{
 	assert(main_ctl);
 
 	event_base_dispatch(main_ctl->connect_base);
@@ -524,5 +577,6 @@ void close_main_control() {
 
 void run_control() {
 	start_base_connect();
+	keep_alive();
 	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

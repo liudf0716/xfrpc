@@ -29,7 +29,6 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
-#include <time.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -45,8 +44,6 @@
 #include <event2/util.h>
 #include <event2/event.h>
 #include <event2/event_struct.h>
-
-#include <openssl/md5.h>
 
 #include "debug.h"
 #include "client.h"
@@ -75,30 +72,13 @@ static void start_xfrp_client(struct event_base *base)
 	}
 }
 
-static char *calc_md5(const char *data, int datalen)
-{
-	unsigned char digest[16] = {0};
-	char *out = (char*)malloc(33);
-	MD5_CTX md5;
+// static char *get_auth_key(const char *token)
+// {
+// 	char seed[128] = {0};
+// 	snprintf(seed, 128, "%s%ld", token, time(NULL));
 	
-	MD5_Init(&md5);
-	MD5_Update(&md5, data, datalen);
-	MD5_Final(digest, &md5);
-	
-	for (int n = 0; n < 16; ++n) {
-        snprintf(&(out[n*2]), 3, "%02x", (unsigned int)digest[n]);
-    }
-
-    return out;
-}
-
-static char *get_auth_key(const char *name, const char *token)
-{
-	char seed[128] = {0};
-	snprintf(seed, 128, "%s%s%ld", name, token, time(NULL));
-	
-	return calc_md5(seed, strlen(seed));
-}
+// 	return calc_md5(seed, strlen(seed));
+// }
 
 static int 
 request(struct bufferevent *bev, struct frame *f) {
@@ -123,7 +103,7 @@ request(struct bufferevent *bev, struct frame *f) {
 		printf("]\n");
 		/* debug show over */
 	}
-	
+
 	int headersize = get_header_size();
 	size_t len = (1<<16) + headersize;
 
@@ -138,7 +118,6 @@ request(struct bufferevent *bev, struct frame *f) {
 		memcpy(request_buf + DATAI, f->data, f->len);
 	}
 
-	
 	size_t write_len = (size_t) (headersize + f->len);
 
 	bufferevent_write(bout, request_buf, write_len);
@@ -160,6 +139,9 @@ request(struct bufferevent *bev, struct frame *f) {
 			printf("%d ", request_buf[i]);
 	}
 	printf("]\n");
+
+	memset(request_buf, 0, len);
+	return len;
 }
 
 static struct control_request *
@@ -207,9 +189,9 @@ get_control_request(enum msg_type type, const struct proxy_client *client)
 	req->privilege_mode = client->bconf->privilege_mode;
 	req->timestamp = ntime;
 	if (req->privilege_mode) {
-		req->privilege_key = get_auth_key(client->name, client->bconf->privilege_token);
+		req->privilege_key = get_auth_key(client->bconf->privilege_token);
 	} else {
-		req->auth_key = get_auth_key(client->name, client->bconf->auth_token);
+		req->auth_key = get_auth_key(client->bconf->auth_token);
 	}
 	return req;
 }
@@ -330,6 +312,11 @@ static void heartbeat_sender(struct proxy_client *client)
 // 	control_response_free(c_res);
 // }
 
+static void recv_data_push(struct frame *f) 
+{
+	
+}
+
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
@@ -364,6 +351,9 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				break;
 			case cmdFIN:
 			case cmdPSH:
+				if (f->data == NULL)
+					break;
+				
 				break;
 		}
 

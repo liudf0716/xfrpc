@@ -39,6 +39,9 @@
 #include "config.h"
 #include "frame.h"
 
+#define MSG_TYPE_I 	0
+#define MSG_LEN_I 	1
+
 
 uint64_t
 ntoh64(const uint64_t *input)
@@ -63,49 +66,6 @@ hton64(const uint64_t *input)
 {
     return (ntoh64(input));
 }
-
-
-/*
-const (
-	TypeLogin         = 'o'
-	TypeLoginResp     = '1'
-	TypeNewProxy      = 'p'
-	TypeNewProxyResp  = '2'
-	TypeNewWorkConn   = 'w'
-	TypeReqWorkConn   = 'r'
-	TypeStartWorkConn = 's'
-	TypePing          = 'h'
-	TypePong          = '4'
-	TypeUdpPacket     = 'u'
-)
-*/
-
-
-/*
-struct login {
-	char		*version;
-	char		*hostname;
-	char 		*os;
-	char		*arch;
-	char 		*user;
-	char 		*privilege_key;
-	long int 	timestamp;
-	char 		*run_id;
-	int 		*pool_count;
-};
-
-	lg->version 		= strdup(PROTOCOL_VERESION);
-	lg->hostname 		= NULL;
-	lg->os 				= strdup(uname_buf.sysname);
-	lg->arch 			= strdup(uname_buf.machine);
-	lg->user 			= NULL;
-
-	lg->timestamp 		= time(NULL);
-	lg->run_id 			= NULL;
-	lg->pool_count 		= 0;//TODO
-	lg->privilege_key 	= NULL; //TODO
-*/
-
 
 #define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
@@ -270,6 +230,17 @@ void control_response_free(struct control_response *res)
 	free(res);
 }
 
+struct message *unpack(char *recv_msg, ushort len)
+{
+	struct message *msg = calloc(sizeof(struct message), 1);
+	if ( ! msg) 
+		return NULL;
+
+	
+
+	return msg;
+}
+
 size_t pack(struct message *req_msg, char **ret_buf)
 {
 	uint64_t  big_endian;
@@ -294,8 +265,8 @@ size_t pack(struct message *req_msg, char **ret_buf)
 		return 0;
 	}
 
-	**ret_buf = req_msg->type;
-	*(uint64_t *)(*ret_buf + 1) = big_endian;
+	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
+	*(uint64_t *)(*ret_buf + MSG_LEN_I) = big_endian;
 	snprintf(*ret_buf + TYPE_LEN + sizeof(big_endian), 
 				req_msg->data_len + 1, 
 				"%s", 

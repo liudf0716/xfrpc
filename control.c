@@ -400,7 +400,7 @@ static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
-		send_login_frp_server(bev);
+		// send_login_frp_server(bev);
 		//TODO : SESSION
 		// send_msg_frp_server(NewCtlConn, client, NULL);
 	}
@@ -440,7 +440,8 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 // }
 
 
-void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
+
+void send_msg_2_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
 {
 	debug(LOG_DEBUG, "send ping ...");
 	char *msg = NULL;
@@ -460,26 +461,44 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, 
 	control_request_free(req); // free control request
 }
 
-void send_login_frp_server(struct bufferevent *bev)
+
+void send_msg_frp_server(enum msg_type type, struct bufferevent *bev)
 {
-	char *lg_msg = NULL;
-	int len = login_request_marshal(&lg_msg); // marshal login request to json string
-	assert(lg_msg);
+	debug(LOG_DEBUG, "send message to frps ...");
+	char *msg = NULL;
+	// struct control_request *req = get_control_request(type, client); // get control request by client
+	// int len = control_request_marshal(req, &msg); // marshal control request to json string
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
 	} else {
-		return;
+		bout = main_ctl->connect_bev;
 	}
 
-	bufferevent_write(bout, lg_msg, len);
-	bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, "Send msg to frp server [%s]", lg_msg);
-	// free(lg_msg);
-	// TODO CONTROL FREE
-	// control_request_free(lg_msg); // free control request
+	switch (type)
+	{
+	case TypeLogin:
+		break;
+	default:
+		break;
+	}
 }
 
+
+void login(struct bufferevent *bev)
+{
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = main_ctl->connect_bev;
+	}
+
+	char *lg_msg = NULL;
+	int len = login_request_marshal(&lg_msg); // marshal login request to json string
+	assert(lg_msg);
+
+}
 
 void start_login_frp_server(struct event_base *base)
 {

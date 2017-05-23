@@ -28,10 +28,12 @@
 #include <stdio.h>
 #include <json-c/json.h>
 #include <json-c/bits.h>
+#include <stdint.h>
 
 #include "msg.h"
 #include "const.h"
 #include "config.h"
+#include "frame.h"
 
 /*
 const (
@@ -73,6 +75,7 @@ struct login {
 	lg->pool_count 		= 0;//TODO
 	lg->privilege_key 	= NULL; //TODO
 */
+
 
 #define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
@@ -203,4 +206,22 @@ void control_response_free(struct control_response *res)
 	if (res->msg) free(res->msg);
 	
 	free(res);
+}
+
+int pack(struct message *msg, char **ret_buf)
+{
+	uint64_t  big_endian;
+	size_t buf_len = TYPE_LEN + sizeof(big_endian) + msg->data_len + 1;
+	big_endian = htobe64((uint64_t)msg->data_len);
+	*ret_buf = calloc(buf_len, 1);
+
+	if (*ret_buf == NULL) {
+		return 0;
+	}
+
+	**ret_buf = msg->type;
+	*(uint64_t *)(*ret_buf + 1) = big_endian;
+	sprintf(*ret_buf + TYPE_LEN + sizeof(big_endian), msg->data_len + 1, "%s", msg->data_p);
+	
+	return buf_len;
 }

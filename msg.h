@@ -24,6 +24,28 @@
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
+#ifndef _MSG_H_
+#define _MSG_H_
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define TYPE_LEN 1 //byte, char
+
+// msg_type match frp v0.10.0
+enum msg_type {
+	TypeLogin         = 'o',
+	TypeLoginResp     = '1',
+	TypeNewProxy      = 'p',
+	TypeNewProxyResp  = '2',
+	TypeNewWorkConn   = 'w',
+	TypeReqWorkConn   = 'r',
+	TypeStartWorkConn = 's',
+	TypePing          = 'h',
+	TypePong          = '4',
+	TypeUdpPacket     = 'u',
+};
 
 struct general_response {
 	int		code;
@@ -78,6 +100,12 @@ struct login_resp {
 	char 	*error;
 };
 
+struct message {
+	char 	type;
+	char	*data_p;
+	size_t	data_len;
+};
+
 int login_request_marshal(char **msg);
 
 // tranlate control request to json string
@@ -87,3 +115,5 @@ int control_request_marshal(const struct control_request *req, char **msg);
 struct control_response *control_response_unmarshal(const char *jres);
 
 void control_response_free(struct control_response *res);
+
+#endif //_MSG_H_

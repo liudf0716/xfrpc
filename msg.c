@@ -30,6 +30,9 @@
 #include <json-c/bits.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <openssl/md5.h>
+#include <time.h>
+#include <assert.h>
 
 #include "msg.h"
 #include "const.h"
@@ -108,6 +111,33 @@ struct login {
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 
 
+static char *calc_md5(const char *data, int datalen)
+{
+	unsigned char digest[16] = {0};
+	char *out = (char*)malloc(33);
+	assert(out);
+
+	MD5_CTX md5;
+	
+	MD5_Init(&md5);
+	MD5_Update(&md5, data, datalen);
+	MD5_Final(digest, &md5);
+	
+	for (int n = 0; n < 16; ++n) {
+        snprintf(&(out[n*2]), 3, "%02x", (unsigned int)digest[n]);
+    }
+
+    return out;
+}
+
+char *get_auth_key(const char *token)
+{
+	char seed[128] = {0};
+	snprintf(seed, 128, "%s%ld", token, time(NULL));
+	
+	return calc_md5(seed, strlen(seed));
+}
+
 size_t login_request_marshal(char **msg)
 {
 	size_t nret = 0;
@@ -119,12 +149,16 @@ size_t login_request_marshal(char **msg)
 	if (!lg)
 		return 0;
 	
+	struct common_conf *cf = get_common_config();
+	char *auth_key = get_auth_key(cf->privilege_token);
+	
 	JSON_MARSHAL_TYPE(j_login_req, "version", string, lg->version);
 	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, lg->hostname?lg->hostname:"\0");
 	JSON_MARSHAL_TYPE(j_login_req, "os", string, lg->os);
 	JSON_MARSHAL_TYPE(j_login_req, "arch", string, lg->arch);
 	JSON_MARSHAL_TYPE(j_login_req, "user", string, lg->user?lg->user:"\0");
-	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, lg->privilege_key? lg->privilege_key:"\0");
+
+	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, lg->privilege_key? lg->privilege_key:auth_key);
 	JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
 	JSON_MARSHAL_TYPE(j_login_req, "run_id", string, lg->run_id?lg->run_id:"\0");
 	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
@@ -136,6 +170,7 @@ size_t login_request_marshal(char **msg)
 		*msg = strdup(tmp);
 	}
 	json_object_put(j_login_req);
+	free(auth_key);
 	return nret;
 }
 

@@ -106,6 +106,7 @@ struct message {
 	size_t	data_len;
 };
 
+char *get_auth_key(const char *token);
 size_t login_request_marshal(char **msg);
 size_t pack(struct message *req_msg, char **ret_buf);
 // tranlate control request to json string

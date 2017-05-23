@@ -106,8 +106,8 @@ struct message {
 	size_t	data_len;
 };
 
-int login_request_marshal(char **msg);
-
+size_t login_request_marshal(char **msg);
+size_t pack(struct message *req_msg, char **ret_buf);
 // tranlate control request to json string
 int control_request_marshal(const struct control_request *req, char **msg);
 

@@ -106,6 +106,10 @@ request(struct bufferevent *bev, struct frame *f, ushort f_data_len) {
 	if (bev) {
 		bout = bev;
 	} else {
+		bout = main_ctl->connect_bev;
+	}
+
+	if ( ! bout) {
 		return 0;
 	}
 	
@@ -439,90 +443,6 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 // 	bufferevent_setcb(bev, NULL, NULL, login_xfrp_event_cb, client);
 // }
 
-
-
-void send_msg_2_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
-{
-	debug(LOG_DEBUG, "send ping ...");
-	char *msg = NULL;
-	struct control_request *req = get_control_request(type, client); // get control request by client
-	int len = control_request_marshal(req, &msg); // marshal control request to json string
-	assert(msg);
-	struct bufferevent *bout = NULL;
-	if (bev) {
-		bout = bev;
-	} else {
-		bout = client->ctl_bev;
-	}
-	bufferevent_write(bout, msg, len);
-	bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, "Send msg to frp server [%s]", msg);
-	free(msg);
-	control_request_free(req); // free control request
-}
-
-
-void send_msg_frp_server(enum msg_type type, struct bufferevent *bev)
-{
-	debug(LOG_DEBUG, "send message to frps ...");
-	char *msg = NULL;
-	// struct control_request *req = get_control_request(type, client); // get control request by client
-	// int len = control_request_marshal(req, &msg); // marshal control request to json string
-	struct bufferevent *bout = NULL;
-	if (bev) {
-		bout = bev;
-	} else {
-		bout = main_ctl->connect_bev;
-	}
-
-	switch (type)
-	{
-	case TypeLogin:
-		break;
-	default:
-		break;
-	}
-}
-
-
-void login(struct bufferevent *bev)
-{
-	struct bufferevent *bout = NULL;
-	if (bev) {
-		bout = bev;
-	} else {
-		bout = main_ctl->connect_bev;
-	}
-
-	char *lg_msg = NULL;
-	int len = login_request_marshal(&lg_msg); // marshal login request to json string
-	assert(lg_msg);
-
-}
-
-void start_login_frp_server(struct event_base *base)
-{
-	struct common_conf *c_conf = get_common_config();
-	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
-	if (!bev) {
-		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-		return;
-	}
-
-	debug(LOG_INFO, "Xfrpc login: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
-
-	// client->ctl_bev = bev;
-	bufferevent_enable(bev, EV_WRITE|EV_READ);
-	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
-}
-
-void control_process(struct proxy_client *client)
-{
-	// login_frp_server(client);
-	
-	heartbeat_sender(client);	
-}
-
 static void start_base_connect() 
 {
 	struct common_conf *c_conf = get_common_config();
@@ -553,6 +473,117 @@ static void keep_alive()
 	}
 	set_ticker_ping_timer(main_ctl->ticker_ping);
 	
+}
+
+void send_msg_2_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
+{
+	debug(LOG_DEBUG, "send ping ...");
+	char *msg = NULL;
+	struct control_request *req = get_control_request(type, client); // get control request by client
+	int len = control_request_marshal(req, &msg); // marshal control request to json string
+	assert(msg);
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = client->ctl_bev;
+	}
+	bufferevent_write(bout, msg, len);
+	bufferevent_write(bout, "\n", 1);
+	debug(LOG_DEBUG, "Send msg to frp server [%s]", msg);
+	free(msg);
+	control_request_free(req); // free control request
+}
+
+
+void 
+send_msg_frp_server(struct bufferevent *bev, 
+					const enum msg_type type, 
+					const char *msg, 
+					const size_t msg_len)
+{
+	debug(LOG_DEBUG, "send message to frps ...");
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = main_ctl->connect_bev;
+	}
+	if ( ! bout) {
+		return;
+	}
+	debug(LOG_DEBUG, "send message type is [%c]", type);
+
+	struct message req_msg;
+
+	switch (type)
+	{
+	case TypeLogin:
+		req_msg.type = TypeLogin;
+
+		req_msg.data_len = msg_len;
+		debug(LOG_DEBUG, "msg.data_len = %d", req_msg.data_len);
+		req_msg.data_p = strdup(msg);
+		//TODO: NEED FREE
+
+		char *puck_buf = NULL;
+		size_t pack_buf_len = pack(&req_msg, &puck_buf);
+		if ( ! pack_buf_len || ! *puck_buf) {
+			debug(LOG_ERR, "login buffer pack failed!");
+			return;
+		}
+
+		/* debug showing */
+		unsigned int i = 0;
+		printf("[");
+		for(i = 0; i<20; i++) {
+			printf("%x ", puck_buf[i]);
+		}
+		printf("]\n");
+		/* debug show over */
+		break;
+	default:
+		break;
+	}
+
+
+}
+
+
+void login()
+{
+	debug(LOG_INFO, "login frps ...");
+	char *lg_msg = NULL;
+	int len = login_request_marshal(&lg_msg); //marshal login request
+	if ( ! lg_msg) {
+		debug(LOG_ERR, "login_request_marshal failed");
+		assert(lg_msg);
+	}
+
+	send_msg_frp_server(NULL, TypeLogin, lg_msg, len);
+}
+
+void start_login_frp_server(struct event_base *base)
+{
+	struct common_conf *c_conf = get_common_config();
+	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
+	if (!bev) {
+		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		return;
+	}
+
+	debug(LOG_INFO, "Xfrpc login: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
+
+	// client->ctl_bev = bev;
+	bufferevent_enable(bev, EV_WRITE|EV_READ);
+	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
+}
+
+void control_process(struct proxy_client *client)
+{
+	// login_frp_server(client);
+	
+	heartbeat_sender(client);	
 }
 
 int init_main_control() 
@@ -597,5 +628,6 @@ void close_main_control()
 void run_control() {
 	start_base_connect();
 	keep_alive();
+	login();
 	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

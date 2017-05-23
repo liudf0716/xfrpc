@@ -29,11 +29,38 @@
 #include <json-c/json.h>
 #include <json-c/bits.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 #include "msg.h"
 #include "const.h"
 #include "config.h"
 #include "frame.h"
+
+
+uint64_t
+ntoh64(const uint64_t *input)
+{
+    uint64_t rval;
+    uint8_t *data = (uint8_t *)&rval;
+
+    data[0] = *input >> 56;
+    data[1] = *input >> 48;
+    data[2] = *input >> 40;
+    data[3] = *input >> 32;
+    data[4] = *input >> 24;
+    data[5] = *input >> 16;
+    data[6] = *input >> 8;
+    data[7] = *input >> 0;
+
+    return rval;
+}
+
+uint64_t
+hton64(const uint64_t *input)
+{
+    return (ntoh64(input));
+}
+
 
 /*
 const (
@@ -81,9 +108,9 @@ struct login {
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 
 
-int login_request_marshal(char **msg)
+size_t login_request_marshal(char **msg)
 {
-	int nret = 0;
+	size_t nret = 0;
 	struct json_object *j_login_req = json_object_new_object();
 	if (is_error(j_login_req))
 		return 0;
@@ -208,20 +235,36 @@ void control_response_free(struct control_response *res)
 	free(res);
 }
 
-int pack(struct message *msg, char **ret_buf)
+size_t pack(struct message *req_msg, char **ret_buf)
 {
 	uint64_t  big_endian;
-	size_t buf_len = TYPE_LEN + sizeof(big_endian) + msg->data_len + 1;
-	big_endian = htobe64((uint64_t)msg->data_len);
+	size_t buf_len = TYPE_LEN + sizeof(big_endian) + req_msg->data_len + 1;
+
+	int endian_check = 1;
+	// little endian if true
+	if(*(char *)&endian_check == 1) 
+	{
+		printf("is little endian ! msg->data_len = %ld\n", req_msg->data_len);
+		big_endian = hton64(&req_msg->data_len);
+	} else {
+		big_endian = req_msg->data_len;
+	}
+
+	uint64_t test = ntoh64(&big_endian);
+
+	printf("big endian = %lu\ttest=%lu\n", big_endian, test);
 	*ret_buf = calloc(buf_len, 1);
 
 	if (*ret_buf == NULL) {
 		return 0;
 	}
 
-	**ret_buf = msg->type;
+	**ret_buf = req_msg->type;
 	*(uint64_t *)(*ret_buf + 1) = big_endian;
-	sprintf(*ret_buf + TYPE_LEN + sizeof(big_endian), msg->data_len + 1, "%s", msg->data_p);
-	
+	snprintf(*ret_buf + TYPE_LEN + sizeof(big_endian), 
+				req_msg->data_len + 1, 
+				"%s", 
+				req_msg->data_p);
+
 	return buf_len;
 }

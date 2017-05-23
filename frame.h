@@ -10,6 +10,7 @@
 #define CMDI 1
 #define LENI 2
 #define SIDI 4
+#define DATAI 8
 
 // cmds
 enum cmd_type {

@@ -112,6 +112,17 @@ request(struct bufferevent *bev, struct frame *f) {
 	if ( ! bout) {
 		return 0;
 	}
+
+	/* debug showing */
+	unsigned int i = 0;
+	if (f->len > 20) {
+		printf("[");
+		for(i = 0; i<20; i++) {
+			printf("%x ", f->data[i]);
+		}
+		printf("]\n");
+		/* debug show over */
+	}
 	
 	int headersize = get_header_size();
 	size_t len = (1<<16) + headersize;
@@ -122,6 +133,11 @@ request(struct bufferevent *bev, struct frame *f) {
 	debug(LOG_DEBUG, "request data len = %u", f->len);
 	*((ushort *)(request_buf + 2)) = f->len;
 	*((uint32_t *)(request_buf + 4)) = f->sid;
+
+	if (f->data != NULL && f->len > 0) {
+		memcpy(request_buf + DATAI, f->data, f->len);
+	}
+
 	
 	size_t write_len = (size_t) (headersize + f->len);
 
@@ -132,7 +148,6 @@ request(struct bufferevent *bev, struct frame *f) {
 			write_len, 
 			request_buf);
 
-	unsigned int i = 0;
 	printf("[");
 	for(i = 0; i<write_len; i++) {
 		if (i == 0 || i == 1)
@@ -538,7 +553,7 @@ send_msg_frp_server(struct bufferevent *bev,
 		req_msg.data_p = strdup(msg);
 		//TODO: NEED FREE
 
-		char *puck_buf = NULL;
+		char *puck_buf = NULL; //TODO: NEED FREE
 		size_t pack_buf_len = pack(&req_msg, &puck_buf);
 		if ( ! pack_buf_len || ! *puck_buf) {
 			debug(LOG_ERR, "login buffer pack failed!");
@@ -557,7 +572,15 @@ send_msg_frp_server(struct bufferevent *bev,
 		f = new_frame(frame_type, sid);
 		assert(f);
 		f->len = (ushort) pack_buf_len;
-		f->data = strdup(puck_buf);
+		f->data = puck_buf;
+
+		/* debug showing */
+		printf("[");
+		for(i = 0; i<20; i++) {
+			printf("%x ", f->data[i]);
+		}
+		printf("]\n");
+		/* debug show over */
 		break;
 	default:
 		break;

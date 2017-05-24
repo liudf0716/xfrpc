@@ -26,6 +26,8 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#include "client.h"
+
 struct base_conf{
 	char	*name;
 	char	*auth_token;
@@ -55,7 +57,8 @@ struct common_conf {
 	int		heartbeat_interval; /* default 10 */
 	int		heartbeat_timeout;	/* default 30 */
 };
-	
+
+struct new_proxy *raw_new_proxy(struct proxy_client *client);
 struct common_conf *get_common_config();
 
 struct login *get_common_login_config();

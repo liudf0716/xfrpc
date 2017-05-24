@@ -46,8 +46,11 @@ struct proxy_client {
 	struct base_conf	*bconf;
 	char	*name; // pointer to bconf->name
 	char	*local_ip;
+	char 	*type;
 	int		local_port;
 	int		remote_port;
+	bool 	use_encryption;
+	bool	use_compression;
 	
 	char	*custom_domains;
 	char	*locations;

@@ -207,6 +207,19 @@ static struct proxy_client *new_proxy_client(const char *name)
 // 	HttpPwd           string   `json:"http_pwd"`
 // }
 
+// value of client will be changed
+struct new_proxy *raw_new_proxy(struct proxy_client *client)
+{
+	struct new_proxy *np = calloc(sizeof(struct new_proxy), 1);
+	assert(np);
+
+	np->proxy_name = strdup(client->name);
+	np->proxy_type = strdup(client->type);
+	np->use_encryption = client->use_encryption;
+	np->use_compression = client->use_compression;
+	
+	return np;
+}
 
 static int service_handler(void *user, const char *section, const char *nm, const char *value)
 {
@@ -224,8 +237,12 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 	} 
 	
 	#define MATCH_NAME(s) strcmp(nm, s) == 0
+	#define TO_BOOL(v) strcmp(value, "true") ? 0:1
+	
 	if (MATCH_NAME("type")) {
 		pc->bconf->type = get_valid_type(value);
+	} else if (MATCH_NAME("type")) {
+		pc->type = strdup(value);
 	} else if (MATCH_NAME("local_ip")) {
 		pc->local_ip = strdup(value);
 	} else if (MATCH_NAME("local_port")) {
@@ -252,6 +269,10 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 		pc->locations= strdup(value);
 	} else if (MATCH_NAME("host_header_rewrite")) {
 		pc->bconf->host_header_rewrite= strdup(value);
+	} else if (MATCH_NAME("use_encryption")) {
+		pc->use_encryption = TO_BOOL(value);
+	} else if (MATCH_NAME("use_compression")) {
+		pc->use_compression = TO_BOOL(value);
 	}
 	
 	return 1;

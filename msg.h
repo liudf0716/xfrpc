@@ -33,6 +33,8 @@
 #include <stdint.h>
 #include <inttypes.h>
 
+#include "client.h"
+
 #define TYPE_LEN 1 //byte, char
 
 // msg_type match frp v0.10.0
@@ -108,6 +110,7 @@ struct message {
 	size_t	data_len;
 };
 
+int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg);
 struct message *new_message();
 uint64_t ntoh64(const uint64_t *input);
 uint64_t hton64(const uint64_t *input);

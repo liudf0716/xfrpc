@@ -44,6 +44,9 @@
 #define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 
+#define SAFE_JSON_STRING(str_target) \
+str_target?str_target:"\0"
+
 uint64_t ntoh64(const uint64_t *input)
 {
     uint64_t rval;
@@ -119,14 +122,14 @@ size_t login_request_marshal(char **msg)
 	char *auth_key = get_auth_key(cf->privilege_token);
 	
 	JSON_MARSHAL_TYPE(j_login_req, "version", string, lg->version);
-	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, lg->hostname?lg->hostname:"\0");
+	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, SAFE_JSON_STRING(lg->hostname));
 	JSON_MARSHAL_TYPE(j_login_req, "os", string, lg->os);
 	JSON_MARSHAL_TYPE(j_login_req, "arch", string, lg->arch);
-	JSON_MARSHAL_TYPE(j_login_req, "user", string, lg->user?lg->user:"\0");
+	JSON_MARSHAL_TYPE(j_login_req, "user", string, SAFE_JSON_STRING(lg->user));
 
-	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, lg->privilege_key? lg->privilege_key:auth_key);
+	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, SAFE_JSON_STRING(lg->privilege_key));
 	JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
-	JSON_MARSHAL_TYPE(j_login_req, "run_id", string, lg->run_id?lg->run_id:"\0");
+	JSON_MARSHAL_TYPE(j_login_req, "run_id", string, SAFE_JSON_STRING(lg->run_id));
 	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
 
 	const char *tmp = NULL;
@@ -139,6 +142,43 @@ size_t login_request_marshal(char **msg)
 	free(auth_key);
 	return nret;
 }
+
+
+// {"proxy_name":"G_22","proxy_type":"tcp","use_encryption":false,"use_compression":false,"remote_port":20099,"custom_domains":null,"subdomain":"","locations":null,"host_header_rewrite":"","http_user":"","http_pwd":""}
+int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)
+{
+	const char *tmp = NULL;
+	int  nret = 0;
+	struct json_object *j_np_req = json_object_new_object();
+	if ( ! j_np_req)
+		return 0;
+	
+	JSON_MARSHAL_TYPE(j_np_req, "proxy_name", string, np_req->proxy_name);
+	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
+	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
+	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
+	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int64, np_req->remote_port);
+
+	json_object *j_cdm_array = json_object_new_array();
+	json_object_object_add(j_np_req, "custom_domains", j_cdm_array);
+	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));
+
+	json_object *j_location_array = json_object_new_array();
+	json_object_object_add(j_np_req, "locations", j_location_array);
+	JSON_MARSHAL_TYPE(j_np_req, "host_header_rewrite", string, SAFE_JSON_STRING(np_req->host_header_rewrite));
+	JSON_MARSHAL_TYPE(j_np_req, "http_user", string, SAFE_JSON_STRING(np_req->http_user));
+	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
+		
+	tmp = json_object_to_json_string(j_np_req);
+	if (tmp && strlen(tmp) > 0) {
+		nret = strlen(tmp);
+		*msg = strdup(tmp);
+	}
+	json_object_put(j_np_req);
+
+	return nret;
+}
+
 
 int control_request_marshal(const struct control_request *req, char **msg)
 {

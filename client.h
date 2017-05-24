@@ -27,7 +27,6 @@
 #ifndef _CLIENT_H_
 #define _CLIENT_H_
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #include "uthash.h"
@@ -49,8 +48,8 @@ struct proxy_client {
 	char 	*type;
 	int		local_port;
 	int		remote_port;
-	bool 	use_encryption;
-	bool	use_compression;
+	int 	use_encryption;
+	int		use_compression;
 	
 	char	*custom_domains;
 	char	*locations;
@@ -82,8 +81,8 @@ struct proxy_client {
 struct new_proxy {
 	char 	*proxy_name;
 	char 	*proxy_type;
-	bool 	use_encryption;
-	bool	use_compression;
+	int 	use_encryption;
+	int	use_compression;
 
 	// tcp and udp only
 	int64_t	remote_port;
@@ -107,4 +106,4 @@ void del_proxy_client(struct proxy_client *client);
 
 void free_proxy_client(struct proxy_client *client);
 
-#endif
+#endif //_CLIENT_H_

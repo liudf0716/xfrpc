@@ -89,7 +89,7 @@ static void start_xfrp_client_service()
 		}
 		pc->base = main_ctl->connect_base;
 		raw_new_proxy(pc);
-		control_process(pc);
+		send_new_proxy(pc);
 	}
 }
 
@@ -597,6 +597,8 @@ send_msg_frp_server(struct bufferevent *bev,
 		printf("]\n");
 		/* debug show over */
 		break;
+	case TypeNewProxy:
+		break;
 	default:
 		break;
 	}
@@ -637,6 +639,30 @@ void control_process(struct proxy_client *client)
 {
 	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
 	// login_frp_server(client);
+
+	char *new_proxy_msg = NULL;
+	int len = new_proxy_request_marshal(client->n_proxy, &new_proxy_msg); //marshal login request
+	if ( ! new_proxy_msg) {
+		debug(LOG_ERR, "login_request_marshal failed");
+		assert(new_proxy_msg);
+	}
+
+	send_msg_frp_server(NULL, TypeLogin, new_proxy_msg, len, main_ctl->session_id);
+}
+
+void send_new_proxy(struct proxy_client *client)
+{
+	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
+	// login_frp_server(client);
+
+	char *new_proxy_msg = NULL;
+	int len = new_proxy_request_marshal(client->n_proxy, &new_proxy_msg); //marshal login request
+	if ( ! new_proxy_msg) {
+		debug(LOG_ERR, "login_request_marshal failed");
+		assert(new_proxy_msg);
+	}
+
+	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
 }
 
 int init_main_control() 

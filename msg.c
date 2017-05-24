@@ -28,8 +28,6 @@
 #include <stdio.h>
 #include <json-c/json.h>
 #include <json-c/bits.h>
-#include <stdint.h>
-#include <inttypes.h>
 #include <openssl/md5.h>
 #include <time.h>
 #include <assert.h>
@@ -43,9 +41,10 @@
 #define MSG_LEN_I 	1
 #define MSG_DATA_I	9
 
+#define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
+json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 
-uint64_t
-ntoh64(const uint64_t *input)
+uint64_t ntoh64(const uint64_t *input)
 {
     uint64_t rval;
     uint8_t *data = (uint8_t *)&rval;
@@ -62,17 +61,12 @@ ntoh64(const uint64_t *input)
     return rval;
 }
 
-uint64_t
-hton64(const uint64_t *input)
+uint64_t hton64(const uint64_t *input)
 {
     return (ntoh64(input));
 }
 
-#define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
-json_object_object_add(jobj, key, json_object_new_##jtype((item)));
-
-
-static char *calc_md5(const char *data, int datalen)
+char *calc_md5(const char *data, int datalen)
 {
 	unsigned char digest[16] = {0};
 	char *out = (char*)malloc(33);
@@ -89,6 +83,17 @@ static char *calc_md5(const char *data, int datalen)
     }
 
     return out;
+}
+
+struct message *new_message() {
+	struct message *msg = calloc(sizeof(struct message), 1); //TODO: FREE
+	if (msg)
+	{
+		msg->data_p = NULL;
+		msg->data_len = 0;
+	}
+
+	return msg;
 }
 
 char *get_auth_key(const char *token)
@@ -233,20 +238,20 @@ void control_response_free(struct control_response *res)
 
 struct message *unpack(char *recv_msg, const ushort len)
 {
-	struct message *msg = calloc(sizeof(struct message), 1); //TODO: FREE
-	if ( ! msg) 
-		return NULL;
-
+	struct message *msg = new_message();
 	msg->type = *(recv_msg + MSG_TYPE_I);
 
 	uint64_t  data_len_bigend;
 	data_len_bigend = *(uint64_t *)(recv_msg + MSG_LEN_I);
 	msg->data_len = ntoh64(&data_len_bigend);
-	msg->data_p = calloc(msg->data_len + 1, 1);
-	if (! msg->data_p)
-		return NULL;
+	if (msg->data_len > 0) {
+		msg->data_p = calloc(msg->data_len + 1, 1);
+		if (! msg->data_p)
+			return NULL;
+		
+		memcpy(msg->data_p, recv_msg + MSG_DATA_I, msg->data_len);
+	}
 	
-	memcpy(msg->data_p, recv_msg + MSG_DATA_I, msg->data_len);
 	return msg;
 }
 
@@ -266,7 +271,7 @@ size_t pack(struct message *req_msg, char **ret_buf)
 	}
 
 
-	printf("big endian = %lu\ttest=%lu\n", data_len_bigend, test);
+	printf("big endian = %lu\n", data_len_bigend);
 	*ret_buf = calloc(buf_len, 1);
 
 	if (*ret_buf == NULL) {

@@ -30,6 +30,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 #define TYPE_LEN 1 //byte, char
 
@@ -106,6 +108,9 @@ struct message {
 	size_t	data_len;
 };
 
+struct message *new_message();
+uint64_t ntoh64(const uint64_t *input);
+uint64_t hton64(const uint64_t *input);
 char *get_auth_key(const char *token);
 size_t login_request_marshal(char **msg);
 struct message *unpack(char *recv_msg, const ushort len);

@@ -344,6 +344,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			return;
 		}
 
+		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
+
+		if (msg && msg->data_p) 
+			debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
+		
 		switch(f->cmd) {
 			case cmdNOP: //no nothing
 				break;

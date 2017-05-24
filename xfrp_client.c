@@ -58,7 +58,6 @@ void xfrp_client_loop()
 
 	run_control();
 	
-	// start_xfrp_client(base);
 	// if (base) {
 	// 	printf("base 在\n");
 	// } else {

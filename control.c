@@ -59,7 +59,21 @@
 static struct control *main_ctl;
 static char *request_buf;
 
-static void start_xfrp_client(struct event_base *base)
+static int start_proxy_service(struct proxy_client *pc)
+{
+	debug(LOG_INFO, "start frps proxy service ...");
+	char *proxy_msg = NULL;
+	/////// COME HERE
+	int len = login_request_marshal(&proxy_msg); //marshal login request
+	if ( ! proxy_msg) {
+		debug(LOG_ERR, "login_request_marshal failed");
+		assert(proxy_msg);
+	}
+
+	send_msg_frp_server(NULL, TypeLogin, proxy_msg, len, main_ctl->session_id);
+}
+
+static void start_xfrp_client_service()
 {
 	struct proxy_client *all_pc = get_all_pc();
 	struct proxy_client *pc = NULL, *tmp = NULL;
@@ -67,7 +81,7 @@ static void start_xfrp_client(struct event_base *base)
 	debug(LOG_INFO, "Start xfrp client");
 	
 	HASH_ITER(hh, all_pc, pc, tmp) {
-		pc->base = base;
+		pc->base = main_ctl->connect_base;
 		control_process(pc);
 	}
 }
@@ -358,10 +372,9 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			case cmdPSH:
 				if (f->data == NULL)
 					break;
-				
+			default:
 				break;
 		}
-
 	} else {
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
 	}
@@ -446,21 +459,21 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-// static void login_frp_server(struct proxy_client *client)
-// {
-// 	struct common_conf *c_conf = get_common_config();
-// 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
-// 	if (!bev) {
-// 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-// 		return;
-// 	}
+static void login_frp_server(struct proxy_client *client)
+{
+	struct common_conf *c_conf = get_common_config();
+	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+	if (!bev) {
+		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		return;
+	}
 
-// 	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
 
-// 	client->ctl_bev = bev;
-// 	bufferevent_enable(bev, EV_WRITE);
-// 	bufferevent_setcb(bev, NULL, NULL, login_xfrp_event_cb, client);
-// }
+	client->ctl_bev = bev;
+	bufferevent_enable(bev, EV_WRITE);
+	bufferevent_setcb(bev, NULL, NULL, NULL, client);
+}
 
 static void start_base_connect() 
 {
@@ -615,9 +628,7 @@ void start_login_frp_server(struct event_base *base)
 
 void control_process(struct proxy_client *client)
 {
-	// login_frp_server(client);
-	
-	heartbeat_sender(client);	
+	login_frp_server(client);
 }
 
 int init_main_control() 
@@ -660,7 +671,8 @@ void close_main_control()
 }
 
 void run_control() {
-	start_base_connect();
+	start_base_connect();	//with login
+	start_xfrp_client_service();
 	keep_alive();
 	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

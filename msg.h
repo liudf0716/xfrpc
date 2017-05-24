@@ -108,6 +108,7 @@ struct message {
 
 char *get_auth_key(const char *token);
 size_t login_request_marshal(char **msg);
+struct message *unpack(char *recv_msg, const ushort len);
 size_t pack(struct message *req_msg, char **ret_buf);
 struct message *unpack(char *recv_msg, ushort len);
 // tranlate control request to json string

@@ -41,6 +41,7 @@
 
 #define MSG_TYPE_I 	0
 #define MSG_LEN_I 	1
+#define MSG_DATA_I	9
 
 
 uint64_t
@@ -230,35 +231,42 @@ void control_response_free(struct control_response *res)
 	free(res);
 }
 
-struct message *unpack(char *recv_msg, ushort len)
+struct message *unpack(char *recv_msg, const ushort len)
 {
-	struct message *msg = calloc(sizeof(struct message), 1);
+	struct message *msg = calloc(sizeof(struct message), 1); //TODO: FREE
 	if ( ! msg) 
 		return NULL;
 
-	
+	msg->type = *(recv_msg + MSG_TYPE_I);
 
+	uint64_t  data_len_bigend;
+	data_len_bigend = *(uint64_t *)(recv_msg + MSG_LEN_I);
+	msg->data_len = ntoh64(&data_len_bigend);
+	msg->data_p = calloc(msg->data_len + 1, 1);
+	if (! msg->data_p)
+		return NULL;
+	
+	memcpy(msg->data_p, recv_msg + MSG_DATA_I, msg->data_len);
 	return msg;
 }
 
 size_t pack(struct message *req_msg, char **ret_buf)
 {
-	uint64_t  big_endian;
-	size_t buf_len = TYPE_LEN + sizeof(big_endian) + req_msg->data_len + 1;
+	uint64_t  data_len_bigend;
+	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len + 1;
 
 	int endian_check = 1;
 	// little endian if true
 	if(*(char *)&endian_check == 1) 
 	{
 		printf("is little endian ! msg->data_len = %ld\n", req_msg->data_len);
-		big_endian = hton64(&req_msg->data_len);
+		data_len_bigend = hton64(&req_msg->data_len);
 	} else {
-		big_endian = req_msg->data_len;
+		data_len_bigend = req_msg->data_len;
 	}
 
-	uint64_t test = ntoh64(&big_endian);
 
-	printf("big endian = %lu\ttest=%lu\n", big_endian, test);
+	printf("big endian = %lu\ttest=%lu\n", data_len_bigend, test);
 	*ret_buf = calloc(buf_len, 1);
 
 	if (*ret_buf == NULL) {
@@ -266,8 +274,8 @@ size_t pack(struct message *req_msg, char **ret_buf)
 	}
 
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
-	*(uint64_t *)(*ret_buf + MSG_LEN_I) = big_endian;
-	snprintf(*ret_buf + TYPE_LEN + sizeof(big_endian), 
+	*(uint64_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
+	snprintf(*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 
 				req_msg->data_len + 1, 
 				"%s", 
 				req_msg->data_p);

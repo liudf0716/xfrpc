@@ -76,12 +76,19 @@ static int start_proxy_service(struct proxy_client *pc)
 static void start_xfrp_client_service()
 {
 	struct proxy_client *all_pc = get_all_pc();
+	assert(all_pc);
+
 	struct proxy_client *pc = NULL, *tmp = NULL;
 	
 	debug(LOG_INFO, "Start xfrp client");
 	
 	HASH_ITER(hh, all_pc, pc, tmp) {
+		if(pc == NULL) {
+			debug(LOG_ERR, "pc is null!");
+			return;
+		}
 		pc->base = main_ctl->connect_base;
+		raw_new_proxy(pc);
 		control_process(pc);
 	}
 }
@@ -628,7 +635,8 @@ void start_login_frp_server(struct event_base *base)
 
 void control_process(struct proxy_client *client)
 {
-	login_frp_server(client);
+	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
+	// login_frp_server(client);
 }
 
 int init_main_control() 

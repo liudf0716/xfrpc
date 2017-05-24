@@ -207,17 +207,30 @@ static struct proxy_client *new_proxy_client(const char *name)
 // 	HttpPwd           string   `json:"http_pwd"`
 // }
 
+
 // value of client will be changed
 struct new_proxy *raw_new_proxy(struct proxy_client *client)
 {
 	struct new_proxy *np = calloc(sizeof(struct new_proxy), 1);
-	assert(np);
+	if ( ! np) {
+		return NULL;
+	}
 
-	np->proxy_name = strdup(client->name);
-	np->proxy_type = strdup(client->type);
+	debug(LOG_DEBUG, "init client porxy argu: [%s]", client->name);
+
+	np->proxy_name = client->name?strdup(client->name):NULL;
+	np->proxy_type = client->type?strdup(client->type):NULL;
+
+	if (np->proxy_type == NULL) {
+		debug(LOG_INFO, "proxy_type is nil, instead of tcp");
+		np->proxy_type = strdup("tcp");
+	}
+	
 	np->use_encryption = client->use_encryption;
 	np->use_compression = client->use_compression;
-	
+	np->remote_port = client->remote_port;
+
+	client->n_proxy = np;
 	return np;
 }
 
@@ -229,7 +242,8 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 		return 0;
 	
 	HASH_FIND_STR(p_clients, section, pc);
-	if (!pc) {
+	if (!pc) 
+	{
 		pc = new_proxy_client(section);
 		HASH_ADD_KEYPTR(hh, p_clients, pc->name, strlen(pc->name), pc);
 		debug(LOG_DEBUG, "Section[%s] not found in p_clients, add pc[%s]",
@@ -238,7 +252,7 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 	
 	#define MATCH_NAME(s) strcmp(nm, s) == 0
 	#define TO_BOOL(v) strcmp(value, "true") ? 0:1
-	
+
 	if (MATCH_NAME("type")) {
 		pc->bconf->type = get_valid_type(value);
 	} else if (MATCH_NAME("type")) {

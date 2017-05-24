@@ -27,12 +27,16 @@
 #ifndef _CLIENT_H_
 #define _CLIENT_H_
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "uthash.h"
 
 struct event_base;
 struct base_conf;
 struct bufferevent;
 struct event;
+struct new_proxy;
 
 struct proxy_client {
 	struct event_base 	*base;
@@ -48,7 +52,46 @@ struct proxy_client {
 	char	*custom_domains;
 	char	*locations;
 	
+	//provate arguments
 	UT_hash_handle hh;
+	struct new_proxy *n_proxy;
+};
+
+// When frpc login success, send this message to frps for running a new proxy.
+// type NewProxy struct {
+// 	ProxyName      string `json:"proxy_name"`
+// 	ProxyType      string `json:"proxy_type"`
+// 	UseEncryption  bool   `json:"use_encryption"`
+// 	UseCompression bool   `json:"use_compression"`
+
+// 	// tcp and udp only
+// 	RemotePort int64 `json:"remote_port"`
+
+// 	// http and https only
+// 	CustomDomains     []string `json:"custom_domains"`
+// 	SubDomain         string   `json:"subdomain"`
+// 	Locations         []string `json:"locations"`
+// 	HostHeaderRewrite string   `json:"host_header_rewrite"`
+// 	HttpUser          string   `json:"http_user"`
+// 	HttpPwd           string   `json:"http_pwd"`
+// }
+
+struct new_proxy {
+	char 	*proxy_name;
+	char 	*proxy_type;
+	bool 	use_encryption;
+	bool	use_compression;
+
+	// tcp and udp only
+	int64_t	remote_port;
+
+	// http and https only
+	char 	**custom_domains;
+	char 	*subdomain;
+	char	**locations;
+	char	*host_header_rewrite;
+	char	*http_user;
+	char	*http_pwd;
 };
 
 // after frp server accept client connection request

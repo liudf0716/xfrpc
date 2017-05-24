@@ -187,6 +187,27 @@ static struct proxy_client *new_proxy_client(const char *name)
 	return pc;
 }
 
+
+// When frpc login success, send this message to frps for running a new proxy.
+// type NewProxy struct {
+// 	ProxyName      string `json:"proxy_name"`
+// 	ProxyType      string `json:"proxy_type"`
+// 	UseEncryption  bool   `json:"use_encryption"`
+// 	UseCompression bool   `json:"use_compression"`
+
+// 	// tcp and udp only
+// 	RemotePort int64 `json:"remote_port"`
+
+// 	// http and https only
+// 	CustomDomains     []string `json:"custom_domains"`
+// 	SubDomain         string   `json:"subdomain"`
+// 	Locations         []string `json:"locations"`
+// 	HostHeaderRewrite string   `json:"host_header_rewrite"`
+// 	HttpUser          string   `json:"http_user"`
+// 	HttpPwd           string   `json:"http_pwd"`
+// }
+
+
 static int service_handler(void *user, const char *section, const char *nm, const char *value)
 {
  	struct proxy_client	*pc = NULL;

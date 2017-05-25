@@ -28,6 +28,9 @@
 
 #include "client.h"
 
+#define SAFE_FREE(m) 	\
+if (m) free(m);
+
 struct base_conf{
 	char	*name;
 	char	*auth_token;

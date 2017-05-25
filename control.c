@@ -557,24 +557,30 @@ send_msg_frp_server(struct bufferevent *bev,
 	struct message req_msg;
 	char frame_type = 0;
 	struct frame *f = NULL;
+	req_msg.type = type;
+	req_msg.data_len = msg_len;
+	debug(LOG_DEBUG, "msg.data_len = %d", req_msg.data_len);
+	if (msg) {
+		req_msg.data_p = strdup(msg);
+		//TODO: NEED FREE
+	}
+	char *puck_buf = NULL; //TODO: NEED FREE
+	size_t pack_buf_len = pack(&req_msg, &puck_buf);
+	if ( ! pack_buf_len || ! puck_buf) {
+		debug(LOG_ERR, "login buffer pack failed!");
+		return;
+	}
+
+	f = new_frame(frame_type, sid);
+	assert(f);
+	f->len = (ushort) pack_buf_len;
+	f->data = puck_buf;
+
 	switch (type)
 	{
 	case TypeLogin:
 		frame_type = cmdPSH;
-		req_msg.type = TypeLogin;
-
-		req_msg.data_len = msg_len;
-		debug(LOG_DEBUG, "msg.data_len = %d", req_msg.data_len);
-		req_msg.data_p = strdup(msg);
-		//TODO: NEED FREE
-
-		char *puck_buf = NULL; //TODO: NEED FREE
-		size_t pack_buf_len = pack(&req_msg, &puck_buf);
-		if ( ! pack_buf_len || ! *puck_buf) {
-			debug(LOG_ERR, "login buffer pack failed!");
-			return;
-		}
-
+		
 		/* debug showing */
 		unsigned int i = 0;
 		printf("[");
@@ -583,11 +589,6 @@ send_msg_frp_server(struct bufferevent *bev,
 		}
 		printf("]\n");
 		/* debug show over */
-
-		f = new_frame(frame_type, sid);
-		assert(f);
-		f->len = (ushort) pack_buf_len;
-		f->data = puck_buf;
 
 		/* debug showing */
 		printf("[");
@@ -598,6 +599,8 @@ send_msg_frp_server(struct bufferevent *bev,
 		/* debug show over */
 		break;
 	case TypeNewProxy:
+		frame_type = cmdPSH;
+
 		break;
 	default:
 		break;

@@ -18,6 +18,7 @@ set(src_xfrp_client
 	debug.c
 	zip.c
 	commandline.c
+	encode.c
 	)
 	
 set(libs

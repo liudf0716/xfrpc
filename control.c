@@ -59,19 +59,19 @@
 static struct control *main_ctl;
 static char *request_buf;
 
-static int start_proxy_service(struct proxy_client *pc)
-{
-	debug(LOG_INFO, "start frps proxy service ...");
-	char *proxy_msg = NULL;
-	/////// COME HERE
-	int len = login_request_marshal(&proxy_msg); //marshal login request
-	if ( ! proxy_msg) {
-		debug(LOG_ERR, "login_request_marshal failed");
-		assert(proxy_msg);
-	}
+// static int start_proxy_service(struct proxy_client *pc)
+// {
+// 	debug(LOG_INFO, "start frps proxy service ...");
+// 	char *proxy_msg = NULL;
+// 	/////// COME HERE
+// 	int len = login_request_marshal(&proxy_msg); //marshal login request
+// 	if ( ! proxy_msg) {
+// 		debug(LOG_ERR, "login_request_marshal failed");
+// 		assert(proxy_msg);
+// 	}
 
-	send_msg_frp_server(NULL, TypeLogin, proxy_msg, len, main_ctl->session_id);
-}
+// 	send_msg_frp_server(NULL, TypeNewProxy, proxy_msg, len, main_ctl->session_id);
+// }
 
 static void start_xfrp_client_service()
 {
@@ -127,6 +127,8 @@ request(struct bufferevent *bev, struct frame *f) {
 
 	int headersize = get_header_size();
 	size_t len = (1<<16) + headersize;
+
+	printf("SET FRAME CMD:%d\n", f->cmd);
 
 	memset(request_buf, 0, len);
 	request_buf[VERI] = f->ver;
@@ -571,40 +573,43 @@ send_msg_frp_server(struct bufferevent *bev,
 		return;
 	}
 
-	f = new_frame(frame_type, sid);
-	assert(f);
-	f->len = (ushort) pack_buf_len;
-	f->data = puck_buf;
-
 	switch (type)
 	{
 	case TypeLogin:
 		frame_type = cmdPSH;
 		
-		/* debug showing */
-		unsigned int i = 0;
-		printf("[");
-		for(i = 0; i<20; i++) {
-			printf("%x ", puck_buf[i]);
-		}
-		printf("]\n");
-		/* debug show over */
-
-		/* debug showing */
-		printf("[");
-		for(i = 0; i<20; i++) {
-			printf("%x ", f->data[i]);
-		}
-		printf("]\n");
-		/* debug show over */
 		break;
-	case TypeNewProxy:
+	case TypeNewProxy:	//will recv : {"proxy_name":"G_443","error":""}
+		printf("NNNNNNNNNNNNNNNNNNNNNNNNN %d \n", cmdPSH);
 		frame_type = cmdPSH;
 
 		break;
 	default:
 		break;
 	}
+
+	f = new_frame(frame_type, sid);
+	assert(f);
+	f->len = (ushort) pack_buf_len;
+	f->data = puck_buf;
+
+	/* debug showing */
+	unsigned int i = 0;
+	printf("[");
+	for(i = 0; i<20; i++) {
+		printf("%x ", puck_buf[i]);
+	}
+	printf("]\n");
+	/* debug show over */
+
+	/* debug showing */
+	printf("[");
+	for(i = 0; i<20; i++) {
+		printf("%x ", f->data[i]);
+	}
+	printf("]\n");
+	/* debug show over */
+
 	printf("request length:%d\n", (ushort) f->len);
 	request(bout, f);
 }
@@ -650,7 +655,7 @@ void control_process(struct proxy_client *client)
 		assert(new_proxy_msg);
 	}
 
-	send_msg_frp_server(NULL, TypeLogin, new_proxy_msg, len, main_ctl->session_id);
+	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
 }
 
 void send_new_proxy(struct proxy_client *client)

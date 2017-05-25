@@ -318,6 +318,7 @@ size_t pack(struct message *req_msg, char **ret_buf)
 		return 0;
 	}
 
+	printf("msg type ;;;;;;;;;;; %c\n", req_msg->type);
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
 	*(uint64_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
 	snprintf(*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 

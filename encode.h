@@ -5,4 +5,6 @@
 #include <stdio.h>
 #include <string.h>
 
+char *encrypt_key(char *token, size_t token_len);
+
 #endif // _ENCODE_H_

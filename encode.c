@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "fastpbkdf2.h"
+#include "encode.h"
 
 static const char *salt = "frp";
 

@@ -29,6 +29,7 @@
 
 #include "const.h"
 #include "uthash.h"
+#include "msg.h"
 
 #define CLIENT 1
 

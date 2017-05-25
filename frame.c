@@ -39,6 +39,11 @@ struct frame *raw_frame(char *buf, const size_t buf_len) {
 	return f;
 }
 
+void set_frame_cmd(struct frame *f, char cmd) 
+{
+	f->cmd = cmd;
+}
+
 void free_frame(struct frame *f) {
 	if (f) {
 		free(f);

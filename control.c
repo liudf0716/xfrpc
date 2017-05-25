@@ -54,6 +54,7 @@
 #include "control.h"
 #include "uthash.h"
 #include "frame.h"
+#include "encode.h"
 
 
 static struct control *main_ctl;
@@ -137,6 +138,7 @@ request(struct bufferevent *bev, struct frame *f) {
 	*((ushort *)(request_buf + 2)) = f->len;
 	*((uint32_t *)(request_buf + 4)) = f->sid;
 
+	// 	insert data to request buffer
 	if (f->data != NULL && f->len > 0) {
 		memcpy(request_buf + DATAI, f->data, f->len);
 	}
@@ -573,6 +575,11 @@ send_msg_frp_server(struct bufferevent *bev,
 		return;
 	}
 
+	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
+	assert(f);
+	f->len = (ushort) pack_buf_len;
+	f->data = puck_buf;
+
 	switch (type)
 	{
 	case TypeLogin:
@@ -588,11 +595,7 @@ send_msg_frp_server(struct bufferevent *bev,
 		break;
 	}
 
-	f = new_frame(frame_type, sid);
-	assert(f);
-	f->len = (ushort) pack_buf_len;
-	f->data = puck_buf;
-
+	set_frame_cmd(f, frame_type);
 	/* debug showing */
 	unsigned int i = 0;
 	printf("[");

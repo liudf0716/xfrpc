@@ -10,16 +10,6 @@
 static const char *default_salt = "frp";
 static struct frp_encoder *main_encoder = NULL;
 
-struct frp_encoder *init_main_encoder() {
-	
-	struct common_conf *c_conf = get_common_config();
-	main_encoder = new_encoder(c_conf->privilege_token, default_salt);
-	assert(main_encoder);
-	assert(main_encoder->key);
-
-	return main_encoder;
-}
-
 struct frp_encoder *new_encoder(const char *privilege_token, const char *salt)
 {
 	struct frp_encoder *enc = calloc(sizeof(struct frp_encoder), 1);
@@ -32,6 +22,16 @@ struct frp_encoder *new_encoder(const char *privilege_token, const char *salt)
 	return enc;
 }
 
+struct frp_encoder *init_main_encoder() {
+	
+	struct common_conf *c_conf = get_common_config();
+	main_encoder = new_encoder(c_conf->privilege_token, default_salt);
+	assert(main_encoder);
+	assert(main_encoder->key);
+
+	return main_encoder;
+}
+
 struct frp_encoder *get_main_encoder() 
 {
 	return main_encoder;
@@ -39,6 +39,7 @@ struct frp_encoder *get_main_encoder()
 
 // 29 201 136 254 206 150 233 65 13 82 120 149 203 228 122 128 
 // key_ret buffer len must be 16
+// the result of key should be free after using
 char *encrypt_key(const char *token, size_t token_len, const char *salt) 
 {
 	char out[17] = {0};
@@ -72,13 +73,15 @@ char *encrypt_key(const char *token, size_t token_len, const char *salt)
 char *encrypt_data(char *src_data, size_t srlen)
 {
 	struct common_conf *c_conf = get_common_config();
-	encrypt_key(c_conf->privilege_token, strlen(c_conf->privilege_token));
+
+	return NULL;
 }
 
 void free_encoder(struct frp_encoder *encoder) {
 	if (encoder) {
+		SAFE_FREE(encoder->privilege_token);
+		SAFE_FREE(encoder->salt);
 		SAFE_FREE(encoder->key);
-
 		SAFE_FREE(encoder);
 	}
 }

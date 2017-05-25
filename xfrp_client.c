@@ -47,22 +47,19 @@
 #include "control.h"
 #include "debug.h"
 #include "xfrp_client.h"
+#include "encode.h"
 #include "msg.h"
 
 void xfrp_client_loop()
 {
 	int ctl_ret = init_main_control();
-	if (ctl_ret) {
-		debug(LOG_ERR, "xfrp init faild");
-	}
+	if (ctl_ret)
+		debug(LOG_ERR, "xfrp main control init faild");
+
+	if (!init_main_encoder())
+		debug(LOG_ERR, "xfrp encoder init failed");
 
 	run_control();
 	
-	// if (base) {
-	// 	printf("base 在\n");
-	// } else {
-	// 	printf("base 不在\n");
-	// }
-
 	close_main_control();
 }

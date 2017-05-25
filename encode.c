@@ -2,12 +2,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <time.h>
 
 #include "fastpbkdf2.h"
 #include "encode.h"
 #include "config.h"
 
 static const char *default_salt = "frp";
+static const size_t block_size = 16;
 static struct frp_encoder *main_encoder = NULL;
 
 struct frp_encoder *new_encoder(const char *privilege_token, const char *salt)
@@ -16,7 +18,7 @@ struct frp_encoder *new_encoder(const char *privilege_token, const char *salt)
 	assert(enc);
 
 	enc->privilege_token = strdup(privilege_token);
-	enc->key_len = 16;
+	enc->key_len = block_size;
 	enc->salt = strdup(salt);
 	enc->key = encrypt_key(enc->privilege_token, strlen(enc->privilege_token), enc->salt);
 	return enc;
@@ -40,34 +42,41 @@ struct frp_encoder *get_main_encoder()
 // 29 201 136 254 206 150 233 65 13 82 120 149 203 228 122 128 
 // key_ret buffer len must be 16
 // the result of key should be free after using
-char *encrypt_key(const char *token, size_t token_len, const char *salt) 
+unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt) 
 {
-	char out[17] = {0};
-
+	unsigned char *key_ret = calloc(block_size, 1);
 	fastpbkdf2_hmac_sha1((void *)token, 
 						token_len, (void *)salt, 
 						strlen(salt), 
 						64, 
-						(void *)out, 
-						16);
+						(void *)key_ret, 
+						block_size);
 	
 	/* debug */
-	printf("KYYYYYYYYYYYYY=");
+	printf("encrypt_key = ");
 	int i = 0;
-	for(i=0; i<16; i++ ) {
-		printf("%d ", (unsigned char) *((char *)out + i));
+	for(i=0; i<block_size; i++ ) {
+		printf("%d ", *(key_ret + i));
 	}
 
 	printf("\n");
 	/* debug end */
-
-	char *key_ret = calloc(16, 1);
+	
 	if (! key_ret)
 		fprintf(stderr, "key result buffer not applied!\n");
-	else
-		memcpy(key_ret, out, 16);
 	
 	return key_ret;
+}
+
+char *encrypt_iv()
+{
+	unsigned char *iv = calloc(block_size, 1);
+	size_t i;
+	srand((unsigned int) time(NULL));
+
+	for(i=0; i<block_size; i++) {
+		iv[i] = rand();
+	}
 }
 
 char *encrypt_data(char *src_data, size_t srlen)
@@ -82,6 +91,7 @@ void free_encoder(struct frp_encoder *encoder) {
 		SAFE_FREE(encoder->privilege_token);
 		SAFE_FREE(encoder->salt);
 		SAFE_FREE(encoder->key);
+		SAFE_FREE(encoder->iv);
 		SAFE_FREE(encoder);
 	}
 }

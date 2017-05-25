@@ -19,6 +19,7 @@ set(src_xfrp_client
 	zip.c
 	commandline.c
 	encode.c
+	fastpbkdf2.c
 	)
 	
 set(libs

@@ -26,10 +26,11 @@
 
 #include "xfrp_client.h"
 #include "commandline.h"
+#include "encode.h"
 
 int main(int argc, char **argv)
 {
 	parse_commandline(argc, argv);
-	
+	encrypt_data("123", 0);
 	xfrp_client_loop();
 }

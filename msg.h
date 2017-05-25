@@ -114,6 +114,7 @@ int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg);
 struct message *new_message();
 uint64_t ntoh64(const uint64_t *input);
 uint64_t hton64(const uint64_t *input);
+char *calc_md5(const char *data, int datalen);
 char *get_auth_key(const char *token);
 size_t login_request_marshal(char **msg);
 struct message *unpack(char *recv_msg, const ushort len);

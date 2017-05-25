@@ -139,7 +139,7 @@ request(struct bufferevent *bev, struct frame *f) {
 	*((uint32_t *)(request_buf + 4)) = f->sid;
 
 	// 	insert data to request buffer
-	if (f->data != NULL && f->len > 0) {
+	if (f->data != NULL && f->len > 0) { //TODO: ENCODE when control
 		memcpy(request_buf + DATAI, f->data, f->len);
 	}
 

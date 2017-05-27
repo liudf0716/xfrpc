@@ -8,7 +8,7 @@
 [![OpenWRT][11]][12]
 [![KunTeng][13]][14]
 
-[1]: https://travis-ci.org/KunTengRom/xfrp.svg?style=plastic
+[1]: https://img.shields.io/travis/KunTengRom/xfrp.svg?style=plastic
 [2]: https://travis-ci.org/KunTengRom/xfrp
 [3]: https://img.shields.io/badge/license-GPLV3-brightgreen.svg?style=plastic
 [4]: https://github.com/KunTengRom/xfrp/blob/master/LICENSE

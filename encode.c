@@ -21,6 +21,7 @@ struct frp_encoder *new_encoder(const char *privilege_token, const char *salt)
 	enc->key_len = block_size;
 	enc->salt = strdup(salt);
 	enc->key = encrypt_key(enc->privilege_token, strlen(enc->privilege_token), enc->salt);
+	enc->iv = encrypt_iv();
 	return enc;
 }
 
@@ -41,7 +42,7 @@ struct frp_encoder *get_main_encoder()
 
 // 29 201 136 254 206 150 233 65 13 82 120 149 203 228 122 128 
 // key_ret buffer len must be 16
-// the result of key should be free after using
+// the result should be free after using
 unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt) 
 {
 	unsigned char *key_ret = calloc(block_size, 1);
@@ -68,15 +69,23 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 	return key_ret;
 }
 
-char *encrypt_iv()
+// the result should be free after using
+unsigned char *encrypt_iv()
 {
 	unsigned char *iv = calloc(block_size, 1);
 	size_t i;
 	srand((unsigned int) time(NULL));
 
 	for(i=0; i<block_size; i++) {
-		iv[i] = rand();
+		iv[i] = (rand() % 254 ) + 1;
+
+		//test:
+		iv[i] = 1;
+		printf("iv[%ld]=%d ", i, iv[i]);
 	}
+
+	printf("\n");
+	return iv;
 }
 
 char *encrypt_data(char *src_data, size_t srlen)

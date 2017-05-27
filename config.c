@@ -167,7 +167,7 @@ static struct proxy_client *new_proxy_client(const char *name)
 	struct base_conf	*bc = calloc(sizeof(struct base_conf), 1);
 	assert(bc);
 	assert(c_conf);
-	
+
 	bc->name 			= strdup(name);
 	bc->use_encryption 	= 0;
 	bc->use_gzip		= 0;

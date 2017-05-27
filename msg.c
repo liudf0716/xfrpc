@@ -120,6 +120,7 @@ size_t login_request_marshal(char **msg)
 	
 	struct common_conf *cf = get_common_config();
 	char *auth_key = get_auth_key(cf->privilege_token);
+	lg->privilege_key = strdup(auth_key);
 	
 	JSON_MARSHAL_TYPE(j_login_req, "version", string, lg->version);
 	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, SAFE_JSON_STRING(lg->hostname));

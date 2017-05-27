@@ -617,6 +617,11 @@ send_msg_frp_server(struct bufferevent *bev,
 	request(bout, f);
 }
 
+
+// rule of frp login:
+// 		frpc send msg:
+
+
 void login()
 {
 	debug(LOG_INFO, "login frps ...");

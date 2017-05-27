@@ -1,8 +1,7 @@
 ![xfrp](https://github.com/KunTengRom/xfrp/blob/master/logo.png)
 
-
+[![Build Status][1]][2]
 [![license][3]][4]
-[![Build Status][1]][2] 
 [![Supported][7]][8]
 [![PRs Welcome][5]][6]
 [![Issue Welcome][9]][10]

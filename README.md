@@ -7,6 +7,7 @@
 [![PRs Welcome][5]][6]
 [![Issue Welcome][9]][10]
 [![OpenWRT][11]][12]
+[![KunTeng][13]][14]
 
 [1]: https://travis-ci.org/KunTengRom/xfrp.svg?branch=master
 [2]: https://travis-ci.org/KunTengRom/xfrp
@@ -20,6 +21,8 @@
 [10]: https://github.com/KunTengRom/xfrp/issues/new
 [11]: https://img.shields.io/badge/Platform-%20OpenWRT%20%7CLEDE%20-brightgreen.svg
 [12]: https://github.com/KunTengRom/LEDE
+[13]: https://img.shields.io/badge/KunTeng-Inside-blue.svg?style=flat
+[14]: http://rom.kunteng.org
 
 ## What is xfrp and why start xfrp
 

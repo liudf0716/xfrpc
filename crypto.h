@@ -1,5 +1,5 @@
-#ifndef _ENCODE_H_
-#define _ENCODE_H_
+#ifndef _CRYPTO_H_
+#define _CRYPTO_H_
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -21,4 +21,4 @@ char *encrypt_data(char *src_data, size_t srlen);
 struct frp_encoder *get_main_encoder();
 struct frp_encoder *new_encoder(const char *privilege_token, const char *salt);
 
-#endif // _ENCODE_H_
+#endif // _CRYPTO_H_

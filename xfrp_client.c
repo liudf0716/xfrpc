@@ -42,7 +42,7 @@
 #include "control.h"
 #include "debug.h"
 #include "xfrp_client.h"
-#include "encode.h"
+#include "crypto.h"
 #include "msg.h"
 
 void xfrp_client_loop()

@@ -54,7 +54,7 @@
 #include "control.h"
 #include "uthash.h"
 #include "frame.h"
-#include "encode.h"
+#include "crypto.h"
 
 
 static struct control *main_ctl;

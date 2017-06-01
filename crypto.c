@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "fastpbkdf2.h"
-#include "encode.h"
+#include "crypto.h"
 #include "config.h"
 
 static const char *default_salt = "frp";
@@ -38,6 +38,12 @@ struct frp_encoder *init_main_encoder() {
 struct frp_encoder *get_main_encoder() 
 {
 	return main_encoder;
+}
+
+int is_encoder_inited()
+{
+	struct frp_encoder *e = get_main_encoder();
+	return e->iv != NULL;
 }
 
 // 29 201 136 254 206 150 233 65 13 82 120 149 203 228 122 128 

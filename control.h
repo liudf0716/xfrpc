@@ -45,6 +45,7 @@ struct control {
     struct event		*ticker_ping;    //heartbeat timer
 };
 
+void sync_iv(unsigned char *iv);
 int init_main_control();
 void run_control();
 struct control *get_main_control();

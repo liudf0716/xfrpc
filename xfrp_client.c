@@ -51,9 +51,6 @@ void xfrp_client_loop()
 	if (ctl_ret)
 		debug(LOG_ERR, "xfrp main control init faild");
 
-	if (!init_main_encoder())
-		debug(LOG_ERR, "xfrp encoder init failed");
-
 	run_control();
 	
 	close_main_control();

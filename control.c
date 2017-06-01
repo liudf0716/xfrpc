@@ -94,14 +94,6 @@ static void start_xfrp_client_service()
 	}
 }
 
-// static char *get_auth_key(const char *token)
-// {
-// 	char seed[128] = {0};
-// 	snprintf(seed, 128, "%s%ld", token, time(NULL));
-	
-// 	return calc_md5(seed, strlen(seed));
-// }
-
 // TODO: need lock
 static int 
 request(struct bufferevent *bev, struct frame *f) {
@@ -146,6 +138,13 @@ request(struct bufferevent *bev, struct frame *f) {
 
 	size_t write_len = (size_t) (headersize + f->len);
 
+	printf("******** Buffer write:\n");
+	int j = 0;
+	printf("[");
+	for(j=0; j< write_len; j++) {
+		printf("%d ", request_buf[j]);
+	}
+	printf("]\n");
 	bufferevent_write(bout, request_buf, write_len);
 	// bufferevent_write(bout, "\n", 1);
 	debug(LOG_DEBUG, 
@@ -343,6 +342,17 @@ static void recv_data_push(struct frame *f)
 	
 }
 
+static void login_check()
+{
+	if ( ! is_encoder_inited()) {
+		struct frp_encoder * e = init_main_encoder();
+		if (!e)
+			debug(LOG_ERR, "xfrp encoder init failed");
+
+		sync_iv(e->iv);
+	}
+}
+
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
@@ -381,11 +391,14 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			case cmdSYN: //no nothing now
 				break;
 			case cmdFIN:
+				break;
 			case cmdPSH:
 				if (msg->data_p == NULL)
 					break;
 				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
-				printf("lr->version = %s\n", lr->version);
+				printf("lr->version aass= %s\n", lr->version);
+				printf("011112222333\n");
+				login_check();
 			default:
 				break;
 		}
@@ -540,6 +553,22 @@ void send_msg_2_frp_server(enum msg_type type, const struct proxy_client *client
 	control_request_free(req); // free control request
 }
 
+// TODO: NEED FREE IN FUNC
+void sync_iv(unsigned char *iv)
+{
+	struct frame *f = new_frame(cmdPSH, main_ctl->session_id); // frame_type not truely matter, it will reset by set_frame_cmd
+	assert(f);
+	f->len = (ushort) get_encrypt_block_size();
+	f->data = calloc(f->len, 1);
+	memcpy(f->data, iv, f->len);
+
+	struct bufferevent *bout = main_ctl->connect_bev;
+	if ( ! bout) {
+		return;
+	}
+
+	request(bout, f);
+}
 
 void 
 send_msg_frp_server(struct bufferevent *bev, 

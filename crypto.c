@@ -21,12 +21,18 @@ struct frp_encoder *new_encoder(const char *privilege_token, const char *salt)
 	enc->key_len = block_size;
 	enc->salt = strdup(salt);
 	enc->key = encrypt_key(enc->privilege_token, strlen(enc->privilege_token), enc->salt);
-	enc->iv = encrypt_iv();
+	enc->iv = calloc(block_size, 1);
+	encrypt_iv(enc->iv, block_size);
 	return enc;
 }
 
-struct frp_encoder *init_main_encoder() {
-	
+size_t get_encrypt_block_size()
+{
+	return block_size;
+}
+
+struct frp_encoder *init_main_encoder() 
+{
 	struct common_conf *c_conf = get_common_config();
 	main_encoder = new_encoder(c_conf->privilege_token, default_salt);
 	assert(main_encoder);
@@ -43,7 +49,7 @@ struct frp_encoder *get_main_encoder()
 int is_encoder_inited()
 {
 	struct frp_encoder *e = get_main_encoder();
-	return e->iv != NULL;
+	return e != NULL;
 }
 
 // 29 201 136 254 206 150 233 65 13 82 120 149 203 228 122 128 
@@ -76,22 +82,25 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 }
 
 // the result should be free after using
-unsigned char *encrypt_iv()
+unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 {
-	unsigned char *iv = calloc(block_size, 1);
+	if (iv_len < block_size || iv_buf == NULL) {
+		return NULL;
+	}
+	
 	size_t i;
 	srand((unsigned int) time(NULL));
 
-	for(i=0; i<block_size; i++) {
-		iv[i] = (rand() % 254 ) + 1;
+	for(i=0; i<iv_len; i++) {
+		iv_buf[i] = (rand() % 254 ) + 1;
 
 		//test:
-		iv[i] = 9;
-		printf("iv[%ld]=%d ", i, iv[i]);
+		iv_buf[i] = 9;
+		printf("iv[%ld]=%d ", i, iv_buf[i]);
 	}
 
 	printf("\n");
-	return iv;
+	return iv_buf;
 }
 
 char *encrypt_data(char *src_data, size_t srlen)

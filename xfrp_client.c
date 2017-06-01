@@ -29,12 +29,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
-
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <errno.h>
-
-#include <json-c/json.h>
 
 #include <syslog.h>
 

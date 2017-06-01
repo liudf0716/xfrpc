@@ -102,6 +102,7 @@ static void start_xfrp_client_service()
 // 	return calc_md5(seed, strlen(seed));
 // }
 
+// TODO: need lock
 static int 
 request(struct bufferevent *bev, struct frame *f) {
 	struct bufferevent *bout = NULL;
@@ -432,6 +433,7 @@ static void open_session(struct bufferevent *bev)
 	main_ctl->session_id += 2;
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
+	debug(LOG_DEBUG, "open session, send frame len=%d", f->len);
 	request(bev, f);
 }
 
@@ -465,8 +467,6 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		
 		open_session(bev);
 		login();
-		// send_login_frp_server(bev);
-		// send_msg_frp_server(NewCtlConn, client, NULL);
 	}
 }
 

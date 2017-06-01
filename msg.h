@@ -123,6 +123,8 @@ struct message *unpack(char *recv_msg, ushort len);
 // tranlate control request to json string
 int control_request_marshal(const struct control_request *req, char **msg);
 
+struct login_resp *login_resp_unmarshal(const char *jres);
+
 // parse json string to control response
 struct control_response *control_response_unmarshal(const char *jres);
 

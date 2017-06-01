@@ -237,6 +237,42 @@ END_PROCESS:
 	return nret;
 }
 
+struct login_resp *login_resp_unmarshal(const char *jres)
+{
+	printf("login_resp jres = %s\n", jres);
+
+	struct json_object *j_lg_res = json_tokener_parse(jres);
+	if (is_error(j_lg_res))
+		return NULL;
+	
+	struct login_resp *lr = calloc(sizeof(struct login_resp), 1);
+	if (lr == NULL) {
+		goto END_ERROR;
+	}
+
+	struct json_object *l_version = json_object_object_get(j_lg_res, "version");
+	if (is_error(l_version)) {
+		goto END_ERROR;
+	}
+	lr->version = strdup(json_object_get_string(l_version));
+	
+	struct json_object *l_run_id = json_object_object_get(j_lg_res, "run_id");
+	if (is_error(l_run_id)) {
+		goto END_ERROR;
+	}
+	lr->run_id = strdup(json_object_get_string(l_run_id));
+
+	struct json_object *l_error = json_object_object_get(j_lg_res, "error");
+	if (is_error(l_error)) {
+		goto END_ERROR;
+	}
+	lr->error = strdup(json_object_get_string(l_error));
+
+END_ERROR:
+	json_object_put(j_lg_res);
+	return lr;
+}
+
 struct control_response *control_response_unmarshal(const char *jres)
 {
 	struct json_object *j_ctl_res = json_tokener_parse(jres);

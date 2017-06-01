@@ -382,8 +382,10 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				break;
 			case cmdFIN:
 			case cmdPSH:
-				if (f->data == NULL)
+				if (msg->data_p == NULL)
 					break;
+				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
+				printf("lr->version = %s\n", lr->version);
 			default:
 				break;
 		}

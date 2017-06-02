@@ -365,6 +365,8 @@ static void init_login(struct login *lg)
 	lg->run_id 			= NULL;
 	lg->pool_count 		= 1;//TODO
 	lg->privilege_key 	= NULL; //TODO
+
+	lg->logged 			= 0;
 }
 
 

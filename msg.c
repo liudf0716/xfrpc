@@ -342,10 +342,14 @@ static int msg_type_valid_check(char msg_type)
 	return 0;
 }
 
+// only handle recved message with right message type 
 struct message *unpack(char *recv_msg, const ushort len)
 {
 	struct message *msg = new_message();
 	msg->type = *(recv_msg + MSG_TYPE_I);
+
+	if (! msg_type_valid_check(msg->type) )
+		return NULL;
 
 	printf("recved msg type = %c\n", msg->type);
 

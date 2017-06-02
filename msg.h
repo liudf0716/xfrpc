@@ -97,6 +97,7 @@ struct login {
 	char 		*run_id;
 	int 		pool_count;
 
+	/* fields not need json marshal */
 	int			logged;		//0 not login 1:logged
 };
 

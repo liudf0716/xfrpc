@@ -335,21 +335,20 @@ static void heartbeat_sender(struct proxy_client *client)
 	
 // 	control_response_free(c_res);
 // }
-
-static void recv_data_push(struct frame *f) 
+static void login_xfrp_read_msg_cb2(struct bufferevent *bev, void *ctx)
 {
-	
+	debug(LOG_ERR, "Proxy login: connect server OKKKKKKKK!@");
 }
 
-static void login_check()
+static int login_resp_check(struct login_resp *lr)
 {
-	if ( ! is_encoder_inited()) {
-		struct frp_encoder * e = init_main_encoder();
-		if (!e)
-			debug(LOG_ERR, "xfrp encoder init failed");
+	struct login *cl = get_common_login_config();
+	cl->logged = 1;
+	if (cl->run_id)
+		free(cl->run_id);
 
-		sync_iv(e->iv);
-	}
+	cl->run_id = strdup(lr->run_id);
+	return cl->logged;
 }
 
 static void recv_cb(struct bufferevent *bev, void *ctx)
@@ -380,7 +379,6 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		}
 
 		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
-
 		if (msg && msg->data_p) 
 			debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
 			
@@ -404,13 +402,75 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
 	}
 
+	// bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, NULL, NULL);
+	// bufferevent_enable(bev, EV_READ|EV_WRITE);
+
 	free(buf);
 }
 
-
-static void login_xfrp_read_msg_cb2(struct bufferevent *bev, void *ctx)
+static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 {
-	debug(LOG_ERR, "Proxy login: connect server OKKKKKKKK!@");
+	bufferevent_setcb(bev, recv_cb, NULL, NULL, NULL);
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+	struct evbuffer *input = bufferevent_get_input(bev);
+	int len = evbuffer_get_length(input);
+	if (len < 0)
+		return;
+	
+	char *buf = calloc(len+1, 1);
+	assert(buf);
+
+	if (evbuffer_remove(input, buf, len) > 0) { 
+		debug(LOG_DEBUG, 
+			"recv [%d] bits from frp server", 
+			len);
+
+		struct frame *f = raw_frame(buf, len);
+		if (f == NULL) {
+			debug(LOG_ERR, "raw_frame faild!");
+			return;
+		}
+
+		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
+
+		if (! msg) {
+			debug(LOG_ERR, "recved invalid loginresp message");
+			goto END;
+		}
+		
+		int is_logged = 0;
+		switch(f->cmd) {
+			case cmdPSH:	//2
+				if (msg->data_p == NULL)
+					break;
+				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
+				is_logged = login_resp_check(lr);
+				break;
+			case cmdNOP: 	//3 no options
+			case cmdSYN: 	//0 create a new session
+			case cmdFIN:	//1 close session
+			default:
+				debug(LOG_ERR, "recved message but not login resp target.");
+				break;
+		}
+
+		if (is_logged) {
+			if (! is_encoder_inited()) {
+				struct frp_encoder * e = init_main_encoder();
+				if (!e)
+					debug(LOG_ERR, "xfrp encoder init failed");
+
+				sync_iv(e->iv);
+			}
+		}
+		
+	} else {
+		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
+	}
+
+END:
+	free(buf);
 }
 
 
@@ -461,6 +521,7 @@ static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
+		debug(LOG_DEBUG, "come in login_event_cb ... ");
 		// send_login_frp_server(bev);
 		//TODO : SESSION
 		// send_msg_frp_server(NewCtlConn, client, NULL);
@@ -475,7 +536,8 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
-		bufferevent_setcb(bev, recv_cb, NULL, login_event_cb, NULL);
+		// bufferevent_setcb(bev, recv_cb, NULL, login_event_cb, NULL);
+		bufferevent_setcb(bev, recv_login_resp_cb, NULL, login_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
 		open_session(bev);

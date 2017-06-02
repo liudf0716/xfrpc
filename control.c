@@ -383,15 +383,15 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 		if (msg && msg->data_p) 
 			debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
-		
+			
 		switch(f->cmd) {
-			case cmdNOP: //no nothing
+			case cmdNOP: 	//3 no options
 				break;
-			case cmdSYN: //no nothing now
+			case cmdSYN: 	//0 create a new session
 				break;
-			case cmdFIN:
+			case cmdFIN:	//1 close session
 				break;
-			case cmdPSH:
+			case cmdPSH:	//2
 				if (msg->data_p == NULL)
 					break;
 				struct login_resp *lr = login_resp_unmarshal(msg->data_p);

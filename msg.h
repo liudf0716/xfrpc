@@ -96,6 +96,8 @@ struct login {
 	long int 	timestamp;
 	char 		*run_id;
 	int 		pool_count;
+
+	int			logged;		//0 not login 1:logged
 };
 
 struct login_resp {

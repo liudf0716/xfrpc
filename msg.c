@@ -47,6 +47,21 @@ json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 #define SAFE_JSON_STRING(str_target) \
 str_target?str_target:"\0"
 
+// enum msg_type {
+// 	TypeLogin         = 'o',
+// 	TypeLoginResp     = '1',
+// 	TypeNewProxy      = 'p',
+// 	TypeNewProxyResp  = '2',
+// 	TypeNewWorkConn   = 'w',
+// 	TypeReqWorkConn   = 'r',
+// 	TypeStartWorkConn = 's',
+// 	TypePing          = 'h',
+// 	TypePong          = '4',
+// 	TypeUdpPacket     = 'u',
+// };
+const char msg_typs[] = {TypeLogin, TypeLoginResp, TypeNewProxy, TypeNewProxyResp, 
+	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUdpPacket};
+
 uint64_t ntoh64(const uint64_t *input)
 {
     uint64_t rval;
@@ -315,10 +330,24 @@ void control_response_free(struct control_response *res)
 	free(res);
 }
 
+
+static int msg_type_valid_check(char msg_type)
+{
+	int i = 0;
+	for(i = 0; i<(sizeof(msg_typs) / sizeof(*msg_typs)); i++) {
+		if (msg_typs[i] == msg_type)
+			return 1;
+	}
+
+	return 0;
+}
+
 struct message *unpack(char *recv_msg, const ushort len)
 {
 	struct message *msg = new_message();
 	msg->type = *(recv_msg + MSG_TYPE_I);
+
+	printf("recved msg type = %c\n", msg->type);
 
 	uint64_t  data_len_bigend;
 	data_len_bigend = *(uint64_t *)(recv_msg + MSG_LEN_I);

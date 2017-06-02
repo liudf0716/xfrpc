@@ -69,6 +69,7 @@ uint64_t hton64(const uint64_t *input)
     return (ntoh64(input));
 }
 
+// TODO: NEED FREE
 char *calc_md5(const char *data, int datalen)
 {
 	unsigned char digest[16] = {0};
@@ -99,6 +100,7 @@ struct message *new_message() {
 	return msg;
 }
 
+// TODO: NEED FREE
 char *get_auth_key(const char *token)
 {
 	char seed[128] = {0};

@@ -89,8 +89,8 @@ static void start_xfrp_client_service()
 			return;
 		}
 		pc->base = main_ctl->connect_base;
-		raw_new_proxy(pc);
-		send_new_proxy(pc);
+		// raw_new_proxy(pc);
+		// send_new_proxy(pc);
 	}
 }
 
@@ -121,7 +121,6 @@ request(struct bufferevent *bev, struct frame *f) {
 
 	int headersize = get_header_size();
 	size_t len = (1<<16) + headersize;
-
 	printf("SET FRAME CMD:%d\n", f->cmd);
 
 	memset(request_buf, 0, len);
@@ -166,7 +165,7 @@ request(struct bufferevent *bev, struct frame *f) {
 	printf("]\n");
 
 	memset(request_buf, 0, len);
-	return len;
+	return write_len;
 }
 
 static struct control_request *
@@ -357,7 +356,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
-	if (len <= 0)
+	if (len < 0)
 		return;
 	
 	char *buf = calloc(1, len+1);
@@ -397,8 +396,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 					break;
 				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
 				printf("lr->version aass= %s\n", lr->version);
-				printf("011112222333\n");
-				login_check();
+				// login_check();
 			default:
 				break;
 		}
@@ -570,6 +568,16 @@ void sync_iv(unsigned char *iv)
 	request(bout, f);
 }
 
+// TODO: NEED FREE frame
+void sync_session_id(uint32_t sid)
+{
+	struct frame *f = new_frame(cmdNOP, sid);
+	assert(f);
+
+	size_t send_len = request(NULL, f);
+	debug(LOG_DEBUG, "sync session id %d, len %ld", sid, send_len);
+}
+
 void 
 send_msg_frp_server(struct bufferevent *bev, 
 					const enum msg_type type, 
@@ -577,7 +585,7 @@ send_msg_frp_server(struct bufferevent *bev,
 					const size_t msg_len, 
 					uint32_t sid)
 {
-	debug(LOG_DEBUG, "send message to frps ...");
+	debug(LOG_DEBUG, "send message to frps ... [%s]", msg);
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
@@ -599,6 +607,7 @@ send_msg_frp_server(struct bufferevent *bev,
 		req_msg.data_p = strdup(msg);
 		//TODO: NEED FREE
 	}
+
 	char *puck_buf = NULL; //TODO: NEED FREE
 	size_t pack_buf_len = pack(&req_msg, &puck_buf);
 	if ( ! pack_buf_len || ! puck_buf) {
@@ -618,7 +627,6 @@ send_msg_frp_server(struct bufferevent *bev,
 		
 		break;
 	case TypeNewProxy:	//will recv : {"proxy_name":"G_443","error":""}
-		printf("NNNNNNNNNNNNNNNNNNNNNNNNN %d \n", cmdPSH);
 		frame_type = cmdPSH;
 
 		break;
@@ -662,7 +670,7 @@ void login()
 		debug(LOG_ERR, "login_request_marshal failed");
 		assert(lg_msg);
 	}
-
+	sync_session_id(3);
 	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
 }
 
@@ -753,7 +761,7 @@ void close_main_control()
 
 void run_control() {
 	start_base_connect();	//with login
-	start_xfrp_client_service();
+	// start_xfrp_client_service();
 	keep_alive();
 	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

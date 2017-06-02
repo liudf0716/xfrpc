@@ -363,7 +363,7 @@ static void init_login(struct login *lg)
 
 	lg->timestamp 		= time(NULL);
 	lg->run_id 			= NULL;
-	lg->pool_count 		= 0;//TODO
+	lg->pool_count 		= 1;//TODO
 	lg->privilege_key 	= NULL; //TODO
 }
 

@@ -381,9 +381,10 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 		if (! is_decoder_inited() && f->len == get_block_size()) {
 			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
-
+			init_main_decoder((unsigned char *)f->data);
 			return;
 		}
+		
 		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
 		if (msg && msg->data_p) 
 			debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);

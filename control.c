@@ -360,9 +360,6 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	
 	char *buf = calloc(1, len+1);
 	if (evbuffer_remove(input, buf, len) > 0) { 
-		debug(LOG_DEBUG, 
-			"recv [%d] bits from frp server", 
-			len);
 
 		/* debug showing */
 		unsigned int i = 0;
@@ -378,10 +375,23 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			return;
 		}
 
+		debug(LOG_DEBUG, 
+			"recv [%d] bits from frp server, frame: ver[%d], cmd[%d], len[%u], sid[%d]", 
+			len, f->ver, f->cmd, f->len, f->sid);
+
+		if (! is_decoder_inited() && f->len == get_block_size()) {
+			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
+
+			return;
+		}
 		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
 		if (msg && msg->data_p) 
 			debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
-			
+		else {
+			debug(LOG_ERR, "message received format invalid");
+			return;
+		}
+
 		switch(f->cmd) {
 			case cmdNOP: 	//3 no options
 				break;
@@ -457,7 +467,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 
 		if (is_logged) {
 			if (! is_encoder_inited()) {
-				struct frp_encoder * e = init_main_encoder();
+				struct frp_coder * e = init_main_encoder();
 				if (!e)
 					debug(LOG_ERR, "xfrp encoder init failed");
 

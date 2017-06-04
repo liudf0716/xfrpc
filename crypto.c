@@ -10,11 +10,18 @@
 
 static const char *default_salt = "frp";
 static const size_t block_size = 16;
-static struct frp_encoder *main_encoder = NULL;
+static struct frp_coder *main_encoder = NULL;
+static struct frp_coder *main_decoder = NULL;
 
-struct frp_encoder *new_encoder(const char *privilege_token, const char *salt)
+size_t get_block_size()
 {
-	struct frp_encoder *enc = calloc(sizeof(struct frp_encoder), 1);
+	return block_size;
+}
+
+// TODO: NEED free
+struct frp_coder *new_coder(const char *privilege_token, const char *salt)
+{
+	struct frp_coder *enc = calloc(sizeof(struct frp_coder), 1);
 	assert(enc);
 
 	enc->privilege_token = strdup(privilege_token);
@@ -31,27 +38,48 @@ size_t get_encrypt_block_size()
 	return block_size;
 }
 
-struct frp_encoder *init_main_encoder() 
+struct frp_coder *init_main_encoder() 
 {
 	struct common_conf *c_conf = get_common_config();
-	main_encoder = new_encoder(c_conf->privilege_token, default_salt);
+	main_encoder = new_coder(c_conf->privilege_token, default_salt);
 	assert(main_encoder);
 	assert(main_encoder->key);
 
 	return main_encoder;
 }
 
-struct frp_encoder *get_main_encoder() 
+struct frp_coder *init_main_decoder(unsigned char *iv)
+{
+	struct common_conf *c_conf = get_common_config();
+	main_decoder = new_coder(c_conf->privilege_token, default_salt);
+	assert(main_encoder);
+	assert(main_encoder->key);
+	memcpy(main_decoder->iv, iv, block_size);
+
+	return main_decoder;
+}
+
+struct frp_coder *get_main_encoder() 
 {
 	return main_encoder;
 }
 
+struct frp_coder *get_main_decoder()
+{
+	return main_decoder;
+}
+
 int is_encoder_inited()
 {
-	struct frp_encoder *e = get_main_encoder();
+	struct frp_coder *e = get_main_encoder();
 	return e != NULL;
 }
 
+int is_decoder_inited()
+{
+	struct frp_coder *d = get_main_decoder();
+	return d != NULL;
+}
 // 29 201 136 254 206 150 233 65 13 82 120 149 203 228 122 128 
 // key_ret buffer len must be 16
 // the result should be free after using
@@ -110,7 +138,7 @@ char *encrypt_data(char *src_data, size_t srlen)
 	return NULL;
 }
 
-void free_encoder(struct frp_encoder *encoder) {
+void free_encoder(struct frp_coder *encoder) {
 	if (encoder) {
 		SAFE_FREE(encoder->privilege_token);
 		SAFE_FREE(encoder->salt);

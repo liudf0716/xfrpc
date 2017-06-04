@@ -370,7 +370,7 @@ struct message *unpack(char *recv_msg, const ushort len)
 size_t pack(struct message *req_msg, char **ret_buf)
 {
 	uint64_t  data_len_bigend;
-	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len + 1;
+	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len;
 
 	int endian_check = 1;
 	// little endian if true
@@ -390,7 +390,7 @@ size_t pack(struct message *req_msg, char **ret_buf)
 		return 0;
 	}
 
-	printf("msg type ;;;;;;;;;;; %c\n", req_msg->type);
+	printf("msg type : %c\n", req_msg->type);
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
 	*(uint64_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
 	snprintf(*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 

@@ -679,14 +679,15 @@ send_msg_frp_server(struct bufferevent *bev,
 
 	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
 	assert(f);
-	f->len = (ushort) pack_buf_len;
+	// f->len = (ushort) pack_buf_len;
+	set_frame_len(f, (ushort) pack_buf_len);
 	f->data = puck_buf;
 
 	switch (type)
 	{
 	case TypeLogin:
 		frame_type = cmdPSH;
-		
+
 		break;
 	case TypeNewProxy:	//will recv : {"proxy_name":"G_443","error":""}
 		frame_type = cmdPSH;
@@ -717,11 +718,6 @@ send_msg_frp_server(struct bufferevent *bev,
 	printf("request length:%d\n", (ushort) f->len);
 	request(bout, f);
 }
-
-
-// rule of frp login:
-// 		frpc send msg:
-
 
 void login()
 {

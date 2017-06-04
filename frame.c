@@ -44,6 +44,12 @@ void set_frame_cmd(struct frame *f, char cmd)
 	f->cmd = cmd;
 }
 
+void set_frame_len(struct frame *f, ushort data_len)
+{
+	// f->len = (data_len << 8) | (data_len >> 8 );
+	f->len = data_len;
+}
+
 void free_frame(struct frame *f) {
 	if (f) {
 		free(f);

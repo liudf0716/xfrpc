@@ -665,8 +665,7 @@ void sync_session_id(uint32_t sid)
 	debug(LOG_DEBUG, "sync session id %d, len %ld", sid, send_len);
 }
 
-void 
-send_msg_frp_server(struct bufferevent *bev, 
+void send_msg_frp_server(struct bufferevent *bev, 
 					const enum msg_type type, 
 					const char *msg, 
 					const size_t msg_len, 
@@ -711,9 +710,6 @@ send_msg_frp_server(struct bufferevent *bev,
 	switch (type)
 	{
 	case TypeLogin:
-		frame_type = cmdPSH;
-
-		break;
 	case TypeNewProxy:	//will recv : {"proxy_name":"G_443","error":""}
 		frame_type = cmdPSH;
 

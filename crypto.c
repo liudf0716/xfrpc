@@ -115,7 +115,7 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 	if (iv_len < block_size || iv_buf == NULL) {
 		return NULL;
 	}
-	
+
 	size_t i;
 	srand((unsigned int) time(NULL));
 
@@ -123,7 +123,7 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 		iv_buf[i] = (rand() % 254 ) + 1;
 
 		//test:
-		iv_buf[i] = 9;
+		iv_buf[i] = 99;
 		printf("iv[%ld]=%d ", i, iv_buf[i]);
 	}
 
@@ -131,10 +131,11 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 	return iv_buf;
 }
 
+// TODO:NEED free
 char *encrypt_data(char *src_data, size_t srlen)
 {
-	struct common_conf *c_conf = get_common_config();
-
+	char *ret_buf = calloc(srlen, 1);
+	
 	return NULL;
 }
 

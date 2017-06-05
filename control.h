@@ -46,6 +46,7 @@ struct control {
 };
 
 void sync_iv(unsigned char *iv);
+void start_base_connect();
 void sync_session_id(uint32_t sid);
 int init_main_control();
 void run_control();

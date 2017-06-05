@@ -44,13 +44,14 @@
 #include "xfrp_client.h"
 #include "crypto.h"
 #include "msg.h"
+#include "utils.h"
 
 void xfrp_client_loop()
 {
 	int ctl_ret = init_main_control();
 	if (ctl_ret)
 		debug(LOG_ERR, "xfrp main control init faild");
-
+	
 	run_control();
 	
 	close_main_control();

@@ -67,6 +67,7 @@ struct common_conf *get_common_config();
 struct login *get_common_login_config();
 
 void free_common_config();
+int is_logged();
 
 void free_base_config(struct base_conf *bconf);
 

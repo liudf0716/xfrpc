@@ -29,14 +29,11 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
-#include <pthread.h>
-
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
 
 #include <json-c/json.h>
-
 #include <syslog.h>
 
 #include <event2/bufferevent.h>
@@ -56,11 +53,10 @@
 #include "uthash.h"
 #include "frame.h"
 #include "crypto.h"
-
+#include "utils.h"
 
 static struct control *main_ctl;
 static char *request_buf;
-static pthread_mutex_t login_mutex;
 
 // static int start_proxy_service(struct proxy_client *pc)
 // {
@@ -91,14 +87,36 @@ static void start_xfrp_client_service()
 			return;
 		}
 		pc->base = main_ctl->connect_base;
-		// raw_new_proxy(pc);
-		// send_new_proxy(pc);
+		raw_new_proxy(pc);
+		send_new_proxy(pc);
+	}
+}
+
+static void init_msg_writer()
+{
+	if (! is_encoder_inited()) {
+		struct frp_coder * e = init_main_encoder();
+		if (!e)
+			debug(LOG_ERR, "xfrp encoder init failed!");
+		else
+			sync_iv(e->iv);
+	}
+}
+
+static void init_msg_reader(unsigned char *iv)
+{
+	if (! is_decoder_inited()) {
+		struct frp_coder *d = init_main_decoder(iv);
+		if (!d) {
+			debug(LOG_DEBUG, "reader init faild!");
+		}
+		start_xfrp_client_service();
 	}
 }
 
 // TODO: need lock
-static int 
-request(struct bufferevent *bev, struct frame *f) {
+static int request(struct bufferevent *bev, struct frame *f) 
+{
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
@@ -383,7 +401,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 		if (! is_decoder_inited() && f->len == get_block_size()) {
 			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
-			init_main_decoder((unsigned char *)f->data);
+			init_msg_reader((unsigned char *)f->data);
 			return;
 		}
 		
@@ -469,15 +487,8 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 		}
 
 		if (is_logged) {
-			if (! is_encoder_inited()) {
-				struct frp_coder * e = init_main_encoder();
-				if (!e)
-					debug(LOG_ERR, "xfrp encoder init failed");
-
-				sync_iv(e->iv);
-			}
+			init_msg_writer();
 		}
-		pthread_mutex_unlock(&login_mutex);
 		
 	} else {
 		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
@@ -575,7 +586,7 @@ static void login_frp_server(struct proxy_client *client)
 	bufferevent_setcb(bev, NULL, NULL, NULL, client);
 }
 
-static void start_base_connect() 
+void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
 	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
@@ -589,7 +600,6 @@ static void start_base_connect()
 
 	debug(LOG_INFO, "Xfrpc: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
 
-	pthread_mutex_lock(&login_mutex);
 	// client->ctl_bev = bev;
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
@@ -825,7 +835,7 @@ struct control *get_main_control()
 	return main_ctl;
 }
 
-void close_main_control() 
+void close_main_control()
 {
 	assert(main_ctl);
 	event_base_dispatch(main_ctl->connect_base);
@@ -833,13 +843,6 @@ void close_main_control()
 }
 
 void run_control() {
-	pthread_mutex_init(&login_mutex, NULL);
 	start_base_connect();	//with login
-
-	pthread_mutex_lock(&login_mutex);
-	pthread_mutex_unlock(&login_mutex);
-	
-	start_xfrp_client_service();
 	keep_alive();
-	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

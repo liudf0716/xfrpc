@@ -59,6 +59,11 @@ struct login *get_common_login_config()
 	return c_login;
 }
 
+int is_logged()
+{
+	return c_login->logged;
+}
+
 void free_common_config()
 {
 	struct common_conf *c_conf = get_common_config();

@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
+#include <pthread.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -59,6 +60,7 @@
 
 static struct control *main_ctl;
 static char *request_buf;
+static pthread_mutex_t login_mutex;
 
 // static int start_proxy_service(struct proxy_client *pc)
 // {
@@ -475,6 +477,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 				sync_iv(e->iv);
 			}
 		}
+		pthread_mutex_unlock(&login_mutex);
 		
 	} else {
 		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
@@ -586,6 +589,7 @@ static void start_base_connect()
 
 	debug(LOG_INFO, "Xfrpc: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
 
+	pthread_mutex_lock(&login_mutex);
 	// client->ctl_bev = bev;
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
@@ -733,6 +737,7 @@ send_msg_frp_server(struct bufferevent *bev,
 void login()
 {
 	debug(LOG_INFO, "login frps ...");
+	
 	char *lg_msg = NULL;
 	int len = login_request_marshal(&lg_msg); //marshal login request
 	if ( ! lg_msg) {
@@ -823,14 +828,18 @@ struct control *get_main_control()
 void close_main_control() 
 {
 	assert(main_ctl);
-
 	event_base_dispatch(main_ctl->connect_base);
 	event_base_free(main_ctl->connect_base);
 }
 
 void run_control() {
+	pthread_mutex_init(&login_mutex, NULL);
 	start_base_connect();	//with login
-	// start_xfrp_client_service();
+
+	pthread_mutex_lock(&login_mutex);
+	pthread_mutex_unlock(&login_mutex);
+	
+	start_xfrp_client_service();
 	keep_alive();
 	// TODO :start_login_frp_server(main_ctl->connect_base);
 }

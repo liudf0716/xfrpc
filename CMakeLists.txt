@@ -20,6 +20,7 @@ set(src_xfrp_client
 	commandline.c
 	crypto.c
 	fastpbkdf2.c
+	utils.c
 	)
 	
 set(libs
@@ -28,7 +29,8 @@ set(libs
 	event
 	z
 	m
-	json-c)
+	json-c
+	pthread)
 	
 set(test_libs
 	event

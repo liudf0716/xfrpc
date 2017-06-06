@@ -184,6 +184,11 @@ OUT:	//TODO: need free
 	return outlen;
 }
 
+size_t decrypt_data()
+{
+	
+}
+
 void free_encoder(struct frp_coder *encoder) {
 	if (encoder) {
 		SAFE_FREE(encoder->privilege_token);

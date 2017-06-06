@@ -3,10 +3,13 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <time.h>
+#include <syslog.h>
+#include <openssl/ssl.h>
 
 #include "fastpbkdf2.h"
 #include "crypto.h"
 #include "config.h"
+#include "debug.h"
 
 static const char *default_salt = "frp";
 static const size_t block_size = 16;
@@ -132,11 +135,53 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 }
 
 // TODO:NEED free
-char *encrypt_data(char *src_data, size_t srlen)
+size_t encrypt_data(const char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
-	char *ret_buf = calloc(srlen, 1);
+	unsigned char *ret_buf = calloc(srclen, 1);	
+	if (ret_buf == NULL ) {	//this need free outside func
+		debug(LOG_ERR, "encrypt data baffuer init failed!");
+		return 0;
+	}
+
+	int outlen = 0;
+	*ret = ret_buf;
+
+	unsigned char *txt_buf = calloc(srclen, 1);	// free in func
+	if (txt_buf == NULL) {
+		debug(LOG_ERR, "encrypt text data baffuer init failed!");
+		return 0;
+	}
+
+	memcpy(txt_buf, src_data, srclen);
+	EVP_CIPHER_CTX ctx;
+	EVP_CIPHER_CTX_init(&ctx);
+	EVP_EncryptInit_ex(&ctx, EVP_aes_256_cfb8(), NULL, encoder->key, encoder->iv);
+
+	size_t i = 0;
+	unsigned char *rp = ret_buf;
+	for(i=0; i<srclen; i++) {
+		if (! EVP_EncryptUpdate(&ctx, rp, &outlen, &txt_buf[i], 1)) 
+			goto OUT;
+
+		rp += outlen;
+	}
+
+	if (! EVP_EncryptFinal(&ctx, rp, &outlen))
+		goto OUT;
 	
-	return NULL;
+	rp += outlen;
+
+	EVP_CIPHER_CTX_cleanup(&ctx);
+	outlen = rp - ret_buf;
+	
+	int j = 0;
+	for (j; j<outlen; j++) {
+		printf("%d ", ret_buf[j] & 0xff);
+	}
+
+OUT:	//TODO: need free
+	free(txt_buf);
+	return outlen;
 }
 
 void free_encoder(struct frp_coder *encoder) {

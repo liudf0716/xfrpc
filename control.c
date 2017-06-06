@@ -161,28 +161,11 @@ static int request(struct bufferevent *bev, struct frame *f)
 	int j = 0;
 	printf("[");
 	for(j=0; j< write_len; j++) {
-		printf("%d ", request_buf[j]);
+		printf("%d ", (unsigned char)request_buf[j]);
 	}
 	printf("]\n");
 	bufferevent_write(bout, request_buf, write_len);
 	// bufferevent_write(bout, "\n", 1);
-	debug(LOG_DEBUG, 
-			"Send [%d] bits to frp server [%s]", 
-			write_len, 
-			request_buf);
-
-	printf("[");
-	for(i = 0; i<write_len; i++) {
-		if (i == 0 || i == 1)
-			printf("%d ", request_buf[i]);
-		else if (i == 2)
-			printf("%u ", *(ushort *)(request_buf + i));
-		else if (i == 4)
-			printf("%u ", request_buf[i]);
-		else if (i>=8)
-			printf("%d ", request_buf[i]);
-	}
-	printf("]\n");
 
 	memset(request_buf, 0, len);
 	return write_len;
@@ -705,7 +688,22 @@ void send_msg_frp_server(struct bufferevent *bev,
 	assert(f);
 	// f->len = (ushort) pack_buf_len;
 	set_frame_len(f, (ushort) pack_buf_len);
-	f->data = puck_buf;
+
+	debug(LOG_DEBUG, "start encode message ...");
+	unsigned char *encode_ret;
+	struct frp_coder *encoder = get_main_encoder();
+	if (encoder) {
+		size_t encode_ret_len = encrypt_data(puck_buf, pack_buf_len, encoder, &encode_ret);
+
+		debug(LOG_DEBUG, "encode len:[%lu]", encode_ret_len);
+		if (encode_ret_len > 0) {
+			f->data = (char *)encode_ret;
+		}
+	}
+	/* debug end */
+
+	if (! f->data)
+		f->data = puck_buf;
 
 	switch (type)
 	{

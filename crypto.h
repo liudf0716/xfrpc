@@ -14,6 +14,7 @@ struct frp_coder {
 };
 
 size_t get_encrypt_block_size();
+char *des_cfb_encrypt();
 int is_encoder_inited();
 int is_decoder_inited();
 struct frp_coder *init_main_encoder();

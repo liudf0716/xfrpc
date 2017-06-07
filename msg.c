@@ -104,6 +104,7 @@ char *calc_md5(const char *data, int datalen)
     return out;
 }
 
+//TODO: NEED FREE
 struct message *new_message() {
 	struct message *msg = calloc(sizeof(struct message), 1); //TODO: FREE
 	if (msg)
@@ -160,7 +161,6 @@ size_t login_request_marshal(char **msg)
 	free(auth_key);
 	return nret;
 }
-
 
 // {"proxy_name":"G_22","proxy_type":"tcp","use_encryption":false,"use_compression":false,"remote_port":20099,"custom_domains":null,"subdomain":"","locations":null,"host_header_rewrite":"","http_user":"","http_pwd":""}
 int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)

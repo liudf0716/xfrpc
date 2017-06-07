@@ -221,13 +221,14 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
-	
+#ifdef ENC_DBG
 	printf("============outlen = %d============\n", outlen);
 	for (j = 0; j<outlen; j++) {
 		printf("%d ", (unsigned char)outbuf[j]);
 	}
 	printf("\n");
-	
+#endif
+
 	return outlen;
 }
 

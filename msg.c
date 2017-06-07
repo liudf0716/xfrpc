@@ -343,7 +343,7 @@ static int msg_type_valid_check(char msg_type)
 }
 
 // only handle recved message with right message type 
-struct message *unpack(char *recv_msg, const ushort len)
+struct message *unpack(unsigned char *recv_msg, const ushort len)
 {
 	struct message *msg = new_message();
 	msg->type = *(recv_msg + MSG_TYPE_I);
@@ -367,7 +367,7 @@ struct message *unpack(char *recv_msg, const ushort len)
 	return msg;
 }
 
-size_t pack(struct message *req_msg, char **ret_buf)
+size_t pack(struct message *req_msg, unsigned char **ret_buf)
 {
 	uint64_t  data_len_bigend;
 	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len;
@@ -393,7 +393,7 @@ size_t pack(struct message *req_msg, char **ret_buf)
 	printf("msg type : %c\n", req_msg->type);
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
 	*(uint64_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
-	snprintf(*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 
+	snprintf((char *)*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 
 				req_msg->data_len + 1, 
 				"%s", 
 				req_msg->data_p);

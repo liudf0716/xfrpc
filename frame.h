@@ -25,7 +25,7 @@ struct frame {
 	char cmd;
 	ushort len;
 	uint32_t sid;
-	char *data;
+	unsigned char *data;
 };
 
 // const (

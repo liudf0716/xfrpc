@@ -101,7 +101,7 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 	printf("encrypt_key = ");
 	int i = 0;
 	for(i=0; i<block_size; i++ ) {
-		key_ret[i] = (unsigned char)"b";
+		// key_ret[i] = (unsigned char)"b";
 		printf("%d ", *(key_ret + i));
 	}
 
@@ -128,7 +128,7 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 		iv_buf[i] = (rand() % 254 ) + 1;
 
 		//test:
-		iv_buf[i] = 99;
+		iv_buf[i] = 9;
 		printf("iv[%ld]=%d ", i, iv_buf[i]);
 	}
 
@@ -137,7 +137,7 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 }
 
 // TODO:NEED free
-size_t encrypt_data(const char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
+size_t encrypt_2data(const char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
 	unsigned char *ret_buf = calloc(srclen, 1);	
 	if (ret_buf == NULL ) {	//this need free outside func
@@ -187,29 +187,32 @@ OUT:	//TODO: need free
 	return outlen;
 }
 
-char *des_cfb_encrypt()
+size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
-	// unsigned char *intext = (unsigned char *)"\112\0\0\0\0\0\0\0\215{\"proxy_name\":\"G_22\",\"proxy_type\":\"tcp\",\"use_encryption\":false,\"use_compression\":false,\"remote_port\":20099,\"custom_domains\":null,\"subdomain\":\"\",\"locations\":null,\"host_header_rewrite\":\"\",\"http_user\":\"\",\"http_pwd\":\"\"}";
-
-	unsigned char *intext = (unsigned char *)"hellowold";
+	unsigned char *intext = calloc(srclen, 1);	// free in func
+	memcpy(intext, src_data, srclen);
 
 	printf("TEXT string = %s\n", intext);
+	printf("encoder using iv = %d\n", encoder->iv[0]);
+	int j = 0;
+	printf("encoder iv=");
+	for (j=0;j<16;j++){
+		printf("%u ", (unsigned char)encoder->iv[j] ) ;
+	}
+	printf("\n");
+	
 
-	unsigned char outbuf[1024];
+	unsigned char *outbuf = calloc(srclen, 1);
+	*ret = outbuf;
 
-	int retlen = 9;
+	int retlen = srclen;
 
 	int outlen, tmplen;
-	// unsigned char key[] = {29, 201, 136, 254, 206, 150, 233, 65, 13, 82, 120, 149, 203, 228, 122, 128};
 
-	unsigned char key[] = {98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98};
-	
-	//iv is client c
-	unsigned char iv[] = {99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99};
 	EVP_CIPHER_CTX ctx;
 	EVP_CIPHER_CTX_init(&ctx);
-	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, key, iv);
-	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, retlen)) {
+	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, encoder->key, encoder->iv);
+	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, srclen)) {
 		printf("EVP_EncryptUpdate error\n");
 	}
 	if(!EVP_EncryptFinal_ex(&ctx, outbuf + outlen, &tmplen)) {
@@ -218,18 +221,14 @@ char *des_cfb_encrypt()
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
-	int j = 0;
+	
 	printf("============outlen = %d============\n", outlen);
-	for (j; j<outlen; j++) {
-		printf("%02x ", (unsigned char)outbuf[j]);
+	for (j = 0; j<outlen; j++) {
+		printf("%d ", (unsigned char)outbuf[j]);
 	}
 	printf("\n");
 	
-	char *ret = calloc(outlen, 1);
-	assert(ret);
-	memcpy(ret, outbuf, outlen);
-
-	return ret;
+	return outlen;
 }
 
 size_t decrypt_data()

@@ -120,9 +120,8 @@ uint64_t hton64(const uint64_t *input);
 char *calc_md5(const char *data, int datalen);
 char *get_auth_key(const char *token);
 size_t login_request_marshal(char **msg);
-struct message *unpack(char *recv_msg, const ushort len);
-size_t pack(struct message *req_msg, char **ret_buf);
-struct message *unpack(char *recv_msg, ushort len);
+size_t pack(struct message *req_msg, unsigned char **ret_buf);
+struct message *unpack(unsigned char *recv_msg, const ushort len);
 // tranlate control request to json string
 int control_request_marshal(const struct control_request *req, char **msg);
 

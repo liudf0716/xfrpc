@@ -174,53 +174,54 @@ static int request(struct bufferevent *bev, struct frame *f)
 static struct control_request *
 get_control_request(enum msg_type type, const struct proxy_client *client)
 {
-	if (!client)
-		return NULL;
+	// if (!client)
+	// 	return NULL;
 	
-	struct control_request *req = calloc(sizeof(struct control_request), 1);
-	long ntime = time(NULL);
-	req->type = type;
-	req->proxy_name = strdup(client->name);
-	#define	STRDUP(v)	v?strdup(v):NULL
-	switch((int)type) {
-		case TypeLogin:
-			req->use_encryption = client->bconf->use_encryption;
-			req->use_gzip = client->bconf->use_gzip;
-			req->pool_count = client->bconf->pool_count;
-			req->privilege_mode = client->bconf->privilege_mode;
-			req->proxy_type = STRDUP(client->bconf->type);
-			req->host_header_rewrite = STRDUP(client->bconf->host_header_rewrite);
-			req->http_username = STRDUP(client->bconf->http_username);
-			req->http_password = STRDUP(client->bconf->http_password);
-			req->subdomain = STRDUP(client->bconf->subdomain);
-			if (req->privilege_mode) {
-				req->remote_port = client->remote_port;
-				req->custom_domains = STRDUP(client->custom_domains);
-				req->locations = STRDUP(client->locations);
-			}
-			break;
-		// case NewWorkConn:	
-		// 	break;
-		// case NoticeUserConn:
-		// 	break;
-		// case NewCtlConnRes:
-		// 	break;
-		// case HeartbeatReq:
-		// 	break;
-		// case HeartbeatRes:
-		// 	break;
-		// case NewWorkConnUdp:
-		// 	break;
-	}
+	// struct control_request *req = calloc(sizeof(struct control_request), 1);
+	// long ntime = time(NULL);
+	// req->type = type;
+	// req->proxy_name = strdup(client->name);
+	// #define	STRDUP(v)	v?strdup(v):NULL
+	// switch((int)type) {
+	// 	case TypeLogin:
+	// 		req->use_encryption = client->bconf->use_encryption;
+	// 		req->use_gzip = client->bconf->use_gzip;
+	// 		req->pool_count = client->bconf->pool_count;
+	// 		req->privilege_mode = client->bconf->privilege_mode;
+	// 		req->proxy_type = STRDUP(client->bconf->type);
+	// 		req->host_header_rewrite = STRDUP(client->bconf->host_header_rewrite);
+	// 		req->http_username = STRDUP(client->bconf->http_username);
+	// 		req->http_password = STRDUP(client->bconf->http_password);
+	// 		req->subdomain = STRDUP(client->bconf->subdomain);
+	// 		if (req->privilege_mode) {
+	// 			req->remote_port = client->remote_port;
+	// 			req->custom_domains = STRDUP(client->custom_domains);
+	// 			req->locations = STRDUP(client->locations);
+	// 		}
+	// 		break;
+	// 	// case NewWorkConn:	
+	// 	// 	break;
+	// 	// case NoticeUserConn:
+	// 	// 	break;
+	// 	// case NewCtlConnRes:
+	// 	// 	break;
+	// 	// case HeartbeatReq:
+	// 	// 	break;
+	// 	// case HeartbeatRes:
+	// 	// 	break;
+	// 	// case NewWorkConnUdp:
+	// 	// 	break;
+	// }
 	
-	req->privilege_mode = client->bconf->privilege_mode;
-	req->timestamp = ntime;
-	if (req->privilege_mode) {
-		req->privilege_key = get_auth_key(client->bconf->privilege_token);
-	} else {
-		req->auth_key = get_auth_key(client->bconf->auth_token);
-	}
-	return req;
+	// req->privilege_mode = client->bconf->privilege_mode;
+	// req->timestamp = ntime;
+	// if (req->privilege_mode) {
+	// 	req->privilege_key = get_auth_key(client->bconf->privilege_token);
+	// } else {
+	// 	req->auth_key = get_auth_key(client->bconf->auth_token);
+	// }
+	// return req;
+	return NULL;
 }
 
 static void
@@ -677,12 +678,21 @@ void send_msg_frp_server(struct bufferevent *bev,
 		//TODO: NEED FREE
 	}
 
-	char *puck_buf = NULL; //TODO: NEED FREE
+	unsigned char *puck_buf = NULL; //TODO: NEED FREE
 	size_t pack_buf_len = pack(&req_msg, &puck_buf);
 	if ( ! pack_buf_len || ! puck_buf) {
 		debug(LOG_ERR, "login buffer pack failed!");
 		return;
 	}
+
+	debug(LOG_DEBUG, "**puck result:");
+	size_t j = 0;
+	for(j;j<pack_buf_len; j++) {
+		printf("%d ", (unsigned char)puck_buf[j]);
+	}
+
+	printf("\n\n");
+	
 
 	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
 	assert(f);
@@ -692,33 +702,19 @@ void send_msg_frp_server(struct bufferevent *bev,
 	struct frp_coder *encoder = get_main_encoder();
 	if (encoder) {
 		size_t encode_ret_len = encrypt_data(puck_buf, pack_buf_len, encoder, &encode_ret);
-
 		debug(LOG_DEBUG, "encode len:[%lu]", encode_ret_len);
+
 		if (encode_ret_len > 0) {
-			f->data = (char *)encode_ret;
+			f->data = encode_ret;
 			set_frame_len(f, (ushort) encode_ret_len);
 		}
 
-		char test_code[] = {
-		 0x09 ,0x3a ,0x3b ,0x57 ,0x95 ,0x83 ,0x32 ,0x79
-   ,0x47 ,0xfe ,0x9d ,0x1e ,0x24 ,0x65 ,0xbc ,0xd9 ,0x2b ,0x5c ,0xa3 ,0x02 ,0xd8 ,0x3b ,0xe4 ,0x56
-   ,0xef ,0x2f ,0xdb ,0x1b ,0xcc ,0xa2 ,0xdd ,0x61 ,0xc1 ,0xc3 ,0xe5 ,0xfb ,0xb5 ,0x0c ,0xde ,0x4a
-   ,0x6f ,0x68 ,0x78 ,0x47 ,0x62 ,0x76 ,0xf9 ,0x6c ,0xc2 ,0xeb ,0x41 ,0x4e ,0x50 ,0x7f ,0xf8 ,0x68
-   ,0x3c ,0x49 ,0x97 ,0x65 ,0x18 ,0x95 ,0x12 ,0x2d ,0x22 ,0xc1 ,0x15 ,0xe6 ,0x08 ,0x78 ,0xa6 ,0x27
-   ,0xfa ,0x0a ,0x87 ,0x4b ,0xf6 ,0x19 ,0xc4 ,0xae ,0x6c ,0x7c ,0xb0 ,0xd8 ,0x2f ,0x49 ,0xc9 ,0x1b
-   ,0xd4 ,0xf5 ,0xa9 ,0x23 ,0x6f ,0x16 ,0x1c ,0xca ,0x02 ,0x85 ,0xf7 ,0x17 ,0xc9 ,0x67 ,0x59 ,0xa0
-   ,0x89 ,0x78 ,0x5e ,0x5e ,0x6d ,0x9f ,0x75 ,0x5e ,0x58 ,0xb1 ,0xc5 ,0x20 ,0xbe ,0x2e ,0x1b ,0x6d
-   ,0xe7 ,0x25 ,0x0c ,0x4c ,0xd0 ,0x0d ,0x9b ,0x8f ,0x58 ,0x77 ,0x4b ,0x6b ,0x19 ,0x7e ,0x24 ,0xf7
-   ,0x8c ,0xcd ,0x3b ,0xc4 ,0x4b ,0x8a ,0x37 ,0x7f ,0x3e ,0x19 ,0xc7 ,0x53 ,0xfb ,0xfe ,0xe2 ,0x08
-   ,0x7c ,0xe4 ,0x67 ,0x3b ,0xa6 ,0x86 ,0xf2 ,0x88 ,0xf9 ,0x62 ,0x32 ,0x74 ,0xe6 ,0x16 ,0x68 ,0xca
-   ,0xde ,0x05 ,0x0b ,0xfc ,0x42 ,0x0f ,0xe9 ,0x71 ,0x5d ,0x9d ,0xef ,0xb2 ,0x33 ,0x55 ,0xf5 ,0xeb
-   ,0xc3 ,0x77 ,0xf2 ,0xd0 ,0x32 ,0x42 ,0x5f ,0x0c ,0x18 ,0x50 ,0x6b ,0xd4 ,0x04 ,0xa7 ,0x81 ,0xcd
-   ,0xd3 ,0x75 ,0x2d ,0xba ,0x76 ,0x98 ,0xc1 ,0x8e ,0xc7 ,0xd0 ,0xf5 ,0x28 ,0x58 ,0x14 ,0x3d ,0xfb
-   ,0xd8 ,0x62 ,0xa3 ,0xa8 ,0x80 ,0x2c ,0x1e ,0x01};
-   		f->data = test_code;
-		f->data = des_cfb_encrypt();
-		decrypt_data();
-		set_frame_len(f, (ushort) 224);
+		// char test_code[] = {
+		//  252, 200, 117, 253, 141, 60, 118, 60, 188, 117, 176, 9, 78, 95, 102, 90, 168, 203, 71, 14, 249, 54, 251, 71, 183, 237, 87, 10, 225, 183, 222, 236, 83, 29, 100, 134, 94, 45, 47, 30, 254, 165, 146, 199, 13, 125, 193, 73, 149, 224, 111, 168, 77, 249, 136, 107, 230, 73, 94, 12, 56, 199, 243, 109, 79, 59, 12, 229, 12, 105, 211, 167, 248, 191, 215, 59, 149, 21, 157, 93, 67, 42, 147, 153, 120, 65, 213, 255, 179, 167, 49, 114, 248, 199, 219, 64, 110, 132, 143, 37, 228, 186, 125, 130, 137, 70, 18, 173, 207, 254, 226, 248, 12, 112, 45, 20, 30, 0, 76, 64, 142, 153, 244, 239, 101, 116, 173, 219, 254, 159, 143, 192, 90, 210, 138, 82, 145, 19, 195, 202, 238, 229, 94, 193, 118, 196, 216, 50, 203, 105, 60, 42, 190, 242, 163, 184, 155, 71, 24, 165, 186, 0, 138, 30, 2, 252, 245, 123, 87, 41, 56, 8, 177, 3, 92, 229, 54, 13, 0, 235, 198, 227, 224, 144, 14, 193, 113, 9, 242, 197, 56, 130, 118, 242, 84, 250, 64, 242, 196, 75, 72, 33, 17, 86, 89, 164, 140, 195, 125, 7, 252, 220, 181, 195, 106, 150, 63, 9, 41, 14, 212, 16, 169, 90};
+   		// f->data = test_code;
+		// f->data[0] = 252;
+		// decrypt_data();
+		set_frame_len(f, (ushort) pack_buf_len);
 	}
 
 	/* debug end */

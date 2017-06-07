@@ -22,6 +22,7 @@ struct frame *new_frame(char cmd, uint32_t sid) {
 	return f;
 }
 
+// f->len is rawed in this func
 struct frame *raw_frame(char *buf, const size_t buf_len) {
 	int header_size = get_header_size();
 	if (buf_len < header_size) {

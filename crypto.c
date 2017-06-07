@@ -157,7 +157,7 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 		goto E_END;
 	}
 
-	if(!EVP_EncryptFinal_ex(&ctx, outbuf + outlen, &tmplen)) {
+	if(!EVP_EncryptFinal_ex(&ctx, outbuf+outlen, &tmplen)) {
 		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
 		goto E_END;
 	}
@@ -166,9 +166,8 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
 #ifdef ENC_DBG
-	debug(LOG_DEBUG, "encoder using iv = %d", encoder->iv[0]);
 	int j = 0;
-	printf("encoder iv=");
+	debug(LOG_DEBUG, "encoder iv=");
 	for (j=0;j<16;j++){
 		printf("%u ", (unsigned char)encoder->iv[j] ) ;
 	}
@@ -177,7 +176,7 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 		printf("%d ", (unsigned char)outbuf[j]);
 	}
 	printf("\n");
-#endif
+#endif //ENC_DBG
 
 E_END:
 	free(intext);
@@ -211,6 +210,35 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
+
+// #ifdef DEC_DBG
+	int j = 0;
+	debug(LOG_DEBUG, "decoder IV=");
+	for (j=0;j<16;j++){
+		printf("%u ", (unsigned char)decoder->iv[j] );
+	}
+	printf("\n");
+
+	debug(LOG_DEBUG, "decoder KEY=");
+	for (j=0;j<16;j++){
+		printf("%u ", (unsigned char)decoder->key[j] );
+	}
+	printf("\n");
+
+	debug(LOG_DEBUG, "decoder source=");
+	for (j=0;j<enc_len;j++){
+		printf("%u ", (unsigned char)enc_data[j]);
+	}
+	printf("\n");
+
+	debug(LOG_DEBUG, "decoder result=");
+	for (j = 0; j<outlen; j++) {
+		printf("%d ", (unsigned char)outbuf[j]);
+	}
+	printf("\n");
+
+	debug(LOG_DEBUG, "decode string=%s", outbuf);
+// #endif //DEC_DBG
 
 D_END:
 	free(inbuf);

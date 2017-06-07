@@ -328,7 +328,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	if (len < 0)
 		return;
 	
-	char *buf = calloc(1, len+1);
+	char *buf = calloc(1, len);
 	if (evbuffer_remove(input, buf, len) > 0) { 
 
 		/* debug showing */
@@ -355,15 +355,24 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			init_msg_reader((unsigned char *)f->data);
 			return;
 		}
+		
+		if (len <= get_header_size()) {
+			//TODO: heartbeat response handle
+			return;
+		}
 
 		struct frp_coder *d = get_main_decoder();
 		if (! d) {
 			debug(LOG_ERR, "decoder (message reader) is not inited!");
 			return;
 		}
-		
+		unsigned char *ret_buf = NULL; //TODO: NEED FREE
+		size_t ret_len = decrypt_data(f->data, (size_t)f->len, d, &ret_buf);
+		if (ret_len <= 0) {
+			debug(LOG_ERR, "message recved decrypt result is 0 bit");
+			return;
+		}
 
-		//TODO: heartbeat response handle
 		struct message *msg = NULL;
 		
 		switch(f->cmd) {
@@ -374,11 +383,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			case cmdFIN:	//1 close session
 				break;
 			case cmdPSH:	//2
-				// if 
-				msg = len > get_header_size()? unpack(f->data, f->len):NULL;
-				if (msg && msg->data_p) 
+				msg = unpack(ret_buf, f->len);
+				if (msg && msg->data_p) {
 					debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
-				else {
+					debug(LOG_DEBUG, "recv <---- %s", msg->data_p);
+				} else {
 					debug(LOG_ERR, "message received format invalid");
 					return;
 				}

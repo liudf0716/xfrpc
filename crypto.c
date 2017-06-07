@@ -83,6 +83,7 @@ int is_decoder_inited()
 	struct frp_coder *d = get_main_decoder();
 	return d != NULL;
 }
+
 // 29 201 136 254 206 150 233 65 13 82 120 149 203 228 122 128 
 // key_ret buffer len must be 16
 // the result should be free after using
@@ -100,6 +101,7 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 	printf("encrypt_key = ");
 	int i = 0;
 	for(i=0; i<block_size; i++ ) {
+		key_ret[i] = (unsigned char)"b";
 		printf("%d ", *(key_ret + i));
 	}
 
@@ -187,20 +189,26 @@ OUT:	//TODO: need free
 
 char *des_cfb_encrypt()
 {
-	unsigned char *intext = (unsigned char *)"\112\0\0\0\0\0\0\0\215{\"proxy_name\":\"G_22\",\"proxy_type\":\"tcp\",\"use_encryption\":false,\"use_compression\":false,\"remote_port\":20099,\"custom_domains\":null,\"subdomain\":\"\",\"locations\":null,\"host_header_rewrite\":\"\",\"http_user\":\"\",\"http_pwd\":\"\"}";
+	// unsigned char *intext = (unsigned char *)"\112\0\0\0\0\0\0\0\215{\"proxy_name\":\"G_22\",\"proxy_type\":\"tcp\",\"use_encryption\":false,\"use_compression\":false,\"remote_port\":20099,\"custom_domains\":null,\"subdomain\":\"\",\"locations\":null,\"host_header_rewrite\":\"\",\"http_user\":\"\",\"http_pwd\":\"\"}";
+
+	unsigned char *intext = (unsigned char *)"hellowold";
 
 	printf("TEXT string = %s\n", intext);
 
 	unsigned char outbuf[1024];
 
-	int retlen = 224;
+	int retlen = 9;
 
 	int outlen, tmplen;
-	unsigned char key[] = {29, 201, 136, 254, 206, 150, 233, 65, 13, 82, 120, 149, 203, 228, 122, 128};
+	// unsigned char key[] = {29, 201, 136, 254, 206, 150, 233, 65, 13, 82, 120, 149, 203, 228, 122, 128};
+
+	unsigned char key[] = {98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98};
+	
+	//iv is client c
 	unsigned char iv[] = {99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99};
 	EVP_CIPHER_CTX ctx;
 	EVP_CIPHER_CTX_init(&ctx);
-	EVP_EncryptInit_ex(&ctx, EVP_des_ede_cfb(), NULL, key, iv);
+	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, key, iv);
 	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, retlen)) {
 		printf("EVP_EncryptUpdate error\n");
 	}
@@ -211,9 +219,9 @@ char *des_cfb_encrypt()
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
 	int j = 0;
-	printf("========================\n");
+	printf("============outlen = %d============\n", outlen);
 	for (j; j<outlen; j++) {
-		printf("%d ", (unsigned char)outbuf[j]);
+		printf("%02x ", (unsigned char)outbuf[j]);
 	}
 	printf("\n");
 	
@@ -226,7 +234,37 @@ char *des_cfb_encrypt()
 
 size_t decrypt_data()
 {
+	unsigned char inbuf[] = {0xf5, 0x0d, 0xd2, 0xcc, 0x05, 0x9b, 0xfb, 0xac, 0x3c};
+	unsigned char outbuf[1024]= {0};
+	int outlen, inlen, tmplen;
+	inlen = 9;
+	unsigned char key[] = {98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98};
+	
+	//iv is client c
+	unsigned char iv[] = {99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99};
+	EVP_CIPHER_CTX ctx;
+	FILE *in = NULL;
+	EVP_CIPHER_CTX_init(&ctx);
+	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, key, iv);
+	// in = fopen("cipher.bin", "r");
+	// inlen = fread(inbuf, 1, sizeof(inbuf), in);
+	// fclose(in);
+	// printf("Readlen: %d\n", inlen);
 
+
+
+	if(!EVP_DecryptUpdate(&ctx, outbuf, &outlen, inbuf, inlen)) {
+	printf("EVP_DecryptUpdate\n");
+	return 1;
+	}
+	if(!EVP_DecryptFinal_ex(&ctx, outbuf + outlen, &tmplen)) {
+	printf("EVP_DecryptFinal_ex\n");
+	return 1;
+	}
+	outlen += tmplen;
+	EVP_CIPHER_CTX_cleanup(&ctx);
+	printf("Result: \n%s\n", outbuf);
+	return 0;
 }
 
 void free_encoder(struct frp_coder *encoder) {

@@ -717,6 +717,7 @@ void send_msg_frp_server(struct bufferevent *bev,
    ,0xd8 ,0x62 ,0xa3 ,0xa8 ,0x80 ,0x2c ,0x1e ,0x01};
    		f->data = test_code;
 		f->data = des_cfb_encrypt();
+		decrypt_data();
 		set_frame_len(f, (ushort) 224);
 	}
 

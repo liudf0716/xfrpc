@@ -14,7 +14,7 @@ struct frp_coder {
 };
 
 size_t get_encrypt_block_size();
-size_t decrypt_data();
+size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_coder *decoder, unsigned char **ret);
 int is_encoder_inited();
 int is_decoder_inited();
 struct frp_coder *init_main_encoder();
@@ -26,5 +26,6 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 struct frp_coder *get_main_encoder();
 struct frp_coder *get_main_decoder();
 size_t get_block_size();
+void free_encoder(struct frp_coder *encoder);
 
 #endif // _CRYPTO_H_

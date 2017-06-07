@@ -136,103 +136,52 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 	return iv_buf;
 }
 
-// TODO:NEED free
-size_t encrypt_2data(const char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
-{
-	unsigned char *ret_buf = calloc(srclen, 1);	
-	if (ret_buf == NULL ) {	//this need free outside func
-		debug(LOG_ERR, "encrypt data baffuer init failed!");
-		return 0;
-	}
-
-	int outlen = 0;
-	*ret = ret_buf;
-
-	unsigned char *txt_buf = calloc(srclen, 1);	// free in func
-	if (txt_buf == NULL) {
-		debug(LOG_ERR, "encrypt text data baffuer init failed!");
-		return 0;
-	}
-
-	memcpy(txt_buf, src_data, srclen);
-	EVP_CIPHER_CTX ctx;
-	EVP_CIPHER_CTX_init(&ctx);
-	EVP_EncryptInit_ex(&ctx, EVP_aes_256_cfb8(), NULL, encoder->key, encoder->iv);
-
-	size_t i = 0;
-	unsigned char *rp = ret_buf;
-	for(i=0; i<srclen; i++) {
-		if (! EVP_EncryptUpdate(&ctx, rp, &outlen, &txt_buf[i], 1)) 
-			goto OUT;
-
-		rp += outlen;
-	}
-
-	if (! EVP_EncryptFinal(&ctx, rp, &outlen))
-		goto OUT;
-	
-	rp += outlen;
-
-	EVP_CIPHER_CTX_cleanup(&ctx);
-	outlen = rp - ret_buf;
-	
-	int j = 0;
-	for (j; j<outlen; j++) {
-		printf("%d ", (unsigned char)ret_buf[j]);
-	}
-	printf("\n");
-
-OUT:	//TODO: need free
-	free(txt_buf);
-	return outlen;
-}
-
 size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
 	unsigned char *intext = calloc(srclen, 1);	// free in func
 	memcpy(intext, src_data, srclen);
 
-	printf("TEXT string = %s\n", intext);
-	printf("encoder using iv = %d\n", encoder->iv[0]);
+	unsigned char *outbuf = calloc(srclen, 1);
+	*ret = outbuf;
+
+	int outlen = 0, tmplen = 0;
+
+	EVP_CIPHER_CTX ctx;
+	EVP_CIPHER_CTX_init(&ctx);
+	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, encoder->key, encoder->iv);
+	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, (int)srclen)) {
+		debug(LOG_ERR, "EVP_EncryptUpdate error!");
+		goto END;
+	}
+
+	if(!EVP_EncryptFinal_ex(&ctx, outbuf + outlen, &tmplen)) {
+		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
+		goto END;
+	}
+
+	outlen += tmplen;
+	EVP_CIPHER_CTX_cleanup(&ctx);
+
+#ifdef ENC_DBG
+	debug(LOG_DEBUG, "encoder using iv = %d", encoder->iv[0]);
 	int j = 0;
 	printf("encoder iv=");
 	for (j=0;j<16;j++){
 		printf("%u ", (unsigned char)encoder->iv[j] ) ;
 	}
 	printf("\n");
-	
-
-	unsigned char *outbuf = calloc(srclen, 1);
-	*ret = outbuf;
-
-	int retlen = srclen;
-
-	int outlen, tmplen;
-
-	EVP_CIPHER_CTX ctx;
-	EVP_CIPHER_CTX_init(&ctx);
-	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, encoder->key, encoder->iv);
-	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, srclen)) {
-		printf("EVP_EncryptUpdate error\n");
-	}
-	if(!EVP_EncryptFinal_ex(&ctx, outbuf + outlen, &tmplen)) {
-		printf("EVP_EncryptFinal_ex\n");
-	}   
-	outlen += tmplen;
-	EVP_CIPHER_CTX_cleanup(&ctx);
-
-#ifdef ENC_DBG
-	printf("============outlen = %d============\n", outlen);
 	for (j = 0; j<outlen; j++) {
 		printf("%d ", (unsigned char)outbuf[j]);
 	}
 	printf("\n");
 #endif
 
+END:
+	free(intext);
 	return outlen;
 }
 
-size_t decrypt_data()
+size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_coder *decoder, unsigned char **ret)
 {
 	unsigned char inbuf[] = {0xf5, 0x0d, 0xd2, 0xcc, 0x05, 0x9b, 0xfb, 0xac, 0x3c};
 	unsigned char outbuf[1024]= {0};

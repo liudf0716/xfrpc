@@ -313,6 +313,14 @@ static int login_resp_check(struct login_resp *lr)
 	return cl->logged;
 }
 
+static void row_message(struct message *msg)
+{
+	switch(msg->type) {
+		default:
+			break;
+	}
+}
+
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
@@ -347,16 +355,17 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			init_msg_reader((unsigned char *)f->data);
 			return;
 		}
-		
-		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
-		if (msg && msg->data_p) 
-			debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
-		else {
-			//TODO: Perhaps heartbeat
-			debug(LOG_ERR, "message received format invalid");
+
+		struct frp_coder *d = get_main_decoder();
+		if (! d) {
+			debug(LOG_ERR, "decoder (message reader) is not inited!");
 			return;
 		}
+		
 
+		//TODO: heartbeat response handle
+		struct message *msg = NULL;
+		
 		switch(f->cmd) {
 			case cmdNOP: 	//3 no options
 				break;
@@ -365,11 +374,20 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			case cmdFIN:	//1 close session
 				break;
 			case cmdPSH:	//2
+				// if 
+				msg = len > get_header_size()? unpack(f->data, f->len):NULL;
+				if (msg && msg->data_p) 
+					debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
+				else {
+					debug(LOG_ERR, "message received format invalid");
+					return;
+				}
+
 				if (msg->data_p == NULL)
 					break;
-				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
-				printf("lr->version aass= %s\n", lr->version);
-				// login_check();
+				
+
+
 				break;
 			default:
 				break;

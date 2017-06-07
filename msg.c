@@ -178,11 +178,21 @@ int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int64, np_req->remote_port);
 
 	json_object *j_cdm_array = json_object_new_array();
-	json_object_object_add(j_np_req, "custom_domains", j_cdm_array);
+	if (np_req->custom_domains) {
+		json_object_object_add(j_np_req, "custom_domains", j_cdm_array);
+	} else {
+		json_object_object_add(j_np_req, "custom_domains", NULL);
+	}
+
 	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));
 
 	json_object *j_location_array = json_object_new_array();
-	json_object_object_add(j_np_req, "locations", j_location_array);
+	if (np_req->locations) {
+		json_object_object_add(j_np_req, "locations", j_location_array);
+	} else {
+		json_object_object_add(j_np_req, "locations", NULL);
+	}
+	
 	JSON_MARSHAL_TYPE(j_np_req, "host_header_rewrite", string, SAFE_JSON_STRING(np_req->host_header_rewrite));
 	JSON_MARSHAL_TYPE(j_np_req, "http_user", string, SAFE_JSON_STRING(np_req->http_user));
 	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
@@ -197,7 +207,7 @@ int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)
 	return nret;
 }
 
-
+// old not used
 int control_request_marshal(const struct control_request *req, char **msg)
 {
 	const char *tmp = NULL;
@@ -222,7 +232,7 @@ int control_request_marshal(const struct control_request *req, char **msg)
 						   json_object_new_string(req->proxy_type?req->proxy_type:""));
 	json_object_object_add(j_ctl_req, "remote_port", json_object_new_int(req->remote_port));
 	if (!req->custom_domains)
-		json_object_object_add(j_ctl_req, "custom_domains", NULL);
+		json_object_object_add(j_ctl_req, "custom_domains", json_object_new_string(NULL));
 	else {
 		// need to implement it
 		;

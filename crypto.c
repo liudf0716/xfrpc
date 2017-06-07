@@ -136,12 +136,15 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 	return iv_buf;
 }
 
+// using aes-128-cfb and nopadding
 size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
 	unsigned char *intext = calloc(srclen, 1);	// free in func
+	assert(intext);
 	memcpy(intext, src_data, srclen);
 
 	unsigned char *outbuf = calloc(srclen, 1);
+	assert(outbuf);
 	*ret = outbuf;
 
 	int outlen = 0, tmplen = 0;
@@ -151,12 +154,12 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, encoder->key, encoder->iv);
 	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, (int)srclen)) {
 		debug(LOG_ERR, "EVP_EncryptUpdate error!");
-		goto END;
+		goto E_END;
 	}
 
 	if(!EVP_EncryptFinal_ex(&ctx, outbuf + outlen, &tmplen)) {
 		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
-		goto END;
+		goto E_END;
 	}
 
 	outlen += tmplen;
@@ -176,44 +179,42 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	printf("\n");
 #endif
 
-END:
+E_END:
 	free(intext);
 	return outlen;
 }
 
 size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_coder *decoder, unsigned char **ret)
 {
-	unsigned char inbuf[] = {0xf5, 0x0d, 0xd2, 0xcc, 0x05, 0x9b, 0xfb, 0xac, 0x3c};
-	unsigned char outbuf[1024]= {0};
-	int outlen, inlen, tmplen;
-	inlen = 9;
-	unsigned char key[] = {98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98, 98};
-	
-	//iv is client c
-	unsigned char iv[] = {99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99};
+	unsigned char *inbuf = calloc(enc_len, 1);
+	assert(inbuf);
+
+	unsigned char *outbuf = calloc(enc_len, 1);
+	assert(outbuf);
+	*ret = outbuf;
+
+	int outlen = 0, tmplen = 0;
+
 	EVP_CIPHER_CTX ctx;
-	FILE *in = NULL;
 	EVP_CIPHER_CTX_init(&ctx);
-	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, key, iv);
-	// in = fopen("cipher.bin", "r");
-	// inlen = fread(inbuf, 1, sizeof(inbuf), in);
-	// fclose(in);
-	// printf("Readlen: %d\n", inlen);
+	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, decoder->key, decoder->iv);
 
-
-
-	if(!EVP_DecryptUpdate(&ctx, outbuf, &outlen, inbuf, inlen)) {
-	printf("EVP_DecryptUpdate\n");
-	return 1;
+	if(!EVP_DecryptUpdate(&ctx, outbuf, &outlen, inbuf, (int)enc_len)) {
+		printf("EVP_DecryptUpdate\n");
+		goto D_END;
 	}
-	if(!EVP_DecryptFinal_ex(&ctx, outbuf + outlen, &tmplen)) {
-	printf("EVP_DecryptFinal_ex\n");
-	return 1;
+
+	if(!EVP_DecryptFinal_ex(&ctx, outbuf+outlen, &tmplen)) {
+		printf("EVP_DecryptFinal_ex\n");
+		goto D_END;
 	}
+
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
-	printf("Result: \n%s\n", outbuf);
-	return 0;
+
+D_END:
+	free(inbuf);
+	return outlen;
 }
 
 void free_encoder(struct frp_coder *encoder) {
@@ -225,20 +226,3 @@ void free_encoder(struct frp_coder *encoder) {
 		SAFE_FREE(encoder);
 	}
 }
-
-/*
-login:
-
-[1 2 182 0 3 0 0 0 111 0 0 0 0 0 0 0 173 123 34 118 101 114 115 105 111 110 34 58 34 48 46 49 48 46 48 34 44 34 104 111 115 116 110 97 109 101 34 58 34 34 44 34 111 115 34 58 34 108 105 110 117 120 34 44 34 97 114 99 104 34 58 34 97 109 100 54 52 34 44 34 117 115 101 114 34 58 34 34 44 34 112 114 105 118 105 108 101 103 101 95 107 101 121 34 58 34 48 99 50 48 55 57 57 53 102 100 99 48 55 48 52 97 53 51 53 100 98 98 51 51 51 53 51 54 99 49 97 99 34 44 34 116 105 109 101 115 116 97 109 112 34 58 49 52 57 54 50 57 55 49 49 57 44 34 114 117 110 95 105 100 34 58 34 34 44 34 112 111 111 108 95 99 111 117 110 116 34 58 49 125 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-
-recv:
-
-[1 2 68 0 3 0 0 0 49 0 0 0 0 0 0 0 59 123 34 118 101 114 115 105 111 110 34 58 34 48 46 49 48 46 48 34 44 34 114 117 110 95 105 100 34 58 34 98 53 54 97 101 51 57 101 52 52 53 48 99 51 97 51 34 44 34 101 114 114 111 114 34 58 34 34 125]
-
-lgoin confirm:
-[1 2 16 0 3 0 0 0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 111 110 34 58 34 48 46 49 48 46 48 34 44 34 104 111 115 116 110 97 109 101 34 58]
-
-recv:
-[1 2 16 0 3 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 111 110 34 58 34 48 46 49 48 46 48 34 44 34 114 117 110 95 105 100 34 58 34 100]
-
-*/

@@ -104,7 +104,7 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 	printf("encrypt_key = ");
 	int i = 0;
 	for(i=0; i<block_size; i++ ) {
-		// key_ret[i] = (unsigned char)"b";
+		// key_ret[i] = (unsigned char)0x41;
 		printf("%u ", *(key_ret + i));
 	}
 
@@ -173,13 +173,13 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	int j = 0;
 	debug(LOG_DEBUG, "encoder iv=");
 	for (j=0;j<16;j++){
-		printf("%u ", (unsigned char)c->iv[j] ) ;
+		printf("%u ", (unsigned char)c->iv[j]) ;
 	}
 	printf("\n");
 
 	debug(LOG_DEBUG, "encoder KEY=");
 	for (j=0; j<16; j++){
-		printf("%u ", (unsigned char)c->key[j] );
+		printf("%u ", (unsigned char)c->key[j]);
 	}
 	printf("\n");
 

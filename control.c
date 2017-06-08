@@ -693,10 +693,13 @@ void send_msg_frp_server(struct bufferevent *bev,
 	struct frp_coder *encoder = get_main_encoder();
 	if (encoder) {
 		//test for server encode
-		unsigned char *frps_test = (unsigned char *)"helloworld";
-		debug(LOG_DEBUG, "encode %s as frps:", frps_test);
-		encrypt_data(frps_test, 10, get_main_decoder(), &encode_ret_test);
-		decrypt_data(encode_ret_test, 10, get_main_decoder(), &decode_ret_test);
+		// unsigned char *frps_test = (unsigned char *)"helloworld";
+		// debug(LOG_DEBUG, "encode %s as frps:", frps_test);
+		// encrypt_data(frps_test, 10, get_main_decoder(), &encode_ret_test);
+		// decrypt_data(encode_ret_test, 10, get_main_decoder(), &decode_ret_test);
+
+		// debug(LOG_DEBUG, "encode %s as frpc:", frps_test);
+		// encrypt_data(frps_test, 10, encoder, &encode_ret_test);
 		// test end
 
 		size_t encode_ret_len = encrypt_data(puck_buf, pack_buf_len, encoder, &encode_ret);

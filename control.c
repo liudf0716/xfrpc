@@ -35,6 +35,7 @@
 
 #include <json-c/json.h>
 #include <syslog.h>
+#include <pthread.h>
 
 #include <event2/bufferevent.h>
 #include <event2/buffer.h>
@@ -57,6 +58,7 @@
 
 static struct control *main_ctl;
 static char *request_buf;
+static pthread_mutex_t recv_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // static int start_proxy_service(struct proxy_client *pc)
 // {
@@ -323,14 +325,19 @@ static void row_message(struct message *msg)
 
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
+	pthread_mutex_lock(&recv_mutex);
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
-	if (len < 0)
+	if (len < 0) {
+		pthread_mutex_unlock(&recv_mutex);
 		return;
+	}
 	
 	char *buf = calloc(1, len);
-	if (evbuffer_remove(input, buf, len) > 0) { 
+	assert(buf);
 
+	unsigned char *ret_buf = NULL;
+	if (evbuffer_remove(input, buf, len) > 0) { 
 		/* debug showing */
 		unsigned int i = 0;
 		debug(LOG_DEBUG, "RECV from frps:");
@@ -343,7 +350,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		struct frame *f = raw_frame(buf, len);
 		if (f == NULL) {
 			debug(LOG_ERR, "raw_frame faild!");
-			return;
+			goto RECV_END;
 		}
 
 		debug(LOG_DEBUG, 
@@ -353,28 +360,32 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		if (! is_decoder_inited() && f->len == get_block_size()) {
 			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
 			init_msg_reader((unsigned char *)f->data);
-			return;
+			goto RECV_END;
 		}
 		
 		if (len <= get_header_size()) {
 			//TODO: heartbeat response handle
-			return;
+			goto RECV_END;
 		}
 
 		struct frp_coder *d = get_main_decoder();
 		if (! d) {
 			debug(LOG_ERR, "decoder (message reader) is not inited!");
-			return;
+			goto RECV_END;
 		}
-		unsigned char *ret_buf = NULL; //TODO: NEED FREE
 		size_t ret_len = decrypt_data(f->data, (size_t)f->len, d, &ret_buf);
 		if (ret_len <= 0) {
 			debug(LOG_ERR, "message recved decrypt result is 0 bit");
-			return;
+			goto RECV_END;
 		}
 
+		debug(LOG_DEBUG, "message after decode:");
+		for(i=0; i<f->len; i++) {
+			printf("%d ", ret_buf[i]);
+		}
+		printf("\n\n");
+
 		struct message *msg = NULL;
-		
 		switch(f->cmd) {
 			case cmdNOP: 	//3 no options
 				break;
@@ -389,11 +400,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 					debug(LOG_DEBUG, "recv <---- %s", msg->data_p);
 				} else {
 					debug(LOG_ERR, "message received format invalid");
-					return;
+					goto RECV_END;
 				}
 
 				if (msg->data_p == NULL)
-					break;
+					goto RECV_END;
 				
 
 
@@ -407,8 +418,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 	// bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, NULL, NULL);
 	// bufferevent_enable(bev, EV_READ|EV_WRITE);
-
+RECV_END:
 	free(buf);
+	if (ret_buf)
+		free(ret_buf);
+	pthread_mutex_unlock(&recv_mutex);
 }
 
 static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)

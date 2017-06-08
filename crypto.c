@@ -217,7 +217,8 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
-// #ifdef DEC_DBG
+#define DEC_DBG 1
+#ifdef DEC_DBG
 	int j = 0;
 	debug(LOG_DEBUG, "decoder IV=");
 	for (j=0; j<16; j++){
@@ -244,7 +245,7 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 	printf("\n");
 
 	debug(LOG_DEBUG, "decode string=%s", outbuf);
-// #endif //DEC_DBG
+#endif //DEC_DBG
 
 D_END:
 	free(inbuf);

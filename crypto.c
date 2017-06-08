@@ -11,6 +11,8 @@
 #include "config.h"
 #include "debug.h"
 
+#define ENC_DEBUG 1
+
 static const char *default_salt = "frp";
 static const size_t block_size = 16;
 static struct frp_coder *main_encoder = NULL;
@@ -98,16 +100,18 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 						block_size);
 	
 	/* debug */
+#ifdef ENC_DEBUG
 	printf("encrypt_key = ");
 	int i = 0;
 	for(i=0; i<block_size; i++ ) {
 		// key_ret[i] = (unsigned char)"b";
-		printf("%d ", *(key_ret + i));
+		printf("%u ", *(key_ret + i));
 	}
 
 	printf("\n");
 	/* debug end */
-	
+#endif //ENC_DEBUG
+
 	if (! key_ret)
 		fprintf(stderr, "key result buffer not applied!\n");
 	
@@ -165,12 +169,17 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
-#define ENC_DBG 1
-#ifdef ENC_DBG
+#ifdef ENC_DEBUG
 	int j = 0;
 	debug(LOG_DEBUG, "encoder iv=");
 	for (j=0;j<16;j++){
 		printf("%u ", (unsigned char)c->iv[j] ) ;
+	}
+	printf("\n");
+
+	debug(LOG_DEBUG, "encoder KEY=");
+	for (j=0; j<16; j++){
+		printf("%u ", (unsigned char)c->key[j] );
 	}
 	printf("\n");
 
@@ -179,7 +188,7 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 		printf("%d ", (unsigned char)outbuf[j]);
 	}
 	printf("\n");
-#endif //ENC_DBG
+#endif //ENC_DEBUG
 
 E_END:
 	free(intext);
@@ -217,8 +226,7 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
-#define DEC_DBG 1
-#ifdef DEC_DBG
+#ifdef ENC_DEBUG
 	int j = 0;
 	debug(LOG_DEBUG, "decoder IV=");
 	for (j=0; j<16; j++){
@@ -245,7 +253,7 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 	printf("\n");
 
 	debug(LOG_DEBUG, "decode string=%s", outbuf);
-#endif //DEC_DBG
+#endif //ENC_DEBUG
 
 D_END:
 	free(inbuf);

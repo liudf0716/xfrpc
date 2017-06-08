@@ -199,9 +199,7 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 	*ret = outbuf;
 
 	int outlen = 0, tmplen = 0;
-	struct frp_coder *en = get_main_encoder();
-	// struct frp_coder *c = decoder;
-	struct frp_coder *c = en;
+	struct frp_coder *c = decoder;
 	EVP_CIPHER_CTX ctx;
 	EVP_CIPHER_CTX_init(&ctx);
 	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);

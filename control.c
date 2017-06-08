@@ -688,10 +688,15 @@ void send_msg_frp_server(struct bufferevent *bev,
 	// f->len = (ushort) pack_buf_len;
 	debug(LOG_DEBUG, "start encode message ...");
 	unsigned char *encode_ret;
+	unsigned char *encode_ret_test;
 	struct frp_coder *encoder = get_main_encoder();
 	if (encoder) {
 		size_t encode_ret_len = encrypt_data(puck_buf, pack_buf_len, encoder, &encode_ret);
 		debug(LOG_DEBUG, "encode len:[%lu]", encode_ret_len);
+
+		/* debug for decoder */
+		printf("encode helloworld\n");
+		encrypt_data((unsigned char *)"helloworld", 10, encoder, &encode_ret_test);
 
 		if (encode_ret_len > 0) {
 			f->data = encode_ret;

@@ -148,10 +148,10 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	*ret = outbuf;
 
 	int outlen = 0, tmplen = 0;
-
+	struct frp_coder *c = encoder;
 	EVP_CIPHER_CTX ctx;
 	EVP_CIPHER_CTX_init(&ctx);
-	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, encoder->key, encoder->iv);
+	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
 	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, (int)srclen)) {
 		debug(LOG_ERR, "EVP_EncryptUpdate error!");
 		goto E_END;
@@ -165,13 +165,16 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	outlen += tmplen;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 
+#define ENC_DBG 1
 #ifdef ENC_DBG
 	int j = 0;
 	debug(LOG_DEBUG, "encoder iv=");
 	for (j=0;j<16;j++){
-		printf("%u ", (unsigned char)encoder->iv[j] ) ;
+		printf("%u ", (unsigned char)c->iv[j] ) ;
 	}
 	printf("\n");
+
+	debug(LOG_DEBUG, "encoder result 10 =");
 	for (j = 0; j<outlen; j++) {
 		printf("%d ", (unsigned char)outbuf[j]);
 	}
@@ -187,24 +190,29 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 {
 	unsigned char *inbuf = calloc(enc_len, 1);
 	assert(inbuf);
+	memcpy(inbuf, enc_data, enc_len);
+
+	// unsigned char inbuf[] = {228, 173, 25, 145, 226, 75, 25, 78, 7, 106};
 
 	unsigned char *outbuf = calloc(enc_len, 1);
 	assert(outbuf);
 	*ret = outbuf;
 
 	int outlen = 0, tmplen = 0;
-
+	struct frp_coder *en = get_main_encoder();
+	// struct frp_coder *c = decoder;
+	struct frp_coder *c = en;
 	EVP_CIPHER_CTX ctx;
 	EVP_CIPHER_CTX_init(&ctx);
-	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, decoder->key, decoder->iv);
-
+	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+	
 	if(!EVP_DecryptUpdate(&ctx, outbuf, &outlen, inbuf, (int)enc_len)) {
-		printf("EVP_DecryptUpdate\n");
+		debug(LOG_ERR, "EVP_DecryptUpdate error!");
 		goto D_END;
 	}
 
 	if(!EVP_DecryptFinal_ex(&ctx, outbuf+outlen, &tmplen)) {
-		printf("EVP_DecryptFinal_ex\n");
+		debug(LOG_ERR, "EVP_DecryptFinal_ex error");
 		goto D_END;
 	}
 
@@ -214,26 +222,26 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 // #ifdef DEC_DBG
 	int j = 0;
 	debug(LOG_DEBUG, "decoder IV=");
-	for (j=0;j<16;j++){
-		printf("%u ", (unsigned char)decoder->iv[j] );
+	for (j=0; j<16; j++){
+		printf("%u ", (unsigned char)c->iv[j] );
 	}
 	printf("\n");
 
 	debug(LOG_DEBUG, "decoder KEY=");
-	for (j=0;j<16;j++){
-		printf("%u ", (unsigned char)decoder->key[j] );
+	for (j=0; j<16; j++){
+		printf("%u ", (unsigned char)c->key[j] );
 	}
 	printf("\n");
 
 	debug(LOG_DEBUG, "decoder source=");
-	for (j=0;j<enc_len;j++){
-		printf("%u ", (unsigned char)enc_data[j]);
+	for (j=0; j<enc_len; j++){
+		printf("%u ", (unsigned char)inbuf[j]);
 	}
 	printf("\n");
 
 	debug(LOG_DEBUG, "decoder result=");
 	for (j = 0; j<outlen; j++) {
-		printf("%d ", (unsigned char)outbuf[j]);
+		printf("%u ", (unsigned char)outbuf[j]);
 	}
 	printf("\n");
 

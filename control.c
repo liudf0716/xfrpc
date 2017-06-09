@@ -371,14 +371,13 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 #ifdef ENCRYPTO
 		//fuck debug
-		printf("\n 再加密 测试开始 \n");
 		size_t ret_len3 = encrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
 		if (ret_len3 <= 0) {
 			debug(LOG_ERR, "message recved decrypt result is 0 bit");
 			goto RECV_END;
 		}
 
-		debug(LOG_DEBUG, "message after 测试3:");
+		debug(LOG_DEBUG, "message after test1:");
 		for(i=0; i<ret_len3; i++) {
 			printf("%u ", (unsigned char)ret_buf[i]);
 		}
@@ -387,7 +386,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 		// memset(ret_buf, 0, 10);
 		size_t ret_len2 = decrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
-		debug(LOG_DEBUG, "message after 测试2:");
+		debug(LOG_DEBUG, "message after test2:");
 		if (ret_len2 <= 0) {
 			debug(LOG_ERR, "message recved decrypt result is 0 bit");
 			goto RECV_END;
@@ -404,11 +403,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			goto RECV_END;
 		}
 
-		debug(LOG_DEBUG, "message after 测试1:");
+		debug(LOG_DEBUG, "message after test3:");
 		for(i=0; i<f->len; i++) {
 			printf("%u ", (unsigned char)ret_buf[i]);
 		}
-		printf("\n 再加密 测试结束 \n");
+		printf("\n encrypto test end \n");
 		//fuck debug end
 
 		struct frp_coder *d = get_main_decoder();
@@ -511,7 +510,9 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 				if (msg->data_p == NULL)
 					break;
 				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
+				debug(LOG_DEBUG, "login repose unmarshal succeed!");
 				is_logged = login_resp_check(lr);
+				debug(LOG_INFO, "xfrp login succeed!");
 				break;
 			case cmdNOP: 	//3 no options
 			case cmdSYN: 	//0 create a new session

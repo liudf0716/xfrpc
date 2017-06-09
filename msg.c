@@ -120,7 +120,10 @@ struct message *new_message() {
 char *get_auth_key(const char *token)
 {
 	char seed[128] = {0};
-	snprintf(seed, 128, "%s%ld", token, time(NULL));
+	if (token)
+		snprintf(seed, 128, "%s%ld", token, time(NULL));
+	else
+		snprintf(seed, 128, "%ld", time(NULL));
 	
 	return calc_md5(seed, strlen(seed));
 }

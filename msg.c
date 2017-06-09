@@ -267,6 +267,7 @@ END_PROCESS:
 	return nret;
 }
 
+// login_resp_unmarshal NEED FREE
 struct login_resp *login_resp_unmarshal(const char *jres)
 {
 	printf("login_resp jres = %s\n", jres);

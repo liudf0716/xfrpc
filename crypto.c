@@ -132,7 +132,7 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 		iv_buf[i] = (rand() % 254 ) + 1;
 
 		//test:
-		iv_buf[i] = 9;
+		iv_buf[i] = 99;
 		printf("iv[%ld]=%d ", i, iv_buf[i]);
 	}
 
@@ -172,7 +172,7 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 #ifdef ENC_DEBUG
 	int j = 0;
 	debug(LOG_DEBUG, "encoder iv=");
-	for (j=0;j<16;j++){
+	for (j=0; j<16; j++){
 		printf("%u ", (unsigned char)c->iv[j]) ;
 	}
 	printf("\n");
@@ -197,15 +197,10 @@ E_END:
 
 size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_coder *decoder, unsigned char **ret)
 {
-	// unsigned char *inbuf = malloc(enc_len);
-	// assert(inbuf);
-	// memcpy(inbuf, enc_data, enc_len);
+	unsigned char *inbuf = malloc(enc_len);
+	assert(inbuf);
+	memcpy(inbuf, enc_data, enc_len);
 
-	// unsigned char inbuf[] = {252, 251, 168, 209, 2, 198, 104, 136, 117, 181, 114, 219, 249, 42, 235, 223, 67, 193, 191, 142, 190, 40, 98, 245, 21, 19, 98, 84, 136, 38, 86, 24};
-
-	unsigned char inbuf[] = {3};
-	
-	enc_len = 1;
 	unsigned char *outbuf = malloc(enc_len);
 	assert(outbuf);
 	*ret = outbuf;
@@ -229,14 +224,14 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 			enc_per_len = 10;
 		}
 
-		printf("++++++enc per len = %d\n", enc_per_len);
+		// printf("++++++enc per len = %d\n", enc_per_len);
 		
 		if(!EVP_DecryptUpdate(&ctx, outbuf + (i*10), &outlen, inbuf + (i*10), enc_per_len)) {
 			debug(LOG_ERR, "EVP_DecryptUpdate error!");
 			goto D_END;
 		}
 		totol_len += outlen;
-		printf("+++++++totol_len = %d\n", totol_len);
+		// printf("+++++++totol_len = %d\n", totol_len);
 	}
 
 

@@ -337,6 +337,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	assert(buf);
 
 	unsigned char *ret_buf = NULL;
+	
 	if (evbuffer_remove(input, buf, len) > 0) { 
 		/* debug showing */
 		unsigned int i = 0;
@@ -368,6 +369,48 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			goto RECV_END;
 		}
 
+#ifdef ENCRYPTO
+		//fuck debug
+		printf("\n 再加密 测试开始 \n");
+		size_t ret_len3 = encrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
+		if (ret_len3 <= 0) {
+			debug(LOG_ERR, "message recved decrypt result is 0 bit");
+			goto RECV_END;
+		}
+
+		debug(LOG_DEBUG, "message after 测试3:");
+		for(i=0; i<ret_len3; i++) {
+			printf("%u ", (unsigned char)ret_buf[i]);
+		}
+
+		printf("\n");
+
+		// memset(ret_buf, 0, 10);
+		size_t ret_len2 = decrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
+		debug(LOG_DEBUG, "message after 测试2:");
+		if (ret_len2 <= 0) {
+			debug(LOG_ERR, "message recved decrypt result is 0 bit");
+			goto RECV_END;
+		}
+
+		for(i=0; i<ret_len2; i++) {
+			printf("%u ", (unsigned char)ret_buf[i]);
+		}
+		printf("\n");
+
+		size_t ret_len1 = encrypt_data(f->data, (size_t)f->len, get_main_decoder(), &ret_buf);
+		if (ret_len1 <= 0) {
+			debug(LOG_ERR, "message recved decrypt result is 0 bit");
+			goto RECV_END;
+		}
+
+		debug(LOG_DEBUG, "message after 测试1:");
+		for(i=0; i<f->len; i++) {
+			printf("%u ", (unsigned char)ret_buf[i]);
+		}
+		printf("\n 再加密 测试结束 \n");
+		//fuck debug end
+
 		struct frp_coder *d = get_main_decoder();
 		if (! d) {
 			debug(LOG_ERR, "decoder (message reader) is not inited!");
@@ -381,9 +424,13 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 		debug(LOG_DEBUG, "message after decode:");
 		for(i=0; i<f->len; i++) {
-			printf("%d ", ret_buf[i]);
+			printf("%u ", (unsigned char)ret_buf[i]);
 		}
 		printf("\n\n");
+#endif //ENCRYPTO
+
+		if (! ret_buf) 
+			ret_buf = f->data; //test: no crypto
 
 		struct message *msg = NULL;
 		switch(f->cmd) {
@@ -406,8 +453,6 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				if (msg->data_p == NULL)
 					goto RECV_END;
 				
-
-
 				break;
 			default:
 				break;
@@ -420,8 +465,12 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	// bufferevent_enable(bev, EV_READ|EV_WRITE);
 RECV_END:
 	free(buf);
+
+#ifdef ENCRYPTO
 	if (ret_buf)
 		free(ret_buf);
+#endif //ENCRYPTO
+
 	pthread_mutex_unlock(&recv_mutex);
 }
 
@@ -705,6 +754,8 @@ void send_msg_frp_server(struct bufferevent *bev,
 	unsigned char *encode_ret_test;
 	unsigned char *decode_ret_test;
 	struct frp_coder *encoder = get_main_encoder();
+
+#ifdef ENCRYPTO
 	if (encoder) {
 		//test for server encode
 		// unsigned char *frps_test = (unsigned char *)"helloworld";
@@ -728,12 +779,11 @@ void send_msg_frp_server(struct bufferevent *bev,
 	}
 
 	/* debug end */
-
+#endif //ENCRYPTO
 	if (! f->data) {
 		set_frame_len(f, (ushort) pack_buf_len);
 		f->data = puck_buf;
 	}
-		
 	
 	/* test for frpc encoder */
 

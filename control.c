@@ -509,7 +509,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 			case cmdPSH:	//2
 				if (msg->data_p == NULL)
 					break;
-					
+
 				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
 				if (lr == NULL) {
 					debug(LOG_ERR, "login response buffer init faild!");

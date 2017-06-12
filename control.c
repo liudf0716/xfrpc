@@ -265,6 +265,11 @@ static void ping(struct bufferevent *bev)
 	assert(f);
 
 	request(bout, f);
+
+	uint32_t sid = get_main_control()->session_id;
+
+	char *ping_msg = "{}";
+	send_msg_frp_server(bev, TypePing, ping_msg, strlen(ping_msg), sid);
 }
 
 static void pong(struct bufferevent *bev, struct frame *f)

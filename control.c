@@ -431,7 +431,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		if (! is_decoder_inited() && f->len == get_block_size()) {
 			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
 			init_msg_reader((unsigned char *)f->data);
-			start_xfrp_client_service();
+			// start_xfrp_client_service();
 			goto RECV_END;
 		}
 		
@@ -950,6 +950,7 @@ void control_process(struct proxy_client *client)
 	}
 
 	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
+	free(new_proxy_msg);
 }
 
 void send_new_proxy(struct proxy_client *client)
@@ -965,6 +966,7 @@ void send_new_proxy(struct proxy_client *client)
 	}
 
 	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
+	free(new_proxy_msg);
 }
 
 int init_main_control() 

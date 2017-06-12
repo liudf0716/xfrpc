@@ -281,9 +281,15 @@ static void pong(struct bufferevent *bev, struct frame *f)
 		return;
 	}
 
+	uint32_t sid = 0;
+	if (!f || f->sid == 0)
+		sid = get_main_control()->session_id;
+	else
+		sid = f->sid;
+
 	char *pong_msg = "{}";
 
-	send_msg_frp_server(bev, TypePong, pong_msg, strlen(pong_msg), f->sid);
+	send_msg_frp_server(bev, TypePong, pong_msg, strlen(pong_msg), sid);
 }
 
 static void sync_new_work_connection(struct bufferevent *bev)
@@ -425,7 +431,9 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		}
 		
 		if (len <= get_header_size()) {
-			pong(bev, f);
+			if (f->cmd == 3)
+				pong(bev, f);
+
 			goto RECV_END;
 		}
 
@@ -628,16 +636,15 @@ END:
 // 	}
 // }
 
-static void open_session(struct bufferevent *bev)
+static void open_connection_session(struct bufferevent *bev)
 {
 	struct bufferevent *bout = NULL;
 	if ( ! bev) 
 		return;
 
-	main_ctl->session_id += 2;
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
-	debug(LOG_DEBUG, "open session, send frame len=%d", f->len);
+	debug(LOG_DEBUG, "open session ID:%d, send frame len=%d", main_ctl->session_id, f->len);
 	request(bev, f);
 }
 
@@ -671,7 +678,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		bufferevent_setcb(bev, recv_login_resp_cb, NULL, NULL, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		
-		open_session(bev);
+		open_connection_session(bev);
 		login();
 	}
 }
@@ -860,6 +867,8 @@ void send_msg_frp_server(struct bufferevent *bev,
 	switch (type)
 	{
 	case TypeLogin:
+	case TypePong:
+	case TypePing:
 	case TypeNewProxy:	//will recv : {"proxy_name":"G_443","error":""}
 		frame_type = cmdPSH;
 

@@ -1,4 +1,5 @@
 #include "frame.h"
+#include "session.h"
 
 const static int  	size_of_ver = 1;
 const static int  	size_of_cmd = 1;

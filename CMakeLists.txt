@@ -21,6 +21,7 @@ set(src_xfrp_client
 	crypto.c
 	fastpbkdf2.c
 	utils.c
+	session.c
 	)
 	
 set(libs

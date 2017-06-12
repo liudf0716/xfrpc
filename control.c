@@ -112,7 +112,6 @@ static void init_msg_reader(unsigned char *iv)
 		if (!d) {
 			debug(LOG_DEBUG, "reader init faild!");
 		}
-		start_xfrp_client_service();
 	}
 }
 
@@ -256,10 +255,33 @@ static void ping(struct bufferevent *bev)
 		bout = main_ctl->connect_bev;
 	}
 
-	if ( ! bout) 
+	if ( ! bout) {
+		debug(LOG_ERR, "bufferevent is not legal!");
 		return;
+	}
 	
 	struct frame *f = new_frame(cmdNOP, 0);
+	assert(f);
+
+	request(bout, f);
+}
+
+//TODO: NEED REWRITE
+static void send_new_sid(struct bufferevent *bev)
+{
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = main_ctl->connect_bev;
+	}
+
+	if ( ! bout) {
+		debug(LOG_ERR, "bufferevent is not legal!");
+		return;
+	}
+	
+	struct frame *f = new_frame(cmdSYN, 5);
 	assert(f);
 
 	request(bout, f);
@@ -361,6 +383,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		if (! is_decoder_inited() && f->len == get_block_size()) {
 			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
 			init_msg_reader((unsigned char *)f->data);
+			start_xfrp_client_service();
 			goto RECV_END;
 		}
 		
@@ -532,6 +555,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 
 		if (is_logged) {
 			init_msg_writer();
+			send_new_sid(bev);
 		}
 		
 	} else {

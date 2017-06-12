@@ -267,6 +267,25 @@ static void ping(struct bufferevent *bev)
 	request(bout, f);
 }
 
+static void pong(struct bufferevent *bev, struct frame *f)
+{
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = main_ctl->connect_bev;
+	}
+
+	if ( ! bout) {
+		debug(LOG_ERR, "bufferevent is not legal!");
+		return;
+	}
+
+	char *pong_msg = "{}";
+
+	send_msg_frp_server(bev, TypePong, pong_msg, strlen(pong_msg), f->sid);
+}
+
 static void sync_new_work_connection(struct bufferevent *bev)
 {
 	struct bufferevent *bout = NULL;
@@ -291,17 +310,17 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	assert(work_c);
 	work_c->run_id = get_run_id();
 	if (! work_c->run_id) {
-		debug(LOG_ERR, "login is not init the run ID");
+		debug(LOG_ERR, "login is not init the run ID!");
 		return;
 	}
 	char *new_work_conn_request_message = NULL;
 	int nret = new_work_conn_marshal(work_c, &new_work_conn_request_message);
 	if (0 == nret) {
-		debug(LOG_ERR, "new work connection request run_id marshal failed");
+		debug(LOG_ERR, "new work connection request run_id marshal failed!");
 		return;
 	}
-
-	send_msg_frp_server(bev, TypeNewProxy, new_work_conn_request_message, nret, f->sid);
+	debug(LOG_DEBUG, "marshal new work connection:%s", new_work_conn_request_message);
+	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
 	free(f);
 }
 
@@ -406,9 +425,10 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		}
 		
 		if (len <= get_header_size()) {
-			//TODO: heartbeat response handle
+			pong(bev, f);
 			goto RECV_END;
 		}
+
 
 #ifdef ENCRYPTO
 		//fuck debug

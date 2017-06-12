@@ -218,6 +218,7 @@ int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)
 	return nret;
 }
 
+// { "run_id": "75f9b163e4d10861" }
 int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 {
 	const char *tmp = NULL;

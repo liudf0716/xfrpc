@@ -85,6 +85,10 @@ struct control_response {
 	char	*msg;
 };
 
+struct work_conn {
+	char *run_id;
+};
+
 
 struct login {
 	char		*version;
@@ -129,6 +133,8 @@ struct login_resp *login_resp_unmarshal(const char *jres);
 
 // parse json string to control response
 struct control_response *control_response_unmarshal(const char *jres);
+struct work_conn *new_work_conn();
+int new_work_conn_marshal(const struct work_conn *work_c, char **msg);
 
 void control_response_free(struct control_response *res);
 

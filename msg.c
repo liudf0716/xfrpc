@@ -106,7 +106,7 @@ char *calc_md5(const char *data, int datalen)
 
 //TODO: NEED FREE
 struct message *new_message() {
-	struct message *msg = calloc(sizeof(struct message), 1); //TODO: FREE
+	struct message *msg = calloc(1, sizeof(struct message)); //TODO: FREE
 	if (msg)
 	{
 		msg->data_p = NULL;
@@ -114,6 +114,14 @@ struct message *new_message() {
 	}
 
 	return msg;
+}
+
+struct work_conn *new_work_conn() {
+	struct work_conn *work_c = calloc(1, sizeof(struct work_conn));
+	if (work_c) 
+		work_c->run_id = NULL;
+
+	return work_c;
 }
 
 // TODO: NEED FREE
@@ -206,6 +214,26 @@ int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)
 		*msg = strdup(tmp);
 	}
 	json_object_put(j_np_req);
+
+	return nret;
+}
+
+int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
+{
+	const char *tmp = NULL;
+	int nret = 0;
+	struct json_object *j_new_work_conn = json_object_new_object();
+	if (! j_new_work_conn)
+		return 0;
+
+	JSON_MARSHAL_TYPE(j_new_work_conn, "run_id", string, SAFE_JSON_STRING(work_c->run_id));
+	tmp = json_object_to_json_string(j_new_work_conn);
+	if (tmp && strlen(tmp) > 0) {
+		nret = strlen(tmp);
+		*msg = strdup(tmp);
+	}
+
+	json_object_put(j_new_work_conn);
 
 	return nret;
 }

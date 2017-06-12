@@ -267,8 +267,7 @@ static void ping(struct bufferevent *bev)
 	request(bout, f);
 }
 
-//TODO: NEED REWRITE
-static void send_new_sid(struct bufferevent *bev)
+static void sync_new_work_connection(struct bufferevent *bev)
 {
 	struct bufferevent *bout = NULL;
 	if (bev) {
@@ -282,11 +281,28 @@ static void send_new_sid(struct bufferevent *bev)
 		return;
 	}
 	
+	/* send new work session regist request to frps*/
 	uint32_t sid = new_sid();
 	struct frame *f = new_frame(cmdSYN, sid);
 	assert(f);
-
 	request(bout, f);
+
+	struct work_conn *work_c = new_work_conn();
+	assert(work_c);
+	work_c->run_id = get_run_id();
+	if (! work_c->run_id) {
+		debug(LOG_ERR, "login is not init the run ID");
+		return;
+	}
+	char *new_work_conn_request_message = NULL;
+	int nret = new_work_conn_marshal(work_c, &new_work_conn_request_message);
+	if (0 == nret) {
+		debug(LOG_ERR, "new work connection request run_id marshal failed");
+		return;
+	}
+
+	send_msg_frp_server(bev, TypeNewProxy, new_work_conn_request_message, nret, f->sid);
+	free(f);
 }
 
 // connect to server
@@ -557,7 +573,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 
 		if (is_logged) {
 			init_msg_writer();
-			send_new_sid(bev);
+			sync_new_work_connection(bev);
 		}
 		
 	} else {
@@ -656,6 +672,18 @@ static void login_frp_server(struct proxy_client *client)
 	bufferevent_setcb(bev, NULL, NULL, NULL, client);
 }
 
+static void keep_control_alive() 
+{
+	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, 
+									hb_sender_cb, 
+									NULL);
+	if ( ! main_ctl->ticker_ping) {
+		debug(LOG_ERR, "Ping Ticker init failed!");
+		return;
+	}
+	set_ticker_ping_timer(main_ctl->ticker_ping);
+}
+
 void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
@@ -673,19 +701,6 @@ void start_base_connect()
 	// client->ctl_bev = bev;
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
-}
-
-static void keep_alive() 
-{
-	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, 
-									hb_sender_cb, 
-									NULL);
-	if ( ! main_ctl->ticker_ping) {
-		debug(LOG_ERR, "Ping Ticker init failed!");
-		return;
-	}
-	set_ticker_ping_timer(main_ctl->ticker_ping);
-	
 }
 
 // void send_msg_2_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
@@ -956,5 +971,5 @@ void close_main_control()
 
 void run_control() {
 	start_base_connect();	//with login
-	keep_alive();
+	keep_control_alive();
 }

@@ -55,6 +55,7 @@
 #include "frame.h"
 #include "crypto.h"
 #include "utils.h"
+#include "session.h"
 
 static struct control *main_ctl;
 static char *request_buf;
@@ -260,7 +261,7 @@ static void ping(struct bufferevent *bev)
 		return;
 	}
 	
-	struct frame *f = new_frame(cmdNOP, 0);
+	struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
 	assert(f);
 
 	request(bout, f);
@@ -281,7 +282,8 @@ static void send_new_sid(struct bufferevent *bev)
 		return;
 	}
 	
-	struct frame *f = new_frame(cmdSYN, 5);
+	uint32_t sid = new_sid();
+	struct frame *f = new_frame(cmdSYN, sid);
 	assert(f);
 
 	request(bout, f);
@@ -932,13 +934,11 @@ int init_main_control()
 	request_buf = calloc(len, 1);
 	assert(request_buf);
 
-#ifdef CLIENT
-	main_ctl->session_id = 1;
-#elif SERVER
-	main_ctl->session_id = 0;
-#endif
+	uint32_t *sid = init_sid_index();
+	assert(sid);
+	main_ctl->session_id = *sid;
 
-	debug(LOG_DEBUG, "Connect session_id %d", main_ctl->session_id);
+	debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
 	return 0;
 }
 

@@ -31,8 +31,6 @@
 #include "uthash.h"
 #include "msg.h"
 
-#define CLIENT 1
-
 struct proxy_client;
 struct bufferevent;
 struct event_base;

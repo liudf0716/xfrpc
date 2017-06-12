@@ -4,16 +4,23 @@
 #include <assert.h>
 
 #include "uthash.h"
+#include "version.h"
 
 uint32_t *sid_index = NULL;
 
+// TODO: need free
 uint32_t *init_sid_index()
 {
 	if (NULL == sid_index) {
 		sid_index = (uint32_t *)calloc(1, sizeof(uint32_t));
-		assert(sid_index);
+		if (NULL == sid_index)
+			return sid_index;
 
+#ifdef CLIENT
 		*sid_index = 1;
+#elif SERVER
+		*sid_index = 0;
+#endif
 	}
 
 	*sid_index += 2;	//xfrp client session id start from 3

@@ -648,13 +648,13 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 
 		if (f == NULL) {
 			debug(LOG_ERR, "raw_frame faild!");
-			return;
+			goto RECV_LOGIN_END;
 		}
 		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
 
 		if (! msg) {
 			debug(LOG_ERR, "recved invalid login resp message");
-			free(buf);
+			goto RECV_LOGIN_END;
 			return;
 		}
 		
@@ -695,6 +695,10 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
 	}
 
+RECV_LOGIN_END:
+	if (f)
+		free(f);
+		
 	free(buf);
 }
 

@@ -61,7 +61,7 @@ static struct control *main_ctl;
 static char *request_buf;
 static pthread_mutex_t recv_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
-static int clients_connected = 0;
+static int clients_conn_signel = 0;
 
 
 static void sync_new_work_connection(struct bufferevent *bev);
@@ -80,6 +80,21 @@ static void sync_new_work_connection(struct bufferevent *bev);
 // 	send_msg_frp_server(NULL, TypeNewProxy, proxy_msg, len, main_ctl->session_id);
 // }
 
+static int is_clients_connected()
+{
+	return clients_conn_signel;
+}
+
+static int clients_connected(int is_connected)
+{
+	if (is_connected)
+		clients_conn_signel = 1;
+	else
+		clients_conn_signel = 0;
+
+	return clients_conn_signel;
+}
+
 static void start_xfrp_client_service()
 {
 	struct proxy_client *all_pc = get_all_pc();
@@ -88,7 +103,7 @@ static void start_xfrp_client_service()
 	struct proxy_client *pc = NULL, *tmp = NULL;
 	
 	debug(LOG_INFO, "Start xfrp clients ...");
-	clients_connected = 1;
+	clients_connected(1);
 	
 	HASH_ITER(hh, all_pc, pc, tmp) {
 		if(pc == NULL) {
@@ -345,7 +360,6 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	uint32_t sid = 5;
 	struct frame *f = new_frame(cmdSYN, sid);
 	assert(f);
-	request(bout, f);
 
 	struct work_conn *work_c = new_work_conn();
 	assert(work_c);
@@ -361,7 +375,8 @@ static void sync_new_work_connection(struct bufferevent *bev)
 		return;
 	}
 	debug(LOG_DEBUG, "marshal new work connection:%s", new_work_conn_request_message);
-	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
+	// send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
+	// request(bout, f);
 	free(f);
 }
 
@@ -393,7 +408,7 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	struct proxy_client *client = arg;
 	
 	base_control_ping(NULL);
-	if (clients_connected)
+	if (is_clients_connected())
 		ping(NULL);
 
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
@@ -421,7 +436,7 @@ static void raw_message(struct message *msg)
 {
 	switch(msg->type) {
 		case TypeReqWorkConn:
-			start_xfrp_client_service();
+			// start_xfrp_client_service();
 			sync_new_work_connection(NULL);
 			ping(NULL);
 			break;
@@ -647,6 +662,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 
 		if (is_logged) {
 			init_msg_writer();
+			start_xfrp_client_service();
 		}
 		
 	} else {

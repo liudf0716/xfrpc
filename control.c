@@ -60,6 +60,11 @@
 static struct control *main_ctl;
 static char *request_buf;
 static pthread_mutex_t recv_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int clients_connected = 0;
+
+
+static void sync_new_work_connection(struct bufferevent *bev);
 
 // static int start_proxy_service(struct proxy_client *pc)
 // {
@@ -82,7 +87,8 @@ static void start_xfrp_client_service()
 
 	struct proxy_client *pc = NULL, *tmp = NULL;
 	
-	debug(LOG_INFO, "Start xfrp client");
+	debug(LOG_INFO, "Start xfrp clients ...");
+	clients_connected = 1;
 	
 	HASH_ITER(hh, all_pc, pc, tmp) {
 		if(pc == NULL) {
@@ -119,6 +125,7 @@ static void init_msg_reader(unsigned char *iv)
 // TODO: need lock
 static int request(struct bufferevent *bev, struct frame *f) 
 {
+	pthread_mutex_lock(&send_mutex);
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
@@ -127,6 +134,7 @@ static int request(struct bufferevent *bev, struct frame *f)
 	}
 
 	if ( ! bout) {
+		pthread_mutex_unlock(&send_mutex);
 		return 0;
 	}
 
@@ -170,6 +178,8 @@ static int request(struct bufferevent *bev, struct frame *f)
 	// bufferevent_write(bout, "\n", 1);
 
 	memset(request_buf, 0, len);
+	
+	pthread_mutex_unlock(&send_mutex);
 	return write_len;
 }
 
@@ -246,6 +256,24 @@ control_request_free(struct control_request *req)
 	free(req);
 }
 
+static void base_control_ping(struct bufferevent *bev) {
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
+	} else {
+		bout = main_ctl->connect_bev;
+	}
+
+	if ( ! bout) {
+		debug(LOG_ERR, "bufferevent is not legal!");
+		return;
+	}
+
+	struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
+	assert(f);
+
+	request(bout, f);
+}
 
 static void ping(struct bufferevent *bev)
 {
@@ -261,15 +289,16 @@ static void ping(struct bufferevent *bev)
 		return;
 	}
 	
-	struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
-	assert(f);
+	// struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
+	// assert(f);
 
-	request(bout, f);
+	// request(bout, f);
 
 	uint32_t sid = get_main_control()->session_id;
 
 	char *ping_msg = "{}";
 	send_msg_frp_server(bev, TypePing, ping_msg, strlen(ping_msg), sid);
+	sync_new_work_connection(bev);
 }
 
 static void pong(struct bufferevent *bev, struct frame *f)
@@ -312,7 +341,8 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	}
 	
 	/* send new work session regist request to frps*/
-	uint32_t sid = new_sid();
+	// uint32_t sid = new_sid();
+	uint32_t sid = 5;
 	struct frame *f = new_frame(cmdSYN, sid);
 	assert(f);
 	request(bout, f);
@@ -362,8 +392,10 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
 	struct proxy_client *client = arg;
 	
-	ping(NULL);
-	
+	base_control_ping(NULL);
+	if (clients_connected)
+		ping(NULL);
+
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
 }
 
@@ -385,9 +417,17 @@ static int login_resp_check(struct login_resp *lr)
 	return cl->logged;
 }
 
-static void row_message(struct message *msg)
+static void raw_message(struct message *msg)
 {
 	switch(msg->type) {
+		case TypeReqWorkConn:
+			start_xfrp_client_service();
+			sync_new_work_connection(NULL);
+			ping(NULL);
+			break;
+		case TypePong:
+			pong(NULL, NULL);
+			break;
 		default:
 			break;
 	}
@@ -431,17 +471,17 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		if (! is_decoder_inited() && f->len == get_block_size()) {
 			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
 			init_msg_reader((unsigned char *)f->data);
-			// start_xfrp_client_service();
 			goto RECV_END;
 		}
-		
+
 		if (len <= get_header_size()) {
-			if (f->cmd == 3)
-				pong(bev, f);
+			if (f->cmd == 3) {
+				// pong(bev, f);
+				base_control_ping(NULL);
+			}
 
 			goto RECV_END;
 		}
-
 
 #ifdef ENCRYPTO
 		//fuck debug
@@ -526,6 +566,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				if (msg->data_p == NULL)
 					goto RECV_END;
 				
+				raw_message(msg);
 				break;
 			default:
 				break;
@@ -606,7 +647,6 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 
 		if (is_logged) {
 			init_msg_writer();
-			sync_new_work_connection(bev);
 		}
 		
 	} else {

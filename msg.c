@@ -31,11 +31,13 @@
 #include <openssl/md5.h>
 #include <time.h>
 #include <assert.h>
+#include <syslog.h>
 
 #include "msg.h"
 #include "const.h"
 #include "config.h"
 #include "frame.h"
+#include "debug.h"
 
 #define MSG_TYPE_I 	0
 #define MSG_LEN_I 	1
@@ -394,8 +396,7 @@ struct message *unpack(unsigned char *recv_msg, const ushort len)
 	if (! msg_type_valid_check(msg->type) )
 		return NULL;
 
-	printf("recved msg type = %c\n", msg->type);
-
+	debug(LOG_DEBUG, "unpack message type: %c", msg->type);
 	uint64_t  data_len_bigend;
 	data_len_bigend = *(uint64_t *)(recv_msg + MSG_LEN_I);
 	msg->data_len = ntoh64(&data_len_bigend);

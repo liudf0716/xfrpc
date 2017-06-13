@@ -141,7 +141,7 @@ static void init_msg_reader(unsigned char *iv)
 static size_t request(struct bufferevent *bev, struct frame *f) 
 {
 	size_t write_len = 0;
-	pthread_mutex_lock(&send_mutex);
+	// pthread_mutex_lock(&send_mutex);
 	struct bufferevent *bout = NULL;
 
 	if (bev) {
@@ -208,7 +208,7 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 	memset(request_buf, 0, len);
 
 REQ_END:
-	pthread_mutex_unlock(&send_mutex);
+	// pthread_mutex_unlock(&send_mutex);
 	return write_len;
 }
 
@@ -286,6 +286,9 @@ control_request_free(struct control_request *req)
 }
 
 static void base_control_ping(struct bufferevent *bev) {
+	if ( ! is_clients_connected())
+		return;
+
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
@@ -453,6 +456,26 @@ static int login_resp_check(struct login_resp *lr)
 static void raw_message(struct message *msg)
 {
 	switch(msg->type) {
+		case TypeLoginResp:
+			if (msg->data_p == NULL)
+				break;
+
+			struct login_resp *lr = login_resp_unmarshal(msg->data_p);
+			if (lr == NULL) {
+				debug(LOG_ERR, "login response buffer init faild!");
+				return;
+			}
+
+			debug(LOG_DEBUG, "login repose unmarshal succeed!");
+			int is_logged = login_resp_check(lr);
+			debug(LOG_INFO, "xfrp login succeed!");
+			free(lr);
+
+			if (is_logged) {
+				init_msg_writer();
+				// start_xfrp_client_service();
+			}
+			break;
 		case TypeReqWorkConn:
 			// start_xfrp_client_service();
 			sync_new_work_connection(NULL);
@@ -468,20 +491,21 @@ static void raw_message(struct message *msg)
 
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
-	pthread_mutex_lock(&recv_mutex);
+	// pthread_mutex_lock(&recv_mutex);
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
 	if (len < 0) {
 		pthread_mutex_unlock(&recv_mutex);
 		return;
 	}
-	
-	char *buf = calloc(1, len);
+
+	unsigned char *buf = calloc(1, len);
 	assert(buf);
 
 	unsigned char *ret_buf = NULL;
-	
-	if (evbuffer_remove(input, buf, len) > 0) { 
+	struct frame *f = NULL;
+
+	if (evbuffer_remove(input, buf, len) > 0) {
 		/* debug showing */
 		unsigned int i = 0;
 		debug(LOG_DEBUG, "RECV from frps:");
@@ -491,7 +515,16 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		}
 		printf("]\n");
 		/* debug show over */
-		struct frame *f = raw_frame(buf, len);
+
+		if (get_common_config()->tcp_mux) {
+			f = raw_frame(buf, len);
+		} else {
+			f = raw_frame_only_msg(buf, len);
+			set_frame_cmd(f, cmdPSH);
+		}
+
+		debug(LOG_DEBUG, "message recv from frps length: %u", f->len);
+
 		if (f == NULL) {
 			debug(LOG_ERR, "raw_frame faild!");
 			goto RECV_END;
@@ -612,13 +645,15 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	// bufferevent_enable(bev, EV_READ|EV_WRITE);
 RECV_END:
 	free(buf);
+	if(f)
+		free(f);
 
 #ifdef ENCRYPTO
 	if (ret_buf)
 		free(ret_buf);
 #endif //ENCRYPTO
 
-	pthread_mutex_unlock(&recv_mutex);
+	// pthread_mutex_unlock(&recv_mutex);
 }
 
 static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
@@ -684,7 +719,6 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 				debug(LOG_ERR, "recved message but not login resp target.");
 				break;
 		}
-		
 
 		if (is_logged) {
 			init_msg_writer();
@@ -698,7 +732,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 RECV_LOGIN_END:
 	if (f)
 		free(f);
-		
+
 	free(buf);
 }
 
@@ -765,8 +799,9 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
 
 		// recv frpc login-response message before recv othfer fprs messages, 
-		bufferevent_setcb(bev, recv_login_resp_cb, NULL, NULL, NULL);
+		bufferevent_setcb(bev, recv_cb, NULL, NULL, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
+		bufferevent_setwatermark(bev, EV_READ, 0, 0);
 		
 		open_connection_session(bev);
 		login();
@@ -916,13 +951,14 @@ void send_msg_frp_server(struct bufferevent *bev,
 	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
 	assert(f);
 	// f->len = (ushort) pack_buf_len;
+
+#ifdef ENCRYPTO
 	debug(LOG_DEBUG, "start encode message ...");
 	unsigned char *encode_ret;
 	unsigned char *encode_ret_test;
 	unsigned char *decode_ret_test;
 	struct frp_coder *encoder = get_main_encoder();
 
-#ifdef ENCRYPTO
 	if (encoder) {
 		//test for server encode
 		// unsigned char *frps_test = (unsigned char *)"helloworld";

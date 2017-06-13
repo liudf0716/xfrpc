@@ -1,5 +1,6 @@
 #include "frame.h"
 #include "session.h"
+#include "version.h"
 
 const static int  	size_of_ver = 1;
 const static int  	size_of_cmd = 1;
@@ -24,7 +25,8 @@ struct frame *new_frame(char cmd, uint32_t sid) {
 }
 
 // f->len is rawed in this func
-struct frame *raw_frame(char *buf, const size_t buf_len) {
+struct frame *raw_frame(unsigned char *buf, const size_t buf_len)
+{
 	int header_size = get_header_size();
 	if (buf_len < header_size) {
 		return NULL;
@@ -36,7 +38,17 @@ struct frame *raw_frame(char *buf, const size_t buf_len) {
 	struct frame *f = new_frame(cmd, sid);
 	f->ver = ver;
 	f->len = *(ushort *)(buf + LENI);
-	f->data = buf_len > header_size ? buf + header_size : NULL;
+	f->data = buf_len > header_size ? (unsigned char *)(buf + header_size) : NULL;
+
+	return f;
+}
+
+struct frame *raw_frame_only_msg(unsigned char *buf, const size_t buf_len)
+{
+	struct frame *f = new_frame(0, 0);
+	f->ver = CLIENT_V;
+	f->len = (ushort)buf_len;
+	f->data = buf;
 
 	return f;
 }

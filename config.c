@@ -328,7 +328,9 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->heartbeat_timeout = atoi(value);
 	} else if (MATCH("common", "auth_token")) {
 		config->auth_token = strdup(value);
-	}
+	} /*else if (MATCH("common", "tcp_mux")) {
+		
+	}*/
 	
 	return 1;
 }
@@ -346,6 +348,7 @@ static void init_common_conf(struct common_conf *config)
 	config->log_max_days		= 3;
 	config->heartbeat_interval 	= 10;
 	config->heartbeat_timeout	= 30;
+	config->tcp_mux				= 0;
 }
 
 //{"version":"0.10.0","hostname":"","os":"linux","arch":"amd64","user":"","privilege_key":"9583ffe40c4f854a2aa4ba80387d5dca","timestamp":1495165129,"run_id":"","pool_count":1}

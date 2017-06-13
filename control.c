@@ -138,10 +138,12 @@ static void init_msg_reader(unsigned char *iv)
 }
 
 // TODO: need lock
-static int request(struct bufferevent *bev, struct frame *f) 
+static size_t request(struct bufferevent *bev, struct frame *f) 
 {
+	size_t write_len = 0;
 	pthread_mutex_lock(&send_mutex);
 	struct bufferevent *bout = NULL;
+
 	if (bev) {
 		bout = bev;
 	} else {
@@ -149,8 +151,7 @@ static int request(struct bufferevent *bev, struct frame *f)
 	}
 
 	if ( ! bout) {
-		pthread_mutex_unlock(&send_mutex);
-		return 0;
+		goto REQ_END;
 	}
 
 	/* debug showing */
@@ -164,23 +165,35 @@ static int request(struct bufferevent *bev, struct frame *f)
 		/* debug show over */
 	}
 
+	struct common_conf *c = get_common_config();
+	if ( ! c)
+		goto REQ_END;
+
 	int headersize = get_header_size();
 	size_t len = (1<<16) + headersize;
 	printf("SET FRAME CMD:%d\n", f->cmd);
 
 	memset(request_buf, 0, len);
-	request_buf[VERI] = f->ver;
-	request_buf[CMDI] = f->cmd;
-	debug(LOG_DEBUG, "request data len = %u", f->len);
-	*((ushort *)(request_buf + 2)) = f->len;
-	*((uint32_t *)(request_buf + 4)) = f->sid;
+	if (c->tcp_mux) {
+		request_buf[VERI] = f->ver;
+		request_buf[CMDI] = f->cmd;
+		*((ushort *)(request_buf + 2)) = f->len;
+		*((uint32_t *)(request_buf + 4)) = f->sid;
 
-	// 	insert data to request buffer
-	if (f->data != NULL && f->len > 0) { //TODO: ENCODE when control
-		memcpy(request_buf + DATAI, f->data, f->len);
+		// 	insert data to request buffer
+		if (f->data != NULL && f->len > 0) { //TODO: ENCODE when control
+			memcpy(request_buf + DATAI, f->data, f->len);
+		}
+		write_len = (size_t) (headersize + f->len);
+
+	} else {
+		memcpy(request_buf, f->data, f->len);
+		write_len = (size_t)f->len;
 	}
 
-	size_t write_len = (size_t) (headersize + f->len);
+	debug(LOG_DEBUG, "request send data len = %u", write_len);
+	if ( 0 == write_len)
+		goto REQ_END;;
 
 	printf("******** Buffer write:\n");
 	int j = 0;
@@ -193,7 +206,8 @@ static int request(struct bufferevent *bev, struct frame *f)
 	// bufferevent_write(bout, "\n", 1);
 
 	memset(request_buf, 0, len);
-	
+
+REQ_END:
 	pthread_mutex_unlock(&send_mutex);
 	return write_len;
 }
@@ -375,8 +389,12 @@ static void sync_new_work_connection(struct bufferevent *bev)
 		return;
 	}
 	debug(LOG_DEBUG, "marshal new work connection:%s", new_work_conn_request_message);
+
+// debug:
 	// send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
 	// request(bout, f);
+// debug over
+
 	free(f);
 }
 
@@ -613,28 +631,35 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 	if (len < 0)
 		return;
 	
-	char *buf = calloc(len+1, 1);
+	unsigned char *buf = calloc(len+1, 1);
 	assert(buf);
-
+	struct frame *f = NULL;
 	if (evbuffer_remove(input, buf, len) > 0) { 
 		debug(LOG_DEBUG, 
 			"recv [%d] bits from frp server", 
 			len);
+		
+		if (get_common_config()->tcp_mux) {
+			f = raw_frame(buf, len);
+		} else {
+			f = raw_frame_only_msg(buf, len);
+			set_frame_cmd(f, cmdPSH);
+		}
 
-		struct frame *f = raw_frame(buf, len);
 		if (f == NULL) {
 			debug(LOG_ERR, "raw_frame faild!");
 			return;
 		}
-
 		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
 
 		if (! msg) {
-			debug(LOG_ERR, "recved invalid loginresp message");
-			goto END;
+			debug(LOG_ERR, "recved invalid login resp message");
+			free(buf);
+			return;
 		}
 		
 		int is_logged = 0;
+
 		switch(f->cmd) {
 			case cmdPSH:	//2
 				if (msg->data_p == NULL)
@@ -659,6 +684,7 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 				debug(LOG_ERR, "recved message but not login resp target.");
 				break;
 		}
+		
 
 		if (is_logged) {
 			init_msg_writer();
@@ -669,7 +695,6 @@ static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
 		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
 	}
 
-END:
 	free(buf);
 }
 
@@ -971,9 +996,12 @@ void login()
 		assert(lg_msg);
 	}
 
-	// using sid = 3 is only for matching fprs, it will change after using tcp-mux
-	sync_session_id(3); 
-
+	struct common_conf *c = get_common_config();
+	if (c->tcp_mux) {
+		// using sid = 3 is only for matching fprs, it will change after using tcp-mux
+		sync_session_id(3); 
+	}
+	
 	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
 }
 

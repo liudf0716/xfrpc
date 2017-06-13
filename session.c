@@ -16,7 +16,7 @@ uint32_t *init_sid_index()
 		if (NULL == sid_index)
 			return sid_index;
 
-#ifdef CLIENT
+#ifdef CLIENT_V
 		*sid_index = 1;
 #elif SERVER
 		*sid_index = 0;

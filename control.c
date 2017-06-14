@@ -66,20 +66,6 @@ static int clients_conn_signel = 0;
 
 static void sync_new_work_connection(struct bufferevent *bev);
 
-// static int start_proxy_service(struct proxy_client *pc)
-// {
-// 	debug(LOG_INFO, "start frps proxy service ...");
-// 	char *proxy_msg = NULL;
-// 	/////// COME HERE
-// 	int len = login_request_marshal(&proxy_msg); //marshal login request
-// 	if ( ! proxy_msg) {
-// 		debug(LOG_ERR, "login_request_marshal failed");
-// 		assert(proxy_msg);
-// 	}
-
-// 	send_msg_frp_server(NULL, TypeNewProxy, proxy_msg, len, main_ctl->session_id);
-// }
-
 static int is_clients_connected()
 {
 	return clients_conn_signel;
@@ -103,7 +89,6 @@ static void start_xfrp_client_service()
 	struct proxy_client *pc = NULL, *tmp = NULL;
 	
 	debug(LOG_INFO, "Start xfrp clients ...");
-	clients_connected(1);
 	
 	HASH_ITER(hh, all_pc, pc, tmp) {
 		if(pc == NULL) {
@@ -393,10 +378,8 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	}
 	debug(LOG_DEBUG, "marshal new work connection:%s", new_work_conn_request_message);
 
-// debug:
-	// send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
-	// request(bout, f);
-// debug over
+	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
+	request(bout, f);
 
 	free(f);
 }
@@ -473,15 +456,19 @@ static void raw_message(struct message *msg)
 
 			if (is_logged) {
 				init_msg_writer();
-				// start_xfrp_client_service();
 			}
 			break;
 		case TypeReqWorkConn:
-			debug(LOG_DEBUG, "recv the client work connect start request ...");
-			start_xfrp_client_service();
-			sync_new_work_connection(NULL);
-			ping(NULL);
-			break;
+			if (! is_clients_connected()) {
+				debug(LOG_DEBUG, "recv the client work connect start request ...");
+				start_xfrp_client_service();
+				if (get_common_config()->tcp_mux) sync_new_work_connection(NULL);
+				clients_connected(1);
+				ping(NULL);
+				break;
+			} else {
+				debug(LOG_DEBUG, "clients have been connected.");
+			}
 		case TypePong:
 			pong(NULL, NULL);
 			break;
@@ -760,85 +747,85 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	return;
 }
 
-static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
-{
-	bufferevent_setcb(bev, recv_cb, NULL, NULL, NULL);
-	bufferevent_enable(bev, EV_READ|EV_WRITE);
+// static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
+// {
+// 	bufferevent_setcb(bev, recv_cb, NULL, NULL, NULL);
+// 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
-	struct evbuffer *input = bufferevent_get_input(bev);
-	int len = evbuffer_get_length(input);
-	if (len < 0)
-		return;
+// 	struct evbuffer *input = bufferevent_get_input(bev);
+// 	int len = evbuffer_get_length(input);
+// 	if (len < 0)
+// 		return;
 	
-	unsigned char *buf = calloc(len+1, 1);
-	assert(buf);
-	struct frame *f = NULL;
-	if (evbuffer_remove(input, buf, len) > 0) { 
-		debug(LOG_DEBUG, 
-			"recv [%d] bits from frp server", 
-			len);
+// 	unsigned char *buf = calloc(len+1, 1);
+// 	assert(buf);
+// 	struct frame *f = NULL;
+// 	if (evbuffer_remove(input, buf, len) > 0) { 
+// 		debug(LOG_DEBUG, 
+// 			"recv [%d] bits from frp server", 
+// 			len);
 		
-		if (get_common_config()->tcp_mux) {
-			f = raw_frame(buf, len);
-		} else {
-			f = raw_frame_only_msg(buf, len);
-			set_frame_cmd(f, cmdPSH);
-		}
+// 		if (get_common_config()->tcp_mux) {
+// 			f = raw_frame(buf, len);
+// 		} else {
+// 			f = raw_frame_only_msg(buf, len);
+// 			set_frame_cmd(f, cmdPSH);
+// 		}
 
-		if (f == NULL) {
-			debug(LOG_ERR, "raw_frame faild!");
-			goto RECV_LOGIN_END;
-		}
-		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
+// 		if (f == NULL) {
+// 			debug(LOG_ERR, "raw_frame faild!");
+// 			goto RECV_LOGIN_END;
+// 		}
+// 		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
 
-		if (! msg) {
-			debug(LOG_ERR, "recved invalid login resp message");
-			goto RECV_LOGIN_END;
-			return;
-		}
+// 		if (! msg) {
+// 			debug(LOG_ERR, "recved invalid login resp message");
+// 			goto RECV_LOGIN_END;
+// 			return;
+// 		}
 		
-		int is_logged = 0;
+// 		int is_logged = 0;
 
-		switch(f->cmd) {
-			case cmdPSH:	//2
-				if (msg->data_p == NULL)
-					break;
+// 		switch(f->cmd) {
+// 			case cmdPSH:	//2
+// 				if (msg->data_p == NULL)
+// 					break;
 
-				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
-				if (lr == NULL) {
-					debug(LOG_ERR, "login response buffer init faild!");
-					return;
-				}
+// 				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
+// 				if (lr == NULL) {
+// 					debug(LOG_ERR, "login response buffer init faild!");
+// 					return;
+// 				}
 
-				debug(LOG_DEBUG, "login repose unmarshal succeed!");
-				is_logged = login_resp_check(lr);
-				debug(LOG_INFO, "xfrp login succeed!");
-				free(lr);
-				break;
+// 				debug(LOG_DEBUG, "login repose unmarshal succeed!");
+// 				is_logged = login_resp_check(lr);
+// 				debug(LOG_INFO, "xfrp login succeed!");
+// 				free(lr);
+// 				break;
 
-			case cmdNOP: 	//3 no options
-			case cmdSYN: 	//0 create a new session
-			case cmdFIN:	//1 close session
-			default:
-				debug(LOG_ERR, "recved message but not login resp target.");
-				break;
-		}
+// 			case cmdNOP: 	//3 no options
+// 			case cmdSYN: 	//0 create a new session
+// 			case cmdFIN:	//1 close session
+// 			default:
+// 				debug(LOG_ERR, "recved message but not login resp target.");
+// 				break;
+// 		}
 
-		if (is_logged) {
-			init_msg_writer();
-			start_xfrp_client_service();
-		}
+// 		if (is_logged) {
+// 			init_msg_writer();
+// 			start_xfrp_client_service();
+// 		}
 		
-	} else {
-		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
-	}
+// 	} else {
+// 		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
+// 	}
 
-RECV_LOGIN_END:
-	if (f)
-		free(f);
+// RECV_LOGIN_END:
+// 	if (f)
+// 		free(f);
 
-	free(buf);
-}
+// 	free(buf);
+// }
 
 
 // static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)

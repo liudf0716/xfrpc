@@ -11,7 +11,7 @@
 #include "config.h"
 #include "debug.h"
 
-#define ENC_DEBUG 1
+// #define ENC_DEBUG 1
 
 static const char *default_salt = "frp";
 static const size_t block_size = 16;
@@ -128,6 +128,7 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 	size_t i;
 	srand((unsigned int) time(NULL));
 
+#ifdef ENC_DEBUG
 	for(i=0; i<iv_len; i++) {
 		iv_buf[i] = (rand() % 254 ) + 1;
 
@@ -137,6 +138,7 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 	}
 
 	printf("\n");
+#endif //ENC_DEBUG
 	return iv_buf;
 }
 

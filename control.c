@@ -477,7 +477,8 @@ static void raw_message(struct message *msg)
 			}
 			break;
 		case TypeReqWorkConn:
-			// start_xfrp_client_service();
+			debug(LOG_DEBUG, "recv the client work connect start request ...");
+			start_xfrp_client_service();
 			sync_new_work_connection(NULL);
 			ping(NULL);
 			break;
@@ -522,8 +523,8 @@ static size_t data_handler(unsigned char *buf, ushort len)
 		len, f->ver, f->cmd, f->len, f->sid);
 
 	if (! is_decoder_inited() && f->len == get_block_size()) {
-		debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
 		init_msg_reader((unsigned char *)f->data);
+		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed!");
 		goto DATA_H_END;
 	}
 
@@ -632,14 +633,13 @@ DATA_H_END:
 	return len;
 }
 
-
 static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, size_t *ret_len)
 {
 	unsigned char *unraw_buf_p = NULL;
 	unsigned char *raw_buf = NULL;
 	size_t split_lv = 16;
 	size_t split_len = 0;
-	size_t raw_static_size = 0;
+	size_t raw_static_size = 9; //type 1 + bigend 8
 	int splited = 0; // ==1 after buffer split
 
 	*ret_len = 0;
@@ -650,7 +650,6 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 				if (buf[0] == 49) {
 					debug(LOG_DEBUG, "mulity raw login-response...");
 
-					raw_static_size = 9;
 					uint64_t  data_len_bigend;
 					data_len_bigend = *(uint64_t *)(buf + MSG_LEN_I);
 					uint64_t data_len = ntoh64(&data_len_bigend);
@@ -685,8 +684,10 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 
 					split_len = raw_static_size + data_len;
 					splited = 1;
-					break;
+				} else {
+					debug(LOG_ERR, "buffer type [%c] raw failed!", msg_type);
 				}
+				break;
 			}
 		}
 
@@ -698,7 +699,7 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 		data_handler(buf, buf_len);
 		*ret_len = 0;
 		return NULL;
-	} else {
+	} else if (split_len){
 		raw_buf =calloc(1, split_len);
 		assert(raw_buf);
 		memcpy(raw_buf, buf, split_len);

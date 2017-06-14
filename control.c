@@ -637,10 +637,10 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 {
 	unsigned char *unraw_buf_p = NULL;
 	unsigned char *raw_buf = NULL;
-	size_t split_lv = 16;
+	size_t split_lv = 16;		// latest buffer split level
 	size_t split_len = 0;
 	size_t raw_static_size = 9; //type 1 + bigend 8
-	int splited = 0; // ==1 after buffer split
+	int splited = 0; 			// signal argument, ==1 after buffer split
 
 	*ret_len = 0;
 

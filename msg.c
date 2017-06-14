@@ -39,10 +39,6 @@
 #include "frame.h"
 #include "debug.h"
 
-#define MSG_TYPE_I 	0
-#define MSG_LEN_I 	1
-#define MSG_DATA_I	9
-
 #define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 
@@ -376,7 +372,7 @@ void control_response_free(struct control_response *res)
 }
 
 
-static int msg_type_valid_check(char msg_type)
+int msg_type_valid_check(char msg_type)
 {
 	int i = 0;
 	for(i = 0; i<(sizeof(msg_typs) / sizeof(*msg_typs)); i++) {

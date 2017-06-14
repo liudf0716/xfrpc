@@ -632,6 +632,90 @@ DATA_H_END:
 	return len;
 }
 
+
+static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, size_t *ret_len)
+{
+	unsigned char *unraw_buf_p = NULL;
+	unsigned char *raw_buf = NULL;
+	size_t split_lv = 16;
+	size_t split_len = 0;
+	size_t raw_static_size = 0;
+	int splited = 0; // ==1 after buffer split
+
+	*ret_len = 0;
+
+	for(;;) {
+		if (buf_len > split_lv) {
+			if (! is_logged()) {
+				if (buf[0] == 49) {
+					debug(LOG_DEBUG, "mulity raw login-response...");
+
+					raw_static_size = 9;
+					uint64_t  data_len_bigend;
+					data_len_bigend = *(uint64_t *)(buf + MSG_LEN_I);
+					uint64_t data_len = ntoh64(&data_len_bigend);
+					debug(LOG_DEBUG, "raw data len = %u", data_len);
+
+					split_len = raw_static_size + data_len;
+					splited = 1;
+					break;
+				}
+			}
+
+			if (! is_decoder_inited()) {
+				raw_static_size = get_block_size();
+				if (buf_len < raw_static_size) {
+					break;
+				}
+
+				debug(LOG_DEBUG, "mulity raw decoder IV...");
+				split_len = raw_static_size;
+				splited = 1;
+				break;
+			}
+				
+			if (! splited) { //ordinary message split
+				char msg_type = buf[0];
+				int type_valid = msg_type_valid_check(msg_type);
+				if (type_valid) {
+					debug(LOG_DEBUG, "buffer raw type [%c]", msg_type);
+					uint64_t  data_len_bigend;
+					data_len_bigend = *(uint64_t *)(buf + MSG_LEN_I);
+					uint64_t data_len = ntoh64(&data_len_bigend);
+
+					split_len = raw_static_size + data_len;
+					splited = 1;
+					break;
+				}
+			}
+		}
+
+		break;
+	}
+
+	if (! splited) {
+		debug(LOG_DEBUG, "buffer need not split raw.");
+		data_handler(buf, buf_len);
+		*ret_len = 0;
+		return NULL;
+	} else {
+		raw_buf =calloc(1, split_len);
+		assert(raw_buf);
+		memcpy(raw_buf, buf, split_len);
+	}
+	
+	if (split_len != 0 && raw_buf != NULL){
+		debug(LOG_DEBUG, "buffer need splite, raw len: %u", split_len);
+		data_handler(raw_buf, split_len);
+		free(raw_buf);
+		*ret_len = buf_len - split_len;
+		if (split_len < buf_len) {
+			unraw_buf_p = buf+ split_len;
+		}
+	}
+	return unraw_buf_p;
+}
+
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	// pthread_mutex_lock(&recv_mutex);
@@ -645,19 +729,32 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	assert(buf);
 
 	size_t read_n = 0;
+	size_t ret_len = 0;
 	read_n = evbuffer_remove(input, buf, len);
+	
 	if (read_n) {
-		data_handler(buf, read_n);
+		unsigned char *raw_buf_p = buf;
+		for(;raw_buf_p && read_n;) {
+			unsigned int i = 0;
+			debug(LOG_DEBUG, "before raw mulity buffer:");
+			printf("[");
+			for(i = 0; i<read_n; i++) {
+				printf("%d ", (unsigned char)raw_buf_p[i]);
+			}
+			printf("]\n");
+			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len);
+			read_n = ret_len;
+		}
 	} else {
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
 	}
 
 	free(buf);
 
-#ifdef ENCRYPTO
-	if (ret_buf)
-		free(ret_buf);
-#endif //ENCRYPTO
+// #ifdef ENCRYPTO
+// 	if (ret_buf)
+// 		free(ret_buf);
+// #endif //ENCRYPTO
 
 	return;
 }

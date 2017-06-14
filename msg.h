@@ -37,6 +37,10 @@
 
 #define TYPE_LEN 1 //byte, char
 
+#define MSG_TYPE_I 	0
+#define MSG_LEN_I 	1
+#define MSG_DATA_I	9
+
 // msg_type match frp v0.10.0
 enum msg_type {
 	TypeLogin         = 'o',
@@ -117,6 +121,7 @@ struct message {
 	size_t	data_len;
 };
 
+int msg_type_valid_check(char msg_type);
 int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg);
 struct message *new_message();
 uint64_t ntoh64(const uint64_t *input);

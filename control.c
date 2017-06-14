@@ -489,171 +489,177 @@ static void raw_message(struct message *msg)
 	}
 }
 
+static size_t data_handler(unsigned char *buf, ushort len)
+{
+	unsigned char *ret_buf = NULL;
+	struct frame *f = NULL;
+	/* debug showing */
+	unsigned int i = 0;
+	debug(LOG_DEBUG, "RECV from frps:");
+	printf("[");
+	for(i = 0; i<len; i++) {
+		printf("%d ", (unsigned char)buf[i]);
+	}
+	printf("]\n");
+	/* debug show over */
+
+	if (get_common_config()->tcp_mux) {
+		f = raw_frame(buf, len);
+	} else {
+		f = raw_frame_only_msg(buf, len);
+		set_frame_cmd(f, cmdPSH);
+	}
+
+	debug(LOG_DEBUG, "message recv from frps length: %u", f->len);
+
+	if (f == NULL) {
+		debug(LOG_ERR, "raw_frame faild!");
+		goto DATA_H_END;
+	}
+
+	debug(LOG_DEBUG, 
+		"recv [%d] bits from frp server, frame: ver[%d], cmd[%d], len[%u], sid[%d]", 
+		len, f->ver, f->cmd, f->len, f->sid);
+
+	if (! is_decoder_inited() && f->len == get_block_size()) {
+		debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
+		init_msg_reader((unsigned char *)f->data);
+		goto DATA_H_END;
+	}
+
+	if (len <= get_header_size()) {
+		if (f->cmd == 3) {
+			// pong(bev, f);
+			base_control_ping(NULL);
+		}
+
+		goto DATA_H_END;
+	}
+
+#ifdef ENCRYPTO
+	//fuck debug
+	size_t ret_len3 = encrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
+	if (ret_len3 <= 0) {
+		debug(LOG_ERR, "message recved decrypt result is 0 bit");
+		goto DATA_H_END;
+	}
+
+	debug(LOG_DEBUG, "message after test1:");
+	for(i=0; i<ret_len3; i++) {
+		printf("%u ", (unsigned char)ret_buf[i]);
+	}
+
+	printf("\n");
+
+	// memset(ret_buf, 0, 10);
+	size_t ret_len2 = decrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
+	debug(LOG_DEBUG, "message after test2:");
+	if (ret_len2 <= 0) {
+		debug(LOG_ERR, "message recved decrypt result is 0 bit");
+		goto DATA_H_END;
+	}
+
+	for(i=0; i<ret_len2; i++) {
+		printf("%u ", (unsigned char)ret_buf[i]);
+	}
+	printf("\n");
+
+	size_t ret_len1 = encrypt_data(f->data, (size_t)f->len, get_main_decoder(), &ret_buf);
+	if (ret_len1 <= 0) {
+		debug(LOG_ERR, "message recved decrypt result is 0 bit");
+		goto DATA_H_END;
+	}
+
+	debug(LOG_DEBUG, "message after test3:");
+	for(i=0; i<f->len; i++) {
+		printf("%u ", (unsigned char)ret_buf[i]);
+	}
+	printf("\n encrypto test end \n");
+	//fuck debug end
+
+	struct frp_coder *d = get_main_decoder();
+	if (! d) {
+		debug(LOG_ERR, "decoder (message reader) is not inited!");
+		goto DATA_H_END;
+	}
+	size_t ret_len = decrypt_data(f->data, (size_t)f->len, d, &ret_buf);
+	if (ret_len <= 0) {
+		debug(LOG_ERR, "message recved decrypt result is 0 bit");
+		goto DATA_H_END;
+	}
+
+	debug(LOG_DEBUG, "message after decode:");
+	for(i=0; i<f->len; i++) {
+		printf("%u ", (unsigned char)ret_buf[i]);
+	}
+	printf("\n\n");
+#endif //ENCRYPTO
+
+	if (! ret_buf) 
+		ret_buf = f->data; //test: no crypto
+
+	struct message *msg = NULL;
+	switch(f->cmd) {
+		case cmdNOP: 	//3 no options
+			break;
+		case cmdSYN: 	//0 create a new session
+			break;
+		case cmdFIN:	//1 close session
+			break;
+		case cmdPSH:	//2
+			msg = unpack(ret_buf, f->len);
+			if (msg && msg->data_p) {
+				debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
+				debug(LOG_DEBUG, "recv <---- %s", msg->data_p);
+			} else {
+				debug(LOG_ERR, "message received format invalid");
+				goto DATA_H_END;
+			}
+
+			if (msg->data_p == NULL)
+				goto DATA_H_END;
+			
+			raw_message(msg);
+			break;
+		default:
+			break;
+	}
+
+DATA_H_END:
+	if(f)
+		free(f);
+
+	return len;
+}
+
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	// pthread_mutex_lock(&recv_mutex);
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
 	if (len < 0) {
-		pthread_mutex_unlock(&recv_mutex);
 		return;
 	}
 
 	unsigned char *buf = calloc(1, len);
 	assert(buf);
 
-	unsigned char *ret_buf = NULL;
-	struct frame *f = NULL;
-
-	if (evbuffer_remove(input, buf, len) > 0) {
-		/* debug showing */
-		unsigned int i = 0;
-		debug(LOG_DEBUG, "RECV from frps:");
-		printf("[");
-		for(i = 0; i<len; i++) {
-			printf("%d ", (unsigned char)buf[i]);
-		}
-		printf("]\n");
-		/* debug show over */
-
-		if (get_common_config()->tcp_mux) {
-			f = raw_frame(buf, len);
-		} else {
-			f = raw_frame_only_msg(buf, len);
-			set_frame_cmd(f, cmdPSH);
-		}
-
-		debug(LOG_DEBUG, "message recv from frps length: %u", f->len);
-
-		if (f == NULL) {
-			debug(LOG_ERR, "raw_frame faild!");
-			goto RECV_END;
-		}
-
-		debug(LOG_DEBUG, 
-			"recv [%d] bits from frp server, frame: ver[%d], cmd[%d], len[%u], sid[%d]", 
-			len, f->ver, f->cmd, f->len, f->sid);
-
-		if (! is_decoder_inited() && f->len == get_block_size()) {
-			debug(LOG_DEBUG, "first recv stream message, init decoder iv...");
-			init_msg_reader((unsigned char *)f->data);
-			goto RECV_END;
-		}
-
-		if (len <= get_header_size()) {
-			if (f->cmd == 3) {
-				// pong(bev, f);
-				base_control_ping(NULL);
-			}
-
-			goto RECV_END;
-		}
-
-#ifdef ENCRYPTO
-		//fuck debug
-		size_t ret_len3 = encrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
-		if (ret_len3 <= 0) {
-			debug(LOG_ERR, "message recved decrypt result is 0 bit");
-			goto RECV_END;
-		}
-
-		debug(LOG_DEBUG, "message after test1:");
-		for(i=0; i<ret_len3; i++) {
-			printf("%u ", (unsigned char)ret_buf[i]);
-		}
-
-		printf("\n");
-
-		// memset(ret_buf, 0, 10);
-		size_t ret_len2 = decrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
-		debug(LOG_DEBUG, "message after test2:");
-		if (ret_len2 <= 0) {
-			debug(LOG_ERR, "message recved decrypt result is 0 bit");
-			goto RECV_END;
-		}
-
-		for(i=0; i<ret_len2; i++) {
-			printf("%u ", (unsigned char)ret_buf[i]);
-		}
-		printf("\n");
-
-		size_t ret_len1 = encrypt_data(f->data, (size_t)f->len, get_main_decoder(), &ret_buf);
-		if (ret_len1 <= 0) {
-			debug(LOG_ERR, "message recved decrypt result is 0 bit");
-			goto RECV_END;
-		}
-
-		debug(LOG_DEBUG, "message after test3:");
-		for(i=0; i<f->len; i++) {
-			printf("%u ", (unsigned char)ret_buf[i]);
-		}
-		printf("\n encrypto test end \n");
-		//fuck debug end
-
-		struct frp_coder *d = get_main_decoder();
-		if (! d) {
-			debug(LOG_ERR, "decoder (message reader) is not inited!");
-			goto RECV_END;
-		}
-		size_t ret_len = decrypt_data(f->data, (size_t)f->len, d, &ret_buf);
-		if (ret_len <= 0) {
-			debug(LOG_ERR, "message recved decrypt result is 0 bit");
-			goto RECV_END;
-		}
-
-		debug(LOG_DEBUG, "message after decode:");
-		for(i=0; i<f->len; i++) {
-			printf("%u ", (unsigned char)ret_buf[i]);
-		}
-		printf("\n\n");
-#endif //ENCRYPTO
-
-		if (! ret_buf) 
-			ret_buf = f->data; //test: no crypto
-
-		struct message *msg = NULL;
-		switch(f->cmd) {
-			case cmdNOP: 	//3 no options
-				break;
-			case cmdSYN: 	//0 create a new session
-				break;
-			case cmdFIN:	//1 close session
-				break;
-			case cmdPSH:	//2
-				msg = unpack(ret_buf, f->len);
-				if (msg && msg->data_p) {
-					debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
-					debug(LOG_DEBUG, "recv <---- %s", msg->data_p);
-				} else {
-					debug(LOG_ERR, "message received format invalid");
-					goto RECV_END;
-				}
-
-				if (msg->data_p == NULL)
-					goto RECV_END;
-				
-				raw_message(msg);
-				break;
-			default:
-				break;
-		}
+	size_t read_n = 0;
+	read_n = evbuffer_remove(input, buf, len);
+	if (read_n) {
+		data_handler(buf, read_n);
 	} else {
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
 	}
 
-	// bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, NULL, NULL);
-	// bufferevent_enable(bev, EV_READ|EV_WRITE);
-RECV_END:
 	free(buf);
-	if(f)
-		free(f);
 
 #ifdef ENCRYPTO
 	if (ret_buf)
 		free(ret_buf);
 #endif //ENCRYPTO
 
-	// pthread_mutex_unlock(&recv_mutex);
+	return;
 }
 
 static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
@@ -790,6 +796,19 @@ static void open_connection_session(struct bufferevent *bev)
 // 	}
 // }
 
+
+void connect_eventcb(struct bufferevent *bev, short events, void *ptr)
+{
+    if (events & BEV_EVENT_CONNECTED) {
+         /* We're connected to 127.0.0.1:8080.   Ordinarily we'd do
+            something here, like start reading or writing. */
+    } else if (events & BEV_EVENT_ERROR) {
+         /* An error occured while connecting. */
+    } 
+
+	printf("============recv event cb:%d====\n", events);
+}
+
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();
@@ -799,8 +818,8 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
 
 		// recv frpc login-response message before recv othfer fprs messages, 
-		bufferevent_setcb(bev, recv_cb, NULL, NULL, NULL);
-		bufferevent_enable(bev, EV_READ|EV_WRITE);
+		bufferevent_setcb(bev, recv_cb, NULL, connect_eventcb, NULL);
+		bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);
 		bufferevent_setwatermark(bev, EV_READ, 0, 0);
 		
 		open_connection_session(bev);
@@ -808,21 +827,21 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-static void login_frp_server(struct proxy_client *client)
-{
-	struct common_conf *c_conf = get_common_config();
-	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
-	if (!bev) {
-		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-		return;
-	}
+// static void login_frp_server(struct proxy_client *client)
+// {
+// 	struct common_conf *c_conf = get_common_config();
+// 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+// 	if (!bev) {
+// 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+// 		return;
+// 	}
 
-	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+// 	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
 
-	client->ctl_bev = bev;
-	bufferevent_enable(bev, EV_WRITE);
-	bufferevent_setcb(bev, NULL, NULL, NULL, client);
-}
+// 	client->ctl_bev = bev;
+// 	bufferevent_enable(bev, EV_WRITE);
+// 	bufferevent_setcb(bev, NULL, NULL, NULL, client);
+// }
 
 static void keep_control_alive() 
 {
@@ -850,7 +869,6 @@ void start_base_connect()
 
 	debug(LOG_INFO, "Xfrpc: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
 
-	// client->ctl_bev = bev;
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
 }
@@ -1098,11 +1116,13 @@ int init_main_control()
 	main_ctl = calloc(sizeof(struct control), 1);
 	assert(main_ctl);
 	struct event_base *base = NULL;
+
 	base = event_base_new();
 	if (!base) {
 		debug(LOG_ERR, "event_base_new() error");
 		return 1;
 	}
+
 	main_ctl->connect_base = base;
 
 	size_t len = (1<<16) + get_header_size();

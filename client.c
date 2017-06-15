@@ -174,12 +174,12 @@ void start_frp_tunnel(const struct proxy_client *client)
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
 	
-	struct bufferevent *b_svr = connect_server(base, c_conf->server_addr, c_conf->server_port);
+	struct bufferevent *b_svr = connect_server(client, c_conf->server_addr, c_conf->server_port);
 	if (!b_svr) {
 		return;
 	}
 	
-	struct bufferevent *b_clt = connect_server(base, client->local_ip, client->local_port);
+	struct bufferevent *b_clt = connect_server(client, client->local_ip, client->local_port);
 	if (!b_clt) {
 		bufferevent_free(b_svr);
 		return;

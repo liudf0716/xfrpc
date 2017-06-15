@@ -111,6 +111,10 @@ static void dump_proxy_client(const int index, const struct proxy_client *pc)
 {
 	if (!pc || !pc->bconf)
 		return;
+
+	if (NULL == pc->bconf->type) {
+		pc->bconf->type = strdup("tcp");
+	}
 	
 	if (1 == pc->bconf->privilege_mode) {
 		if (NULL == pc->bconf->privilege_token) {
@@ -118,19 +122,17 @@ static void dump_proxy_client(const int index, const struct proxy_client *pc)
 			exit(0);
 		}
 
-		if (0 > pc->remote_port) {
-			debug(LOG_ERR, "Proxy [%s] error: remote_port must be set when privilege_mode = true", pc->bconf->name);
-			exit(0);
-		}
+        if ((strcmp(pc->bconf->type, "http") != 0) && (strcmp(pc->bconf->type, "https"))) {
+		    if (0 > pc->remote_port) {
+			    debug(LOG_ERR, "Proxy [%s] error: remote_port must be set when privilege_mode = true", pc->bconf->name);
+			    exit(0);
+		    }
+        }
 	}
 
 	if (0 > pc->local_port) {
 		debug(LOG_ERR, "Proxy [%s] error: local_port not found", pc->bconf->name);
 		exit(0);
-	}
-
-	if (NULL == pc->bconf->type) {
-		pc->bconf->type = strdup("tcp");
 	}
 
 	debug(LOG_DEBUG, "Proxy %d: {name:%s, local_port:%d, type:%s}", index, pc->bconf->name, pc->local_port, pc->bconf->type);

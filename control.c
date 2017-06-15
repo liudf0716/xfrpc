@@ -1260,6 +1260,9 @@ int init_main_control()
 	main_ctl->connect_base = base;
 
 	size_t len = (1<<16) + get_header_size();
+	request_buf = calloc(1, len);
+	assert(request_buf);
+	
 	uint32_t *sid = init_sid_index();
 	assert(sid);
 	main_ctl->session_id = *sid;

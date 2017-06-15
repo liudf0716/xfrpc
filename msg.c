@@ -28,11 +28,12 @@
 #include <stdio.h>
 #include <json-c/json.h>
 #include <json-c/bits.h>
+#include <assert.h>
 
 #include "msg.h"
 #include "const.h"
 
-static void fill_custom_domains(struct json_object *j_clt_req, const char *custom_domains)
+static void fill_custom_domains(struct json_object *j_ctl_req, const char *custom_domains)
 {
 	struct json_object *jarray_cdomains = json_object_new_array();
 	assert(jarray_cdomains);

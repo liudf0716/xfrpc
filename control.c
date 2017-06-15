@@ -177,7 +177,7 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, 
 // connect to server
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
 {
-	struct evdns_base  	*dnsbase  = event_base_new();;
+	struct evdns_base  	*dnsbase  = evdns_base_new(base, 1);
 	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
 	assert(dnsbase);

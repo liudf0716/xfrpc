@@ -32,6 +32,22 @@
 #include "msg.h"
 #include "const.h"
 
+static void fill_custom_domains(struct json_object *j_clt_req, const char *custom_domains)
+{
+	struct json_object *jarray_cdomains = json_object_new_array();
+	assert(jarray_cdomains);
+	char *tmp = strdup(custom_domains);
+	char *tok = tmp, *end = tmp;
+	while (tok != NULL) {
+		strsep(&end, ",");
+		json_object_array_add(jarray_cdomains, json_object_new_string(tok));
+		tok = end;
+	}
+	free(tmp);
+	
+	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
+}
+
 int control_request_marshal(const struct control_request *req, char **msg)
 {
 	const char *tmp = NULL;
@@ -58,8 +74,7 @@ int control_request_marshal(const struct control_request *req, char **msg)
 	if (!req->custom_domains)
 		json_object_object_add(j_ctl_req, "custom_domains", NULL);
 	else {
-		// need to implement it
-		;
+		fill_custom_domains(j_ctl_req, req->custom_domains);
 	}
 	if (!req->locations)
 		json_object_object_add(j_ctl_req, "locations", NULL);

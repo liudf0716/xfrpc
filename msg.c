@@ -57,6 +57,7 @@ str_target?str_target:"\0"
 // 	TypePong          = '4',
 // 	TypeUdpPacket     = 'u',
 // };
+
 const char msg_typs[] = {TypeLogin, TypeLoginResp, TypeNewProxy, TypeNewProxyResp, 
 	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUdpPacket};
 

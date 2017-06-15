@@ -141,21 +141,23 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 static void
 xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 {
+	debug(LOG_DEBUG, "send message to local proxy port.");
 	struct bufferevent *partner = ctx;
 	struct evbuffer *src, *dst;
 	size_t len;
 	src = bufferevent_get_input(bev);
 	len = evbuffer_get_length(src);
-	if (len > 4) {
+	// if (len > 4) {
 		dst = bufferevent_get_output(partner);
-		evbuffer_drain(src, 4);
+		// evbuffer_drain(src, 4);
 		evbuffer_add_buffer(dst, src);
-	}
+	// }
 }
 
 static void
 xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 {
+	debug(LOG_DEBUG, "recv message from local,  send message to frps.");
 	struct bufferevent *partner = ctx;
 	struct evbuffer *src, *dst;
 	size_t len;
@@ -163,8 +165,8 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 	len = evbuffer_get_length(src);
 	if (len > 0) {
 		dst = bufferevent_get_output(partner);
-		unsigned int header = htonl(len);
-		evbuffer_prepend(src, &header, sizeof(unsigned int));
+		// unsigned int header = htonl(len);
+		// evbuffer_prepend(src, &header, sizeof(unsigned int));
 		evbuffer_add_buffer(dst, src);	
 	}
 }
@@ -175,24 +177,29 @@ void start_frp_tunnel(const struct proxy_client *client)
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
 	
-	struct bufferevent *b_svr = connect_server(base, c_conf->server_addr, c_conf->server_port);
-	if (!b_svr) {
-		return;
-	}
+	// struct bufferevent *b_svr = connect_server(base, c_conf->server_addr, c_conf->server_port);
+	// if (!b_svr) {
+	// 	debug(LOG_ERR, "frpc tunnel connect frps failed!");
+	// 	return;
+	// }
 	
 	struct bufferevent *b_clt = connect_server(base, client->local_ip, client->local_port);
 	if (!b_clt) {
-		bufferevent_free(b_svr);
+		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", client->local_port);
+		// bufferevent_free(b_svr);
 		return;
 	}
 	
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
-		  c_conf->server_addr, c_conf->server_port, client->local_ip, client->local_port);
+		  c_conf->server_addr, 
+		  c_conf->server_port, 
+		  client->local_ip ? client->local_ip:"::1",
+		  client->local_port);
 	
-	bufferevent_setcb(b_svr, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
-	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, b_svr);
+	bufferevent_setcb(client->ctl_bev, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
+	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, client->ctl_bev);
 	
-	bufferevent_enable(b_svr, EV_READ|EV_WRITE);
+	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(b_clt, EV_READ|EV_WRITE);
 	
 	// send_msg_frp_server(TypeNewProxy, client, b_svr);

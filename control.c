@@ -67,12 +67,12 @@ static int clients_conn_signel = 0;
 static void sync_new_work_connection(struct bufferevent *bev);
 static void recv_cb(struct bufferevent *bev, void *ctx);
 
-static int is_clients_connected()
+static int is_client_connected()
 {
 	return clients_conn_signel;
 }
 
-static int clients_connected(int is_connected)
+static int client_connected(int is_connected)
 {
 	if (is_connected)
 		clients_conn_signel = 1;
@@ -80,6 +80,20 @@ static int clients_connected(int is_connected)
 		clients_conn_signel = 0;
 
 	return clients_conn_signel;
+}
+
+static int set_client_work_start(struct proxy_client *client, int is_start_work)
+{
+	if (is_start_work)
+		client->work_started = 1;
+	else
+		client->work_started = 0;
+
+	return client->work_started;
+}
+
+static int is_client_work_started(struct proxy_client *client) {
+	return client->work_started;
 }
 
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
@@ -101,6 +115,7 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		debug(LOG_DEBUG, "client [%s] send new work connect to frps.", client->name);
+		
 		sync_new_work_connection(bev);
 	}
 }
@@ -312,7 +327,7 @@ control_request_free(struct control_request *req)
 }
 
 static void base_control_ping(struct bufferevent *bev) {
-	if ( ! is_clients_connected())
+	if ( ! is_client_connected())
 		return;
 
 	struct bufferevent *bout = NULL;
@@ -452,7 +467,7 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	struct proxy_client *client = arg;
 	
 	base_control_ping(NULL);
-	if (is_clients_connected())
+	if (is_client_connected())
 		ping(NULL);
 
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
@@ -505,13 +520,13 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			}
 			break;
 		case TypeReqWorkConn:
-			if (! is_clients_connected()) {
+			if (! is_client_connected()) {
 				debug(LOG_DEBUG, "recv the client work connect start request ...");
 				start_xfrp_client_service();
 				// if (get_common_config()->tcp_mux) 
 				// sync_new_work_connection(NULL);
 
-				clients_connected(1);
+				client_connected(1);
 				ping(bev);
 				// break;
 			} else {
@@ -525,6 +540,8 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			break;
 		case TypeStartWorkConn:
 			debug(LOG_DEBUG, "client [%s] start work connection.", client->name);
+			start_frp_tunnel(client);
+			set_client_work_start(client, 1);
 			break;
 		case TypePong:
 			pong(bev, NULL);
@@ -697,8 +714,9 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 
 	if (ctx) {
 		struct proxy_client *client = (struct proxy_client *)ctx;
-		if (client->work_started) {
-			debug(LOG_DEBUG, "client [%s] recved work data.");
+		if (is_client_work_started(client)) {
+			debug(LOG_DEBUG, "client [%s] send all work data to proxy tunnel.", client->name);
+			return 0;
 		}
 	}
 
@@ -798,7 +816,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		unsigned char *raw_buf_p = buf;
 		for(;raw_buf_p && read_n;) {
 			unsigned int i = 0;
-			debug(LOG_DEBUG, "before raw mulity buffer:");
+			debug(LOG_DEBUG, "[%s] before raw mulity buffer:", ctx ? ((struct proxy_client *)ctx)->name:"common_control");
 			printf("[");
 			for(i = 0; i<read_n; i++) {
 				printf("%d ", (unsigned char)raw_buf_p[i]);

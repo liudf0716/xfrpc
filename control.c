@@ -65,6 +65,7 @@ static int clients_conn_signel = 0;
 
 
 static void sync_new_work_connection(struct bufferevent *bev);
+static void recv_cb(struct bufferevent *bev, void *ctx);
 
 static int is_clients_connected()
 {
@@ -79,6 +80,45 @@ static int clients_connected(int is_connected)
 		clients_conn_signel = 0;
 
 	return clients_conn_signel;
+}
+
+static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+	struct proxy_client *client = ctx;
+	struct common_conf 	*c_conf = get_common_config();
+
+	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		if (client->ctl_bev != bev) {
+			debug(LOG_ERR, "Error: should be equal");
+			bufferevent_free(client->ctl_bev);
+			client->ctl_bev = NULL;
+		}
+		debug(LOG_ERR, "Proxy [%s]: connect server [%s:%d] error", client->name, c_conf->server_addr, c_conf->server_port);
+		bufferevent_free(bev);
+		free_proxy_client(client);
+	} else if (what & BEV_EVENT_CONNECTED) {
+		debug(LOG_INFO, "Proxy [%s] connected: send msg to frp server", client->name);
+		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
+		bufferevent_enable(bev, EV_READ|EV_WRITE);
+		sync_new_work_connection(bev);
+		// send_msg_frp_server(NewCtlConn, client, NULL);
+	}
+}
+
+static void start_client_connect(struct proxy_client *client)
+{
+	struct common_conf *c_conf = get_common_config();
+	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+	if (!bev) {
+		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		return;
+	}
+
+	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+
+	client->ctl_bev = bev;
+	bufferevent_enable(bev, EV_WRITE);
+	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
 }
 
 static void start_xfrp_client_service()
@@ -96,6 +136,7 @@ static void start_xfrp_client_service()
 			return;
 		}
 		pc->base = main_ctl->connect_base;
+		start_client_connect(pc);
 		raw_new_proxy(pc);
 		send_new_proxy(pc);
 	}
@@ -315,7 +356,6 @@ static void ping(struct bufferevent *bev)
 
 	char *ping_msg = "{}";
 	send_msg_frp_server(bev, TypePing, ping_msg, strlen(ping_msg), sid);
-	sync_new_work_connection(bev);
 }
 
 static void pong(struct bufferevent *bev, struct frame *f)
@@ -456,19 +496,28 @@ static void raw_message(struct message *msg)
 
 			if (is_logged) {
 				init_msg_writer();
+				// sync_new_work_connection(NULL);
 			}
 			break;
 		case TypeReqWorkConn:
 			if (! is_clients_connected()) {
 				debug(LOG_DEBUG, "recv the client work connect start request ...");
 				start_xfrp_client_service();
-				if (get_common_config()->tcp_mux) sync_new_work_connection(NULL);
+				// if (get_common_config()->tcp_mux) 
+				// sync_new_work_connection(NULL);
+
 				clients_connected(1);
 				ping(NULL);
-				break;
+				// break;
 			} else {
 				debug(LOG_DEBUG, "clients have been connected.");
+				// sync_new_work_connection(NULL);
 			}
+			sync_new_work_connection(NULL);
+			break;
+		case TypeNewProxyResp:
+			sync_new_work_connection(NULL);
+			break;
 		case TypePong:
 			pong(NULL, NULL);
 			break;
@@ -1236,5 +1285,5 @@ void close_main_control()
 
 void run_control() {
 	start_base_connect();	//with login
-	keep_control_alive();
+	//keep_control_alive();
 }

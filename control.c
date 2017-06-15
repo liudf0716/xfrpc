@@ -63,7 +63,6 @@ static pthread_mutex_t recv_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int clients_conn_signel = 0;
 
-
 static void sync_new_work_connection(struct bufferevent *bev);
 static void recv_cb(struct bufferevent *bev, void *ctx);
 
@@ -178,11 +177,9 @@ static void init_msg_reader(unsigned char *iv)
 	}
 }
 
-// TODO: need lock
 static size_t request(struct bufferevent *bev, struct frame *f) 
 {
 	size_t write_len = 0;
-	// pthread_mutex_lock(&send_mutex);
 	struct bufferevent *bout = NULL;
 
 	if (bev) {
@@ -195,6 +192,7 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 		goto REQ_END;
 	}
 
+#ifdef DEV_DEBUG
 	/* debug showing */
 	unsigned int i = 0;
 	if (f->len > 20) {
@@ -203,8 +201,8 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 			printf("%x ", f->data[i]);
 		}
 		printf("]\n");
-		/* debug show over */
 	}
+#endif // DEV_DEBUG
 
 	struct common_conf *c = get_common_config();
 	if ( ! c)
@@ -236,13 +234,6 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 	if ( 0 == write_len)
 		goto REQ_END;;
 
-	printf("******** Buffer write:\n");
-	int j = 0;
-	printf("[");
-	for(j=0; j< write_len; j++) {
-		printf("%d ", (unsigned char)request_buf[j]);
-	}
-	printf("]\n");
 	bufferevent_write(bout, request_buf, write_len);
 	// bufferevent_write(bout, "\n", 1);
 
@@ -596,7 +587,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 
 	if (len <= get_header_size()) {
 		if (f->cmd == 3) {
-			// pong(bev, f);
 			base_control_ping(bev);
 		}
 
@@ -618,7 +608,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 
 	printf("\n");
 
-	// memset(ret_buf, 0, 10);
 	size_t ret_len2 = decrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
 	debug(LOG_DEBUG, "message after test2:");
 	if (ret_len2 <= 0) {
@@ -642,7 +631,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		printf("%u ", (unsigned char)ret_buf[i]);
 	}
 	printf("\n encrypto test end \n");
-	//fuck debug end
 
 	struct frp_coder *d = get_main_decoder();
 	if (! d) {
@@ -1113,17 +1101,18 @@ void send_msg_frp_server(struct bufferevent *bev,
 	if ( ! bout) {
 		return;
 	}
-	debug(LOG_DEBUG, "send message type is [%c]", type);
+	debug(LOG_DEBUG, "send message type: [%c]", type);
 
 	struct message req_msg;
+	req_msg.data_p = NULL;
 	char frame_type = 0;
 	struct frame *f = NULL;
 	req_msg.type = type;
 	req_msg.data_len = msg_len;
+
 	debug(LOG_DEBUG, "msg.data_len = %d", req_msg.data_len);
 	if (msg) {
 		req_msg.data_p = strdup(msg);
-		//TODO: NEED FREE
 	}
 
 	unsigned char *puck_buf = NULL; //TODO: NEED FREE
@@ -1155,16 +1144,6 @@ void send_msg_frp_server(struct bufferevent *bev,
 	struct frp_coder *encoder = get_main_encoder();
 
 	if (encoder) {
-		//test for server encode
-		// unsigned char *frps_test = (unsigned char *)"helloworld";
-		// debug(LOG_DEBUG, "encode %s as frps:", frps_test);
-		// encrypt_data(frps_test, 10, get_main_decoder(), &encode_ret_test);
-		// decrypt_data(encode_ret_test, 10, get_main_decoder(), &decode_ret_test);
-
-		// debug(LOG_DEBUG, "encode %s as frpc:", frps_test);
-		// encrypt_data(frps_test, 10, encoder, &encode_ret_test);
-		// test end
-
 		size_t encode_ret_len = encrypt_data(puck_buf, pack_buf_len, encoder, &encode_ret);
 		debug(LOG_DEBUG, "encode len:[%lu]", encode_ret_len);
 
@@ -1176,48 +1155,29 @@ void send_msg_frp_server(struct bufferevent *bev,
 		set_frame_len(f, (ushort) pack_buf_len);
 	}
 
-	/* debug end */
 #endif //ENCRYPTO
 	if (! f->data) {
 		set_frame_len(f, (ushort) pack_buf_len);
 		f->data = puck_buf;
 	}
 	
-	/* test for frpc encoder */
-
 	switch (type)
 	{
 	case TypeLogin:
 	case TypePong:
 	case TypePing:
-	case TypeNewProxy:	//will recv : {"proxy_name":"G_443","error":""}
+	case TypeNewProxy:
 		frame_type = cmdPSH;
-
 		break;
+
 	default:
 		break;
 	}
 
 	set_frame_cmd(f, frame_type);
-	/* debug showing */
-	unsigned int i = 0;
-	printf("[");
-	for(i = 0; i<20; i++) {
-		printf("%x ", puck_buf[i]);
-	}
-	printf("]\n");
-	/* debug show over */
-
-	/* debug showing */
-	printf("[");
-	for(i = 0; i<20; i++) {
-		printf("%x ", f->data[i]);
-	}
-	printf("]\n");
-	/* debug show over */
-
-	printf("request length:%d\n", (ushort) f->len);
 	request(bout, f);
+	if (req_msg.data_p)
+		free(req_msg.data_p);
 }
 
 void login()
@@ -1251,7 +1211,6 @@ void start_login_frp_server(struct event_base *base)
 
 	debug(LOG_INFO, "Xfrpc login: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
 
-	// client->ctl_bev = bev;
 	bufferevent_enable(bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
 }
@@ -1275,7 +1234,6 @@ void control_process(struct proxy_client *client)
 void send_new_proxy(struct proxy_client *client)
 {
 	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
-	// login_frp_server(client);
 
 	char *new_proxy_msg = NULL;
 	int len = new_proxy_request_marshal(client->n_proxy, &new_proxy_msg); //marshal login request
@@ -1299,13 +1257,9 @@ int init_main_control()
 		debug(LOG_ERR, "event_base_new() error");
 		return 1;
 	}
-
 	main_ctl->connect_base = base;
 
 	size_t len = (1<<16) + get_header_size();
-	request_buf = calloc(len, 1);
-	assert(request_buf);
-
 	uint32_t *sid = init_sid_index();
 	assert(sid);
 	main_ctl->session_id = *sid;

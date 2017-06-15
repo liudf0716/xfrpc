@@ -392,7 +392,7 @@ struct message *unpack(unsigned char *recv_msg, const ushort len)
 	if (! msg_type_valid_check(msg->type) )
 		return NULL;
 
-	debug(LOG_DEBUG, "unpack message type: %c", msg->type);
+	debug(LOG_DEBUG, "unpacked message type: %c", msg->type);
 	uint64_t  data_len_bigend;
 	data_len_bigend = *(uint64_t *)(recv_msg + MSG_LEN_I);
 	msg->data_len = ntoh64(&data_len_bigend);
@@ -414,22 +414,16 @@ size_t pack(struct message *req_msg, unsigned char **ret_buf)
 	int endian_check = 1;
 	// little endian if true
 	if(*(char *)&endian_check == 1) 
-	{
-		printf("is little endian ! msg->data_len = %ld\n", req_msg->data_len);
 		data_len_bigend = hton64(&req_msg->data_len);
-	} else {
+	else 
 		data_len_bigend = req_msg->data_len;
-	}
-
-
-	printf("big endian = %lu\n", data_len_bigend);
+	
 	*ret_buf = calloc(buf_len, 1);
 
 	if (*ret_buf == NULL) {
 		return 0;
 	}
 
-	printf("msg type : %c\n", req_msg->type);
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
 	*(uint64_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
 	snprintf((char *)*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 

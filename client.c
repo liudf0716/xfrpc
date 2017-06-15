@@ -147,11 +147,8 @@ xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 	size_t len;
 	src = bufferevent_get_input(bev);
 	len = evbuffer_get_length(src);
-	// if (len > 4) {
-		dst = bufferevent_get_output(partner);
-		// evbuffer_drain(src, 4);
-		evbuffer_add_buffer(dst, src);
-	// }
+	dst = bufferevent_get_output(partner);
+	evbuffer_add_buffer(dst, src);
 }
 
 static void
@@ -165,8 +162,6 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 	len = evbuffer_get_length(src);
 	if (len > 0) {
 		dst = bufferevent_get_output(partner);
-		// unsigned int header = htonl(len);
-		// evbuffer_prepend(src, &header, sizeof(unsigned int));
 		evbuffer_add_buffer(dst, src);	
 	}
 }
@@ -176,12 +171,6 @@ void start_frp_tunnel(const struct proxy_client *client)
 {
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
-	
-	// struct bufferevent *b_svr = connect_server(base, c_conf->server_addr, c_conf->server_port);
-	// if (!b_svr) {
-	// 	debug(LOG_ERR, "frpc tunnel connect frps failed!");
-	// 	return;
-	// }
 	
 	struct bufferevent *b_clt = connect_server(base, client->local_ip, client->local_port);
 	if (!b_clt) {

@@ -33,9 +33,11 @@ struct event_base;
 struct base_conf;
 struct bufferevent;
 struct event;
+struct evdns_base;
 
 struct proxy_client {
 	struct event_base 	*base;
+	struct evdns_base  	*dnsbase;
 	struct bufferevent	*ctl_bev;
 	struct event		*ev_timeout;
 	

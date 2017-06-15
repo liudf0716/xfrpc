@@ -101,7 +101,6 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		sync_new_work_connection(bev);
-		// send_msg_frp_server(NewCtlConn, client, NULL);
 	}
 }
 
@@ -526,7 +525,7 @@ static void raw_message(struct message *msg)
 	}
 }
 
-static size_t data_handler(unsigned char *buf, ushort len)
+static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *client)
 {
 	unsigned char *ret_buf = NULL;
 	struct frame *f = NULL;
@@ -669,7 +668,7 @@ DATA_H_END:
 	return len;
 }
 
-static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, size_t *ret_len)
+static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, size_t *ret_len, void *ctx)
 {
 	unsigned char *unraw_buf_p = NULL;
 	unsigned char *raw_buf = NULL;
@@ -732,7 +731,7 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 
 	if (! splited) {
 		debug(LOG_DEBUG, "buffer need not split raw.");
-		data_handler(buf, buf_len);
+		data_handler(buf, buf_len, ctx);
 		*ret_len = 0;
 		return NULL;
 	} else if (split_len){
@@ -743,7 +742,7 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 	
 	if (split_len != 0 && raw_buf != NULL){
 		debug(LOG_DEBUG, "buffer need splite, raw len: %u", split_len);
-		data_handler(raw_buf, split_len);
+		data_handler(raw_buf, split_len, ctx);
 		free(raw_buf);
 		*ret_len = buf_len - split_len;
 		if (split_len < buf_len) {
@@ -768,7 +767,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	size_t read_n = 0;
 	size_t ret_len = 0;
 	read_n = evbuffer_remove(input, buf, len);
-	
+
 	if (read_n) {
 		unsigned char *raw_buf_p = buf;
 		for(;raw_buf_p && read_n;) {
@@ -779,7 +778,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				printf("%d ", (unsigned char)raw_buf_p[i]);
 			}
 			printf("]\n");
-			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len);
+			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len, ctx);
 			read_n = ret_len;
 		}
 	} else {

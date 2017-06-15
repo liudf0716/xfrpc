@@ -704,7 +704,7 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 		struct proxy_client *client = (struct proxy_client *)ctx;
 		if (is_client_work_started(client)) {
 			debug(LOG_DEBUG, "client [%s] send all work data to proxy tunnel.", client->name);
-			return 0;
+			return NULL;
 		}
 	}
 
@@ -759,10 +759,10 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 	}
 
 	if (! splited) {
-		debug(LOG_DEBUG, "buffer need not split raw.");
 		data_handler(buf, buf_len, ctx);
 		*ret_len = 0;
 		return NULL;
+
 	} else if (split_len){
 		raw_buf =calloc(1, split_len);
 		assert(raw_buf);
@@ -786,7 +786,6 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 //		else ctx == client struct
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
-	// pthread_mutex_lock(&recv_mutex);
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
 	if (len < 0) {
@@ -816,120 +815,10 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	} else {
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
 	}
-
 	free(buf);
-
-// #ifdef ENCRYPTO
-// 	if (ret_buf)
-// 		free(ret_buf);
-// #endif //ENCRYPTO
 
 	return;
 }
-
-// static void recv_login_resp_cb(struct bufferevent *bev, void *ctx)
-// {
-// 	bufferevent_setcb(bev, recv_cb, NULL, NULL, NULL);
-// 	bufferevent_enable(bev, EV_READ|EV_WRITE);
-
-// 	struct evbuffer *input = bufferevent_get_input(bev);
-// 	int len = evbuffer_get_length(input);
-// 	if (len < 0)
-// 		return;
-	
-// 	unsigned char *buf = calloc(len+1, 1);
-// 	assert(buf);
-// 	struct frame *f = NULL;
-// 	if (evbuffer_remove(input, buf, len) > 0) { 
-// 		debug(LOG_DEBUG, 
-// 			"recv [%d] bits from frp server", 
-// 			len);
-		
-// 		if (get_common_config()->tcp_mux) {
-// 			f = raw_frame(buf, len);
-// 		} else {
-// 			f = raw_frame_only_msg(buf, len);
-// 			set_frame_cmd(f, cmdPSH);
-// 		}
-
-// 		if (f == NULL) {
-// 			debug(LOG_ERR, "raw_frame faild!");
-// 			goto RECV_LOGIN_END;
-// 		}
-// 		struct message *msg = len > get_header_size()? unpack(f->data, f->len):NULL;
-
-// 		if (! msg) {
-// 			debug(LOG_ERR, "recved invalid login resp message");
-// 			goto RECV_LOGIN_END;
-// 			return;
-// 		}
-		
-// 		int is_logged = 0;
-
-// 		switch(f->cmd) {
-// 			case cmdPSH:	//2
-// 				if (msg->data_p == NULL)
-// 					break;
-
-// 				struct login_resp *lr = login_resp_unmarshal(msg->data_p);
-// 				if (lr == NULL) {
-// 					debug(LOG_ERR, "login response buffer init faild!");
-// 					return;
-// 				}
-
-// 				debug(LOG_DEBUG, "login repose unmarshal succeed!");
-// 				is_logged = login_resp_check(lr);
-// 				debug(LOG_INFO, "xfrp login succeed!");
-// 				free(lr);
-// 				break;
-
-// 			case cmdNOP: 	//3 no options
-// 			case cmdSYN: 	//0 create a new session
-// 			case cmdFIN:	//1 close session
-// 			default:
-// 				debug(LOG_ERR, "recved message but not login resp target.");
-// 				break;
-// 		}
-
-// 		if (is_logged) {
-// 			init_msg_writer();
-// 			start_xfrp_client_service();
-// 		}
-		
-// 	} else {
-// 		debug(LOG_ERR, "recved login resp but evbuffer_remove faild!");
-// 	}
-
-// RECV_LOGIN_END:
-// 	if (f)
-// 		free(f);
-
-// 	free(buf);
-// }
-
-
-// static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
-// {
-// 	struct proxy_client *client = (struct proxy_client *)ctx;
-// 	struct common_conf 	*c_conf = get_common_config();
-
-// 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-// 		if (client->ctl_bev != bev) {
-// 			debug(LOG_ERR, "Error: should be equal");
-// 			bufferevent_free(client->ctl_bev);
-// 			client->ctl_bev = NULL;
-// 		}
-// 		debug(LOG_ERR, "Proxy [%s]: connect server [%s:%d] error", client->name, c_conf->server_addr, c_conf->server_port);
-// 		bufferevent_free(bev);
-// 		free_proxy_client(client);
-// 	} else if (what & BEV_EVENT_CONNECTED) {
-// 		debug(LOG_INFO, "Proxy [%s] connected: send msg to frp server", client->name);
-// 		bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);
-// 		bufferevent_enable(bev, EV_READ|EV_WRITE);
-		
-// 		send_msg_frp_server(TypeLogin, client, NULL);
-// 	}
-// }
 
 static void open_connection_session(struct bufferevent *bev)
 {
@@ -942,25 +831,6 @@ static void open_connection_session(struct bufferevent *bev)
 	debug(LOG_DEBUG, "open session ID:%d, send frame len=%d", main_ctl->session_id, f->len);
 	request(bev, f);
 }
-
-
-// static void login_event_cb(struct bufferevent *bev, short what, void *ctx)
-// {
-// 	struct common_conf 	*c_conf = get_common_config();
-// 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-// 		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
-// 	} else if (what & BEV_EVENT_CONNECTED) {
-// 		debug(LOG_INFO, "Xfrp connected!");
-// 		bufferevent_setcb(bev, login_xfrp_read_msg_cb2, NULL, login_event_cb, NULL);
-// 		bufferevent_enable(bev, EV_READ|EV_WRITE);
-		
-// 		debug(LOG_DEBUG, "come in login_event_cb ... ");
-// 		// send_login_frp_server(bev);
-// 		//TODO : SESSION
-// 		// send_msg_frp_server(NewCtlConn, client, NULL);
-// 	}
-// }
-
 
 void connect_eventcb(struct bufferevent *bev, short events, void *ptr)
 {
@@ -992,22 +862,6 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-// static void login_frp_server(struct proxy_client *client)
-// {
-// 	struct common_conf *c_conf = get_common_config();
-// 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
-// 	if (!bev) {
-// 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-// 		return;
-// 	}
-
-// 	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
-
-// 	client->ctl_bev = bev;
-// 	bufferevent_enable(bev, EV_WRITE);
-// 	bufferevent_setcb(bev, NULL, NULL, NULL, client);
-// }
-
 static void keep_control_alive() 
 {
 	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, 
@@ -1037,26 +891,6 @@ void start_base_connect()
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
 }
-
-// void send_msg_2_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev)
-// {
-// 	debug(LOG_DEBUG, "send ping ...");
-// 	char *msg = NULL;
-// 	struct control_request *req = get_control_request(type, client); // get control request by client
-// 	int len = control_request_marshal(req, &msg); // marshal control request to json string
-// 	assert(msg);
-// 	struct bufferevent *bout = NULL;
-// 	if (bev) {
-// 		bout = bev;
-// 	} else {
-// 		bout = client->ctl_bev;
-// 	}
-// 	bufferevent_write(bout, msg, len);
-// 	bufferevent_write(bout, "\n", 1);
-// 	debug(LOG_DEBUG, "Send msg to frp server [%s]", msg);
-// 	free(msg);
-// 	control_request_free(req); // free control request
-// }
 
 // TODO: NEED FREE IN FUNC
 void sync_iv(unsigned char *iv)
@@ -1134,7 +968,6 @@ void send_msg_frp_server(struct bufferevent *bev,
 
 	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
 	assert(f);
-	// f->len = (ushort) pack_buf_len;
 
 #ifdef ENCRYPTO
 	debug(LOG_DEBUG, "start encode message ...");
@@ -1262,7 +1095,7 @@ int init_main_control()
 	size_t len = (1<<16) + get_header_size();
 	request_buf = calloc(1, len);
 	assert(request_buf);
-	
+
 	uint32_t *sid = init_sid_index();
 	assert(sid);
 	main_ctl->session_id = *sid;

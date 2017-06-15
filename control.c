@@ -176,14 +176,27 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, 
 // connect to server
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
 {
+	struct evdns_base  	*dnsbase  = event_base_new();;
 	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
+	assert(dnsbase);
 	
-	if (bufferevent_socket_connect_hostname(bev, NULL, AF_INET, name, port)<0) {
+	evdns_base_set_option(dnsbase, "timeout", 1);
+    // thanks to the following article
+    // http://www.wuqiong.info/archives/13/
+    evdns_base_set_option(dnsbase, "randomize-case:", "0");//TurnOff DNS-0x20 encoding
+    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");//BaiduDNS
+    evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");//AliDNS
+    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");//AliDNS
+    evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");//114DNS
+	
+	if (bufferevent_socket_connect_hostname(bev, dnsbase, AF_INET, name, port)<0) {
+		event_base_free(base);
 		bufferevent_free(bev);
 		return NULL;
 	}
 	
+	event_base_free(base);
 	return bev;
 }
 

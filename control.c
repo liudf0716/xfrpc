@@ -175,29 +175,16 @@ void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, 
 }
 
 // connect to server
-struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
+struct bufferevent *connect_server(struct proxy_client *client, const char *name, const int port)
 {
-	struct evdns_base  	*dnsbase  = evdns_base_new(base, 1);
-	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+	struct bufferevent *bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
-	assert(dnsbase);
 	
-	evdns_base_set_option(dnsbase, "timeout", "1.0");
-    // thanks to the following article
-    // http://www.wuqiong.info/archives/13/
-    evdns_base_set_option(dnsbase, "randomize-case:", "0");//TurnOff DNS-0x20 encoding
-    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");//BaiduDNS
-    evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");//AliDNS
-    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");//AliDNS
-    evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");//114DNS
-	
-	if (bufferevent_socket_connect_hostname(bev, dnsbase, AF_INET, name, port)<0) {
-		event_base_free(base);
+	if (bufferevent_socket_connect_hostname(bev, client->dnsbase, AF_INET, name, port)<0) {
 		bufferevent_free(bev);
 		return NULL;
 	}
 	
-	event_base_free(base);
 	return bev;
 }
 
@@ -286,7 +273,7 @@ static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 static void login_frp_server(struct proxy_client *client)
 {
 	struct common_conf *c_conf = get_common_config();
-	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+	struct bufferevent *bev = connect_server(client, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
 		return;

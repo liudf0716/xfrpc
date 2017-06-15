@@ -371,7 +371,6 @@ void control_response_free(struct control_response *res)
 	free(res);
 }
 
-
 int msg_type_valid_check(char msg_type)
 {
 	int i = 0;
@@ -398,8 +397,7 @@ struct message *unpack(unsigned char *recv_msg, const ushort len)
 	msg->data_len = ntoh64(&data_len_bigend);
 	if (msg->data_len > 0) {
 		msg->data_p = calloc(msg->data_len + 1, 1);
-		if (! msg->data_p)
-			return NULL;
+		assert(msg->data_p);
 		
 		memcpy(msg->data_p, recv_msg + MSG_DATA_I, msg->data_len);
 	}

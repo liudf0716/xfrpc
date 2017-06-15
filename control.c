@@ -100,6 +100,7 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 		debug(LOG_INFO, "Proxy [%s] connected: send msg to frp server", client->name);
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
+		debug(LOG_DEBUG, "client [%s] send new work connect to frps.", client->name);
 		sync_new_work_connection(bev);
 	}
 }
@@ -475,8 +476,13 @@ static int login_resp_check(struct login_resp *lr)
 	return cl->logged;
 }
 
-static void raw_message(struct message *msg)
+static void raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *client)
 {
+	if (client) {
+		if (client->work_started) {
+			debug(LOG_DEBUG, "raw client [%s] control message.", client->name);
+		}
+	}
 	switch(msg->type) {
 		case TypeLoginResp:
 			if (msg->data_p == NULL)
@@ -506,19 +512,22 @@ static void raw_message(struct message *msg)
 				// sync_new_work_connection(NULL);
 
 				clients_connected(1);
-				ping(NULL);
+				ping(bev);
 				// break;
 			} else {
 				debug(LOG_DEBUG, "clients have been connected.");
 				// sync_new_work_connection(NULL);
 			}
-			sync_new_work_connection(NULL);
+			// sync_new_work_connection(bev);
 			break;
 		case TypeNewProxyResp:
-			sync_new_work_connection(NULL);
+			// sync_new_work_connection(bev);
+			break;
+		case TypeStartWorkConn:
+			debug(LOG_DEBUG, "client [%s] start work connection.", client->name);
 			break;
 		case TypePong:
-			pong(NULL, NULL);
+			pong(bev, NULL);
 			break;
 		default:
 			break;
@@ -527,6 +536,11 @@ static void raw_message(struct message *msg)
 
 static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *client)
 {
+	struct bufferevent *bev = NULL;
+	if (client) {
+		debug(LOG_DEBUG, "client [name:%s] recved data", client->name);
+		bev = client->ctl_bev;
+	}
 	unsigned char *ret_buf = NULL;
 	struct frame *f = NULL;
 	/* debug showing */
@@ -566,7 +580,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	if (len <= get_header_size()) {
 		if (f->cmd == 3) {
 			// pong(bev, f);
-			base_control_ping(NULL);
+			base_control_ping(bev);
 		}
 
 		goto DATA_H_END;
@@ -646,7 +660,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 			msg = unpack(ret_buf, f->len);
 			if (msg && msg->data_p) {
 				debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
-				debug(LOG_DEBUG, "recv <---- %s", msg->data_p);
+				debug(LOG_DEBUG, "recv <---- %s" ,msg->data_p);
 			} else {
 				debug(LOG_ERR, "message received format invalid");
 				goto DATA_H_END;
@@ -655,7 +669,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 			if (msg->data_p == NULL)
 				goto DATA_H_END;
 			
-			raw_message(msg);
+			raw_message(msg, bev, client);
 			break;
 		default:
 			break;
@@ -668,6 +682,8 @@ DATA_H_END:
 	return len;
 }
 
+// ctx: if recv_cb was called by common control, ctx == NULL
+//		else ctx == client struct
 static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, size_t *ret_len, void *ctx)
 {
 	unsigned char *unraw_buf_p = NULL;
@@ -678,6 +694,13 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 	int splited = 0; 			// signal argument, ==1 after buffer split
 
 	*ret_len = 0;
+
+	if (ctx) {
+		struct proxy_client *client = (struct proxy_client *)ctx;
+		if (client->work_started) {
+			debug(LOG_DEBUG, "client [%s] recved work data.");
+		}
+	}
 
 	for(;;) {
 		if (buf_len > split_lv) {
@@ -749,9 +772,12 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 			unraw_buf_p = buf+ split_len;
 		}
 	}
+
 	return unraw_buf_p;
 }
 
+// ctx: if recv_cb was called by common control, ctx == NULL
+//		else ctx == client struct
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	// pthread_mutex_lock(&recv_mutex);
@@ -1284,5 +1310,5 @@ void close_main_control()
 
 void run_control() {
 	start_base_connect();	//with login
-	//keep_control_alive();
+	keep_control_alive();
 }

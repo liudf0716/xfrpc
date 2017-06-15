@@ -58,6 +58,7 @@ struct proxy_client {
 	UT_hash_handle hh;
 	struct new_proxy *n_proxy;
 	int		connected;
+	int 	work_started;
 };
 
 // When frpc login success, send this message to frps for running a new proxy.

@@ -39,6 +39,7 @@
 #include <syslog.h>
 
 #include <event2/event.h>
+#include <event2/dns.h>
 
 #include "commandline.h"
 #include "client.h"
@@ -48,15 +49,15 @@
 #include "debug.h"
 #include "xfrp_client.h"
 
-static void start_xfrp_client(struct event_base *base)
+static void start_xfrp_client(struct event_base *base, struct evdns_base  *dnsbase)
 {
 	struct proxy_client *all_pc = get_all_pc();
 	struct proxy_client *pc = NULL, *tmp = NULL;
 	
 	debug(LOG_INFO, "Start xfrp client");
-	
 	HASH_ITER(hh, all_pc, pc, tmp) {
 		pc->base = base;
+		pc->dnsbase = dnsbase;
 		control_process(pc);
 	}
 }
@@ -64,6 +65,8 @@ static void start_xfrp_client(struct event_base *base)
 void xfrp_client_loop()
 {
 	struct event_base *base = NULL;
+	struct evdns_base *dnsbase  = NULL; 
+	assert(dnsbase);
 	
 	base = event_base_new();
 	if (!base) {
@@ -71,9 +74,23 @@ void xfrp_client_loop()
 		exit(0);
 	}	
 	
-	start_xfrp_client(base);
+	dnsbase = evdns_base_new(base, 1);
+	if (!dnsbase) {
+		exit(0);
+	}
+	evdns_base_set_option(dnsbase, "timeout", "1.0");
+    // thanks to the following article
+    // http://www.wuqiong.info/archives/13/
+    evdns_base_set_option(dnsbase, "randomize-case:", "0");//TurnOff DNS-0x20 encoding
+    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");//BaiduDNS
+    evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");//AliDNS
+    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");//AliDNS
+    evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");//114DNS
+	
+	start_xfrp_client(base, dnsbase);
 		
 	event_base_dispatch(base);
 	
+	evdns_base_free(dnsbase, 0);
 	event_base_free(base);
 }

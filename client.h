@@ -102,6 +102,24 @@ struct new_proxy {
 	char	*http_pwd;
 };
 
+struct proxy_service {
+	char 	*proxy_name;
+	char 	*proxy_type;
+	int 	use_encryption;
+	int	use_compression;
+
+	// tcp and udp only
+	int64_t	remote_port;
+
+	// http and https only
+	char 	*custom_domains;
+	char 	*subdomain;
+	char	*locations;
+	char	*host_header_rewrite;
+	char	*http_user;
+	char	*http_pwd;
+};
+
 // after frp server accept client connection request
 // frp server send xfrp client NoticeUserConn request
 // when xfrp client receive that request, it will start

@@ -756,18 +756,6 @@ static void open_connection_session(struct bufferevent *bev)
 	request(bev, f);
 }
 
-void connect_eventcb(struct bufferevent *bev, short events, void *ptr)
-{
-    if (events & BEV_EVENT_CONNECTED) {
-         /* We're connected to 127.0.0.1:8080.   Ordinarily we'd do
-            something here, like start reading or writing. */
-    } else if (events & BEV_EVENT_ERROR) {
-         /* An error occured while connecting. */
-    } 
-
-	printf("============recv event cb:%d====\n", events);
-}
-
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();
@@ -777,7 +765,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
 
 		// recv frpc login-response message before recv othfer fprs messages, 
-		bufferevent_setcb(bev, recv_cb, NULL, connect_eventcb, NULL);
+		bufferevent_setcb(bev, recv_cb, NULL, connect_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);
 		bufferevent_setwatermark(bev, EV_READ, 0, 0);
 		
@@ -886,7 +874,6 @@ void send_msg_frp_server(struct bufferevent *bev,
 	for(j;j<pack_buf_len; j++) {
 		printf("%d ", (unsigned char)puck_buf[j]);
 	}
-
 	printf("\n\n");
 #endif	
 

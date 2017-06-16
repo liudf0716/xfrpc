@@ -125,20 +125,12 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 		return NULL;
 	}
 
-	size_t i;
 	srand((unsigned int) time(NULL));
-
-#ifdef ENC_DEBUG
+	size_t i;
 	for(i=0; i<iv_len; i++) {
 		iv_buf[i] = (rand() % 254 ) + 1;
-
-		//test:
-		iv_buf[i] = 99;
-		printf("iv[%ld]=%d ", i, iv_buf[i]);
 	}
 
-	printf("\n");
-#endif //ENC_DEBUG
 	return iv_buf;
 }
 
@@ -279,74 +271,6 @@ D_END:
 	// free(inbuf);
 	return totol_len;
 }
-
-// old
-//184 43 248 49 90 239 161 152 232 192 227 166 88 167 167 166 11 32 188 141 99 193 247 55 106 234 7 216 61 88 220 124 222 94 2 15 171 43 210 207 238 153 189 49 45 156 16 
-// size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_coder *decoder, unsigned char **ret)
-// {
-// 	unsigned char *inbuf = calloc(enc_len, 1);
-// 	assert(inbuf);
-// 	memcpy(inbuf, enc_data, enc_len);
-
-// 	// unsigned char inbuf[] = {228, 173, 25, 145, 226, 75, 25, 78, 7, 106};
-
-// 	unsigned char *outbuf = calloc(enc_len, 1);
-// 	assert(outbuf);
-// 	*ret = outbuf;
-
-// 	int outlen = 0, tmplen = 0;
-// 	struct frp_coder *c = decoder;
-// 	EVP_CIPHER_CTX ctx;
-// 	EVP_CIPHER_CTX_init(&ctx);
-// 	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
-	
-// 	if(!EVP_DecryptUpdate(&ctx, outbuf, &outlen, inbuf, (int)enc_len)) {
-// 		debug(LOG_ERR, "EVP_DecryptUpdate error!");
-// 		goto D_END;
-// 	}
-
-// 	if(!EVP_DecryptFinal_ex(&ctx, outbuf+outlen, &tmplen)) {
-// 		debug(LOG_ERR, "EVP_DecryptFinal_ex error");
-// 		goto D_END;
-// 	}
-
-// 	outlen += tmplen;
-// 	EVP_CIPHER_CTX_cleanup(&ctx);
-
-// #ifdef ENC_DEBUG
-// 	debug(LOG_DEBUG, "DEC_LEN:%lu", enc_len);
-// 	int j = 0;
-// 	debug(LOG_DEBUG, "decoder IV=");
-// 	for (j=0; j<16; j++){
-// 		printf("%u ", (unsigned char)c->iv[j] );
-// 	}
-// 	printf("\n");
-
-// 	debug(LOG_DEBUG, "decoder KEY=");
-// 	for (j=0; j<16; j++){
-// 		printf("%u ", (unsigned char)c->key[j] );
-// 	}
-// 	printf("\n");
-
-// 	debug(LOG_DEBUG, "decoder source=");
-// 	for (j=0; j<enc_len; j++){
-// 		printf("%u ", (unsigned char)inbuf[j]);
-// 	}
-// 	printf("\n");
-
-// 	debug(LOG_DEBUG, "decoder result=");
-// 	for (j = 0; j<outlen; j++) {
-// 		printf("%u ", (unsigned char)outbuf[j]);
-// 	}
-// 	printf("\n");
-
-// 	debug(LOG_DEBUG, "decode string=%s", outbuf);
-// #endif //ENC_DEBUG
-
-// D_END:
-// 	free(inbuf);
-// 	return outlen;
-// }
 
 void free_encoder(struct frp_coder *encoder) {
 	if (encoder) {

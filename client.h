@@ -51,8 +51,12 @@ struct proxy_client {
 	int 	use_encryption;
 	int		use_compression;
 	
-	char	*custom_domains;
+	char 	*custom_domains;
+	char 	*subdomain;
 	char	*locations;
+	char	*host_header_rewrite;
+	char	*http_user;
+	char	*http_pwd;
 	
 	//provate arguments
 	UT_hash_handle hh;
@@ -90,9 +94,9 @@ struct new_proxy {
 	int64_t	remote_port;
 
 	// http and https only
-	char 	**custom_domains;
+	char 	*custom_domains;
 	char 	*subdomain;
-	char	**locations;
+	char	*locations;
 	char	*host_header_rewrite;
 	char	*http_user;
 	char	*http_pwd;

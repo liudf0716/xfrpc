@@ -183,6 +183,15 @@ static struct proxy_client *new_proxy_client(const char *name)
 	pc->name			= strdup(name);
 	pc->local_port		= -1;
 	pc->remote_port		= -1;
+	pc->use_compression = 0;
+	pc->use_encryption	= 0;
+
+	pc->custom_domains	= NULL;
+	pc->subdomain		= NULL;
+	pc->locations		= NULL;
+	pc->host_header_rewrite	= NULL;
+	pc->http_user		= NULL;
+	pc->http_pwd		= NULL;
 
 	if (c_conf->auth_token)
 		bc->auth_token	= strdup(c_conf->auth_token);

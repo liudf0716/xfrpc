@@ -145,9 +145,7 @@ xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 	debug(LOG_DEBUG, "send message to local proxy port.");
 	struct bufferevent *partner = ctx;
 	struct evbuffer *src, *dst;
-	size_t len;
 	src = bufferevent_get_input(bev);
-	len = evbuffer_get_length(src);
 	dst = bufferevent_get_output(partner);
 	evbuffer_add_buffer(dst, src);
 }

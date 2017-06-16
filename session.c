@@ -4,11 +4,12 @@
 #include <assert.h>
 
 #include "uthash.h"
+#include "session.h"
 #include "version.h"
 
 uint32_t *sid_index = NULL;
 
-// TODO: need free
+// need free
 uint32_t *init_sid_index()
 {
 	if (NULL == sid_index) {

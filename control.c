@@ -59,8 +59,6 @@
 
 static struct control *main_ctl;
 static char *request_buf;
-static pthread_mutex_t recv_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int clients_conn_signel = 0;
 
 static void sync_new_work_connection(struct bufferevent *bev);
@@ -235,70 +233,14 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 		goto REQ_END;;
 
 	bufferevent_write(bout, request_buf, write_len);
-	// bufferevent_write(bout, "\n", 1);
 
 	memset(request_buf, 0, len);
 
 REQ_END:
-	// pthread_mutex_unlock(&send_mutex);
 	return write_len;
 }
 
-// static struct control_request *
-// get_control_request(enum msg_type type, const struct proxy_client *client)
-// {
-	// if (!client)
-	// 	return NULL;
-	
-	// struct control_request *req = calloc(sizeof(struct control_request), 1);
-	// long ntime = time(NULL);
-	// req->type = type;
-	// req->proxy_name = strdup(client->name);
-	// #define	STRDUP(v)	v?strdup(v):NULL
-	// switch((int)type) {
-	// 	case TypeLogin:
-	// 		req->use_encryption = client->bconf->use_encryption;
-	// 		req->use_gzip = client->bconf->use_gzip;
-	// 		req->pool_count = client->bconf->pool_count;
-	// 		req->privilege_mode = client->bconf->privilege_mode;
-	// 		req->proxy_type = STRDUP(client->bconf->type);
-	// 		req->host_header_rewrite = STRDUP(client->bconf->host_header_rewrite);
-	// 		req->http_username = STRDUP(client->bconf->http_username);
-	// 		req->http_password = STRDUP(client->bconf->http_password);
-	// 		req->subdomain = STRDUP(client->bconf->subdomain);
-	// 		if (req->privilege_mode) {
-	// 			req->remote_port = client->remote_port;
-	// 			req->custom_domains = STRDUP(client->custom_domains);
-	// 			req->locations = STRDUP(client->locations);
-	// 		}
-	// 		break;
-	// 	// case NewWorkConn:	
-	// 	// 	break;
-	// 	// case NoticeUserConn:
-	// 	// 	break;
-	// 	// case NewCtlConnRes:
-	// 	// 	break;
-	// 	// case HeartbeatReq:
-	// 	// 	break;
-	// 	// case HeartbeatRes:
-	// 	// 	break;
-	// 	// case NewWorkConnUdp:
-	// 	// 	break;
-	// }
-	
-	// req->privilege_mode = client->bconf->privilege_mode;
-	// req->timestamp = ntime;
-	// if (req->privilege_mode) {
-	// 	req->privilege_key = get_auth_key(client->bconf->privilege_token);
-	// } else {
-	// 	req->auth_key = get_auth_key(client->bconf->auth_token);
-	// }
-	// return req;
-// 	return NULL;
-// }
-
-static void
-control_request_free(struct control_request *req)
+void control_request_free(struct control_request *req)
 {
 	if (!req)
 		return;
@@ -454,21 +396,12 @@ static void set_ticker_ping_timer(struct event *timeout)
 
 static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
-	struct proxy_client *client = arg;
-	
 	base_control_ping(NULL);
 	if (is_client_connected())
 		ping(NULL);
 
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
 }
-
-static void heartbeat_sender(struct proxy_client *client)
-{
-	client->ev_timeout = evtimer_new(client->base, hb_sender_cb, client);
-	set_ticker_ping_timer(client->ev_timeout);
-}
-
 
 static int login_resp_check(struct login_resp *lr)
 {
@@ -817,10 +750,6 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 static void open_connection_session(struct bufferevent *bev)
 {
-	struct bufferevent *bout = NULL;
-	if ( ! bev) 
-		return;
-
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
 	debug(LOG_DEBUG, "open session ID:%d, send frame len=%d", main_ctl->session_id, f->len);
@@ -1041,22 +970,6 @@ void start_login_frp_server(struct event_base *base)
 
 	bufferevent_enable(bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
-}
-
-void control_process(struct proxy_client *client)
-{
-	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
-	// login_frp_server(client);
-
-	char *new_proxy_msg = NULL;
-	int len = new_proxy_request_marshal(client->n_proxy, &new_proxy_msg); //marshal login request
-	if ( ! new_proxy_msg) {
-		debug(LOG_ERR, "login_request_marshal failed");
-		assert(new_proxy_msg);
-	}
-
-	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
-	free(new_proxy_msg);
 }
 
 void send_new_proxy(struct proxy_client *client)

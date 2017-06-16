@@ -43,6 +43,7 @@ struct control {
     struct event		*ticker_ping;    //heartbeat timer
 };
 
+void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
 void sync_iv(unsigned char *iv);
 void start_base_connect();
 void sync_session_id(uint32_t sid);
@@ -65,5 +66,6 @@ void send_new_proxy(struct proxy_client *client);
 
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
 
+void control_request_free(struct control_request *req);
 
 #endif //_CONTROL_H_

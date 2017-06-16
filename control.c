@@ -258,9 +258,11 @@ static void login_xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 			bufferevent_free(client->ctl_bev);
 			client->ctl_bev = NULL;
 		}
-		debug(LOG_ERR, "Proxy [%s]: connect server [%s:%d] error", client->name, c_conf->server_addr, c_conf->server_port);
+		debug(LOG_ERR, "Proxy [%s]: connect server [%s:%d] error [%s]", 
+			  client->name, c_conf->server_addr, c_conf->server_port, strerror(errno));
 		bufferevent_free(bev);
 		free_proxy_client(client);
+		exit(-1);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_INFO, "Proxy [%s] connected: send msg to frp server", client->name);
 		bufferevent_setcb(bev, login_xfrp_read_msg_cb, NULL, login_xfrp_event_cb, client);

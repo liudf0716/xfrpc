@@ -601,7 +601,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 
 			if (msg->data_p == NULL)
 				goto DATA_H_END;
-			
+
 			raw_message(msg, bev, client);
 			break;
 		default:
@@ -752,10 +752,10 @@ static void open_connection_session(struct bufferevent *bev)
 {
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
-	debug(LOG_DEBUG, "open session ID:%d, send frame len=%d", main_ctl->session_id, f->len);
+	debug(LOG_DEBUG, "open session ID:%d", main_ctl->session_id);
 	request(bev, f);
 }
-
+     
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();

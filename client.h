@@ -109,8 +109,9 @@ struct proxy_service {
 	int	use_compression;
 
 	// tcp and udp only
-	int64_t	remote_port;
-
+	char	*local_ip;
+	int		remote_port;
+	int 	local_port;
 	// http and https only
 	char 	*custom_domains;
 	char 	*subdomain;
@@ -118,6 +119,10 @@ struct proxy_service {
 	char	*host_header_rewrite;
 	char	*http_user;
 	char	*http_pwd;
+
+
+	//provate arguments
+	UT_hash_handle hh;
 };
 
 // after frp server accept client connection request

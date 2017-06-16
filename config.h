@@ -64,6 +64,7 @@ struct common_conf {
 
 struct new_proxy *raw_new_proxy(struct proxy_client *client);
 struct common_conf *get_common_config();
+struct proxy_service *get_all_proxy_services();
 
 struct login *get_common_login_config();
 

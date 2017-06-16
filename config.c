@@ -42,6 +42,7 @@
 
 static struct common_conf 	*c_conf;
 static struct proxy_client 	*p_clients;
+static struct proxy_service *p_services;
 static struct login 		*c_login;
 
 struct common_conf *get_common_config()
@@ -92,6 +93,11 @@ void free_base_config(struct base_conf *bconf)
 struct proxy_client *get_all_pc()
 {
 	return p_clients;
+}
+
+struct proxy_service *get_all_proxy_services()
+{
+	return p_services;
 }
 
 static int is_true(const char *val)
@@ -202,6 +208,32 @@ static struct proxy_client *new_proxy_client(const char *name)
 }
 
 
+static struct proxy_service *new_proxy_service(const char *name)
+{
+	struct proxy_service *ps = calloc(sizeof(struct proxy_service), 1);
+	assert(ps);
+	assert(c_conf);
+
+	ps->proxy_name 			= strdup(name);
+	ps->proxy_type 			= NULL;
+	ps->use_encryption 		= 0;
+	ps->local_port			= -1;
+	ps->remote_port			= -1;
+	ps->use_compression 	= 0;
+	ps->use_encryption		= 0;
+
+	ps->custom_domains		= NULL;
+	ps->subdomain			= NULL;
+	ps->locations			= NULL;
+	ps->host_header_rewrite	= NULL;
+	ps->http_user			= NULL;
+	ps->http_pwd			= NULL;
+
+	return ps;
+}
+
+
+
 // When frpc login success, send this message to frps for running a new proxy.
 // type NewProxy struct {
 // 	ProxyName      string `json:"proxy_name"`
@@ -301,6 +333,54 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 		pc->use_encryption = TO_BOOL(value);
 	} else if (MATCH_NAME("use_compression")) {
 		pc->use_compression = TO_BOOL(value);
+	}
+	
+	return 1;
+}
+
+static int proxy_service_handler(void *user, const char *section, const char *nm, const char *value)
+{
+ 	struct proxy_service *ps = NULL;
+
+	if (strcmp(section, "common") == 0)
+		return 0;
+	
+	HASH_FIND_STR(p_services, section, ps);
+	if (!ps) 
+	{
+		ps = new_proxy_service(section);
+		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
+	} 
+	
+	#define MATCH_NAME(s) strcmp(nm, s) == 0
+	#define TO_BOOL(v) strcmp(value, "true") ? 0:1
+
+	if (MATCH_NAME("type")) {
+		ps->proxy_type = get_valid_type(value);
+	} else if (MATCH_NAME("local_ip")) {
+		ps->local_ip = strdup(value);
+	} else if (MATCH_NAME("local_port")) {
+		ps->local_port = atoi(value);
+	} else if (MATCH_NAME("use_encryption")) {
+		ps->use_encryption = is_true(value);
+	} else if (MATCH_NAME("remote_port")) {
+		ps->remote_port = atoi(value);
+	} else if (MATCH_NAME("http_user")) {
+		ps->http_user = strdup(value);
+	} else if (MATCH_NAME("http_pwd")) {
+		ps->http_pwd = strdup(value);
+	} else if (MATCH_NAME("subdomain")) {
+		ps->subdomain= strdup(value);
+	} else if (MATCH_NAME("custom_domains")) {
+		ps->custom_domains= strdup(value);
+	} else if (MATCH_NAME("locations")) {
+		ps->locations= strdup(value);
+	} else if (MATCH_NAME("host_header_rewrite")) {
+		ps->host_header_rewrite= strdup(value);
+	} else if (MATCH_NAME("use_encryption")) {
+		ps->use_encryption = TO_BOOL(value);
+	} else if (MATCH_NAME("use_compression")) {
+		ps->use_compression = TO_BOOL(value);
 	}
 	
 	return 1;

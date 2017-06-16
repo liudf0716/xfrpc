@@ -66,7 +66,6 @@ void xfrp_client_loop()
 {
 	struct event_base *base = NULL;
 	struct evdns_base *dnsbase  = NULL; 
-	assert(dnsbase);
 	
 	base = event_base_new();
 	if (!base) {

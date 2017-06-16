@@ -729,14 +729,20 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 
 	if (read_n) {
 		unsigned char *raw_buf_p = buf;
-		for(;raw_buf_p && read_n;) {
+		for( ; raw_buf_p && read_n ; ) {
 			unsigned int i = 0;
-			debug(LOG_DEBUG, "[%s] before raw mulity buffer:", ctx ? ((struct proxy_client *)ctx)->name:"common_control");
-			printf("[");
-			for(i = 0; i<read_n; i++) {
-				printf("%d ", (unsigned char)raw_buf_p[i]);
+#define CONN_DEBUG 1
+#ifdef CONN_DEBUG
+			char *dbg_buf = calloc(read_n * 2 + 1, 1);
+			assert(dbg_buf);
+			
+			for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
+				snprintf(dbg_buf + 2*i, 2, "%d ", (unsigned char)raw_buf_p[i]);
 			}
-			printf("]\n");
+			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", ctx ? ((struct proxy_client *)ctx)->name:"control", dbg_buf);
+			free(dbg_buf);
+#endif //CONN_DEBUG
+
 			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len, ctx);
 			read_n = ret_len;
 		}

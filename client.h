@@ -106,12 +106,12 @@ struct proxy_service {
 	char 	*proxy_name;
 	char 	*proxy_type;
 	int 	use_encryption;
-	int	use_compression;
+	int		use_compression;
 
-	// tcp and udp only
 	char	*local_ip;
 	int		remote_port;
 	int 	local_port;
+
 	// http and https only
 	char 	*custom_domains;
 	char 	*subdomain;

@@ -161,6 +161,28 @@ static void dump_proxy_client(const int index, const struct proxy_client *pc)
 	debug(LOG_DEBUG, "Proxy %d: {name:%s, local_port:%d, type:%s}", index, pc->bconf->name, pc->local_port, pc->bconf->type);
 }
 
+static void dump_proxy_service(const int index, struct proxy_service *ps)
+{
+	if (!ps)
+		return;
+	
+	if (0 > ps->local_port) {
+		debug(LOG_ERR, "Proxy [%s] error: local_port not found", ps->proxy_name);
+		exit(0);
+	}
+
+	if (NULL == ps->proxy_type) {
+		ps->proxy_type = strdup("tcp");
+	}
+
+	debug(LOG_DEBUG, 
+		"Proxy service %d: {name:%s, local_port:%d, type:%s}", 
+		index, 
+		ps->proxy_name, 
+		ps->local_port, 
+		ps->proxy_type);
+}
+
 static void dump_all_pc()
 {
 	struct proxy_client *s = NULL, *tmp = NULL;
@@ -168,6 +190,16 @@ static void dump_all_pc()
 	int index = 0;
 	HASH_ITER(hh, p_clients, s, tmp) {
 		dump_proxy_client(index++, s);
+	}
+}
+
+static void dump_all_ps()
+{
+	struct proxy_service *ps = NULL, *tmp = NULL;
+	
+	int index = 0;
+	HASH_ITER(hh, p_services, ps, tmp) {
+		dump_proxy_service(index++, ps);
 	}
 }
 
@@ -441,7 +473,6 @@ static void init_common_conf(struct common_conf *config)
 }
 
 //{"version":"0.10.0","hostname":"","os":"linux","arch":"amd64","user":"","privilege_key":"9583ffe40c4f854a2aa4ba80387d5dca","timestamp":1495165129,"run_id":"","pool_count":1}
-
 static void init_login(struct login *lg)
 {
 	if (!lg)
@@ -465,7 +496,6 @@ static void init_login(struct login *lg)
 
 	lg->logged 			= 0;
 }
-
 
 void load_config(const char *confile)
 {
@@ -496,6 +526,8 @@ void load_config(const char *confile)
 	}
 	
 	ini_parse(confile, service_handler, NULL);
+	ini_parse(confile, proxy_service_handler, NULL);
 	
 	dump_all_pc();
+	dump_all_ps();
 }

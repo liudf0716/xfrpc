@@ -115,6 +115,7 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 	struct bufferevent *partner = ctx;
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		debug(LOG_DEBUG, "working connection closed");
 		if (partner) {
 			/* Flush all pending data */
 			xfrp_read_cb(bev, ctx);
@@ -175,7 +176,7 @@ void start_frp_tunnel(const struct proxy_client *client)
 	struct bufferevent *b_clt = connect_server(base, client->local_ip, client->local_port);
 	if (!b_clt) {
 		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", client->local_port);
-		// bufferevent_free(b_svr);
+		bufferevent_free(client->ctl_bev);
 		return;
 	}
 	

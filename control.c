@@ -353,9 +353,9 @@ static void ping(struct bufferevent *bev)
 		return;
 	}
 	
+	/* tcp-mux using frame */
 	// struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
 	// assert(f);
-
 	// request(bout, f);
 
 	uint32_t sid = get_main_control()->session_id;
@@ -404,7 +404,6 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	}
 	
 	/* send new work session regist request to frps*/
-	// uint32_t sid = new_sid();
 	uint32_t sid = 5;
 	struct frame *f = new_frame(cmdSYN, sid);
 	assert(f);
@@ -514,21 +513,17 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			if (! is_client_connected()) {
 				debug(LOG_DEBUG, "recv the client work connect start request ...");
 				start_xfrp_client_service();
-				// if (get_common_config()->tcp_mux) 
-				// sync_new_work_connection(NULL);
 
 				client_connected(1);
 				ping(bev);
-				// break;
 			} else {
 				debug(LOG_DEBUG, "clients have been connected.");
-				// sync_new_work_connection(NULL);
 			}
-			// sync_new_work_connection(bev);
 			break;
+
 		case TypeNewProxyResp:
-			// sync_new_work_connection(bev);
 			break;
+			
 		case TypeStartWorkConn:
 			debug(LOG_DEBUG, "client [%s] start work connection.", client->name);
 			start_frp_tunnel(client);

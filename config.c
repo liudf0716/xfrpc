@@ -511,7 +511,7 @@ void load_config(const char *confile)
 	init_common_conf(c_conf);
 	init_login(c_login);
 
-	debug(LOG_INFO, "Reading configuration file '%s'", confile);
+	debug(LOG_DEBUG, "Reading configuration file '%s'", confile);
 	
 	if (ini_parse(confile, common_handler, c_conf) < 0) {
 		debug(LOG_ERR, "Config file parse failed");

@@ -806,7 +806,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		unsigned char *raw_buf_p = buf;
 		for( ; raw_buf_p && read_n ; ) {
 
-#define CONN_DEBUG 1
+// #define CONN_DEBUG 1
 #ifdef CONN_DEBUG
 			unsigned int i = 0;
 			char *dbg_buf = calloc(1, read_n * 4 + 1);
@@ -964,14 +964,14 @@ void send_msg_frp_server(struct bufferevent *bev,
 		return;
 	}
 
-#ifdef DEBUG
+#ifdef SEND_MSG_DEBUG
 	debug(LOG_DEBUG, "**puck result:");
 	size_t j = 0;
 	for(j;j<pack_buf_len; j++) {
 		printf("%d ", (unsigned char)puck_buf[j]);
 	}
 	printf("\n\n");
-#endif	
+#endif	// SEND_MSG_DEBUG
 
 	char frame_type = 0;
 	struct frame *f = NULL;

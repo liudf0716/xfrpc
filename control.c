@@ -803,9 +803,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	size_t ret_len = 0;
 	read_n = evbuffer_remove(input, buf, len);
 
+	struct proxy_client *client = (struct proxy_client *)ctx;
 	if (read_n) {
 		unsigned char *raw_buf_p = buf;
 		for( ; raw_buf_p && read_n ; ) {
+
 #define CONN_DEBUG 1
 #ifdef CONN_DEBUG
 			unsigned int i = 0;
@@ -815,15 +817,24 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
 				snprintf(dbg_buf + 4*i, 5, "%3u ", (unsigned char)raw_buf_p[i]);
 			}
-			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", ctx ? "client":"control", dbg_buf);
+			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", client ? "client":"control", dbg_buf);
 			free(dbg_buf);
 #endif //CONN_DEBUG
 
-			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len, ctx);
+			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len, client);
 			read_n = ret_len;
 
-			if (ctx && is_client_work_started((struct proxy_client *)ctx)) {
+			if (ctx && 
+				is_client_work_started(client) && 
+				raw_buf_p && 
+				ret_len) {
 				debug(LOG_WARNING, "warning: data recved from frps is not split clear!");
+				unsigned char *dtail = calloc(1, read_n);
+				assert(dtail);
+				memcpy(dtail, raw_buf_p, read_n);
+				client->data_tail = dtail;
+				client->data_tail_size = ret_len;
+				send_client_data_tail(client);
 			}
 		}
 	} else {

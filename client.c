@@ -181,8 +181,8 @@ void start_frp_tunnel(struct proxy_client *client)
 		return;
 	}
 
-	struct bufferevent *b_clt = connect_server(base, ps->local_ip, ps->local_port);
-	if (!b_clt) {
+	client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
+	if (!client->local_proxy_bev) {
 		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
 		bufferevent_free(client->ctl_bev);
 		return;
@@ -194,21 +194,24 @@ void start_frp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
-	if (client->data_tail && client->data_tail_size) {
-		int send_l = bufferevent_write(b_clt, client->data_tail, client->data_tail_size);
+	bufferevent_setcb(client->ctl_bev, xfrp_decrypt_cb, NULL, xfrp_event_cb, client->local_proxy_bev);
+	bufferevent_setcb(client->local_proxy_bev, xfrp_encrypt_cb, NULL, xfrp_event_cb, client->ctl_bev);
+	
+	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
+	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
+
+	// send_msg_frp_server(TypeNewProxy, client, b_svr);
+}
+
+void send_client_data_tail(struct proxy_client *client)
+{
+	if (client->data_tail && client->data_tail_size && client->local_proxy_bev) {
+		int send_l = bufferevent_write(client->local_proxy_bev, client->data_tail, client->data_tail_size);
 		if (send_l) {
 			free(client->data_tail);
 			client->data_tail_size = 0;
 		}
 	}
-
-	bufferevent_setcb(client->ctl_bev, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
-	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, client->ctl_bev);
-	
-	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
-	bufferevent_enable(b_clt, EV_READ|EV_WRITE);
-
-	// send_msg_frp_server(TypeNewProxy, client, b_svr);
 }
 
 void free_proxy_client(struct proxy_client *client)

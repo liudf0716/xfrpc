@@ -41,6 +41,7 @@ struct proxy_service;
 struct proxy_client {
 	struct event_base 	*base;
 	struct bufferevent	*ctl_bev;
+	struct bufferevent 	*local_proxy_bev;
 	struct event		*ev_timeout;
 	
 	struct base_conf	*bconf;
@@ -65,7 +66,7 @@ struct proxy_client {
 	int						connected;
 	int 					work_started;
 	struct 	proxy_service 	*ps;
-	char 					*data_tail; // storage untrated data
+	unsigned char			*data_tail; // storage untrated data
 	size_t					data_tail_size;
 };
 
@@ -141,5 +142,7 @@ void del_proxy_client(struct proxy_client *client);
 void free_proxy_client(struct proxy_client *client);
 
 struct proxy_service *get_proxy_service(const char *proxy_name);
+
+void send_client_data_tail(struct proxy_client *client);
 
 #endif //_CLIENT_H_

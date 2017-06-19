@@ -203,15 +203,14 @@ void start_frp_tunnel(struct proxy_client *client)
 	// send_msg_frp_server(TypeNewProxy, client, b_svr);
 }
 
-void send_client_data_tail(struct proxy_client *client)
+int send_client_data_tail(struct proxy_client *client)
 {
+	int send_l = 0;
 	if (client->data_tail && client->data_tail_size && client->local_proxy_bev) {
-		int send_l = bufferevent_write(client->local_proxy_bev, client->data_tail, client->data_tail_size);
-		if (send_l) {
-			free(client->data_tail);
-			client->data_tail_size = 0;
-		}
+		send_l = bufferevent_write(client->local_proxy_bev, client->data_tail, client->data_tail_size);
 	}
+
+	return send_l;
 }
 
 void free_proxy_client(struct proxy_client *client)

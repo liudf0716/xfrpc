@@ -143,6 +143,6 @@ void free_proxy_client(struct proxy_client *client);
 
 struct proxy_service *get_proxy_service(const char *proxy_name);
 
-void send_client_data_tail(struct proxy_client *client);
+int send_client_data_tail(struct proxy_client *client);
 
 #endif //_CLIENT_H_

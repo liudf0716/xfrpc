@@ -835,6 +835,9 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				client->data_tail = dtail;
 				client->data_tail_size = ret_len;
 				send_client_data_tail(client);
+				free(dtail);
+				client->data_tail = NULL;
+				client->data_tail_size = 0;
 			}
 		}
 	} else {
@@ -852,7 +855,8 @@ static void open_connection_session(struct bufferevent *bev)
 	debug(LOG_DEBUG, "open session ID:%d", main_ctl->session_id);
 	request(bev, f);
 }
-     
+
+
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();

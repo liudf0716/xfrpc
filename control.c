@@ -109,12 +109,10 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 		bufferevent_free(bev);
 		free_proxy_client(client);
 	} else if (what & BEV_EVENT_CONNECTED) {
-		debug(LOG_INFO, "Proxy [%s] connected: send msg to frp server", client->name);
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
-		debug(LOG_DEBUG, "client [%s] send new work connect to frps.", client->name);
-		
 		sync_new_work_connection(bev);
+		debug(LOG_INFO, "new proxy connected");
 	}
 }
 
@@ -938,26 +936,23 @@ void send_msg_frp_server(struct bufferevent *bev,
 					const size_t msg_len, 
 					uint32_t sid)
 {
-	debug(LOG_DEBUG, "send message to frps ... [%s]", msg);
 	struct bufferevent *bout = NULL;
 	if (bev) {
 		bout = bev;
 	} else {
 		bout = main_ctl->connect_bev;
 	}
+
 	if ( ! bout) {
 		return;
 	}
-	debug(LOG_DEBUG, "send message type: [%c]", type);
+	debug(LOG_DEBUG, "send message to frps ... [type: %c %s]", type, msg);
 
 	struct message req_msg;
 	req_msg.data_p = NULL;
-	char frame_type = 0;
-	struct frame *f = NULL;
 	req_msg.type = type;
 	req_msg.data_len = msg_len;
 
-	debug(LOG_DEBUG, "msg.data_len = %d", req_msg.data_len);
 	if (msg) {
 		req_msg.data_p = strdup(msg);
 	}
@@ -978,6 +973,8 @@ void send_msg_frp_server(struct bufferevent *bev,
 	printf("\n\n");
 #endif	
 
+	char frame_type = 0;
+	struct frame *f = NULL;
 	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
 	assert(f);
 

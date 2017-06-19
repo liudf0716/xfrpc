@@ -142,7 +142,6 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 static void
 xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 {
-	debug(LOG_DEBUG, "send message to local proxy port.");
 	struct bufferevent *partner = ctx;
 	struct evbuffer *src, *dst;
 	src = bufferevent_get_input(bev);
@@ -153,7 +152,6 @@ xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 static void
 xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 {
-	debug(LOG_DEBUG, "recv message from local,  send message to frps.");
 	struct bufferevent *partner = ctx;
 	struct evbuffer *src, *dst;
 	size_t len;

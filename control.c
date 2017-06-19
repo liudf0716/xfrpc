@@ -531,6 +531,7 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			}
 
 			client->ps = ps;
+			client->name = ps->proxy_name;
 			debug(LOG_INFO, "proxy service [%s] start work connection.", sr->proxy_name);
 			debug(LOG_DEBUG, "proxy service resource: [%s] [%s:%d]", ps->proxy_name, ps->local_ip, ps->local_port);
 
@@ -805,21 +806,25 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	if (read_n) {
 		unsigned char *raw_buf_p = buf;
 		for( ; raw_buf_p && read_n ; ) {
-			unsigned int i = 0;
 #define CONN_DEBUG 1
 #ifdef CONN_DEBUG
-			char *dbg_buf = calloc(read_n * 2 + 1, 1);
+			unsigned int i = 0;
+			char *dbg_buf = calloc(1, read_n * 4 + 1);
 			assert(dbg_buf);
-			
+			int si = i;
 			for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
-				snprintf(dbg_buf + 2*i, 2, "%d ", (unsigned char)raw_buf_p[i]);
+				snprintf(dbg_buf + 4*i, 5, "%3u ", (unsigned char)raw_buf_p[i]);
 			}
-			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", ctx ? ((struct proxy_client *)ctx)->name:"control", dbg_buf);
+			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", ctx ? "client":"control", dbg_buf);
 			free(dbg_buf);
 #endif //CONN_DEBUG
 
 			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len, ctx);
 			read_n = ret_len;
+
+			if (ctx && is_client_work_started((struct proxy_client *)ctx)) {
+				debug(LOG_WARNING, "warning: data recved from frps is not split clear!");
+			}
 		}
 	} else {
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");

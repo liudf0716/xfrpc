@@ -232,6 +232,8 @@ static struct proxy_client *new_proxy_client(const char *name)
 	pc->http_pwd		= NULL;
 
 	pc->ps 				= NULL;
+	pc->data_tail		= NULL;
+	pc->data_tail_size 	= 0;
 
 	if (c_conf->auth_token)
 		bc->auth_token	= strdup(c_conf->auth_token);

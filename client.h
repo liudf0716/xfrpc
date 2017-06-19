@@ -61,10 +61,12 @@ struct proxy_client {
 	
 	//provate arguments
 	UT_hash_handle hh;
-	struct new_proxy *n_proxy;
-	int		connected;
-	int 	work_started;
-	struct 	proxy_service *ps;
+	struct new_proxy 		*n_proxy;
+	int						connected;
+	int 					work_started;
+	struct 	proxy_service 	*ps;
+	char 					*data_tail; // storage untrated data
+	size_t					data_tail_size;
 };
 
 // When frpc login success, send this message to frps for running a new proxy.
@@ -131,7 +133,8 @@ struct proxy_service {
 // frp server send xfrp client NoticeUserConn request
 // when xfrp client receive that request, it will start
 // frp tunnel
-void start_frp_tunnel(const struct proxy_client *client);
+// if client has data-tail(not NULL), client value will be changed 
+void start_frp_tunnel(struct proxy_client *client);
 
 void del_proxy_client(struct proxy_client *client);
 

@@ -120,14 +120,14 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 			/* Flush all pending data */
 			xfrp_read_cb(bev, ctx);
 
-			if (evbuffer_get_length(
-				    bufferevent_get_output(partner))) {
+			if (evbuffer_get_length(bufferevent_get_output(partner))) {
 				/* We still have to flush data from the other
 				 * side, but when that's done, close the other
 				 * side. */
 				bufferevent_setcb(partner,
 				    NULL, close_on_finished_writecb,
 				    xfrp_event_cb, NULL);
+
 				bufferevent_disable(partner, EV_READ);
 			} else {
 				/* We have nothing left to say to the other
@@ -166,7 +166,7 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 }
 
 // create frp tunnel for service
-void start_frp_tunnel(const struct proxy_client *client)
+void start_frp_tunnel(struct proxy_client *client)
 {
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
@@ -193,13 +193,21 @@ void start_frp_tunnel(const struct proxy_client *client)
 		  c_conf->server_port, 
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
-	
+
+	if (client->data_tail && client->data_tail_size) {
+		int send_l = bufferevent_write(b_clt, client->data_tail, client->data_tail_size);
+		if (send_l) {
+			free(client->data_tail);
+			client->data_tail_size = 0;
+		}
+	}
+
 	bufferevent_setcb(client->ctl_bev, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
 	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, client->ctl_bev);
 	
 	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(b_clt, EV_READ|EV_WRITE);
-	
+
 	// send_msg_frp_server(TypeNewProxy, client, b_svr);
 }
 

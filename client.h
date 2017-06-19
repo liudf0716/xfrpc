@@ -36,6 +36,7 @@ struct base_conf;
 struct bufferevent;
 struct event;
 struct new_proxy;
+struct proxy_service;
 
 struct proxy_client {
 	struct event_base 	*base;
@@ -63,6 +64,7 @@ struct proxy_client {
 	struct new_proxy *n_proxy;
 	int		connected;
 	int 	work_started;
+	struct 	proxy_service *ps;
 };
 
 // When frpc login success, send this message to frps for running a new proxy.
@@ -134,5 +136,7 @@ void start_frp_tunnel(const struct proxy_client *client);
 void del_proxy_client(struct proxy_client *client);
 
 void free_proxy_client(struct proxy_client *client);
+
+struct proxy_service *get_proxy_service(const char *proxy_name);
 
 #endif //_CLIENT_H_

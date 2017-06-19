@@ -62,7 +62,8 @@ send_msg_frp_server(struct bufferevent *bev,
 					const size_t msg_len, 
 					uint32_t sid);
 void control_process(struct proxy_client *client);
-void send_new_proxy(struct proxy_client *client);
+void send_new_proxy(struct proxy_service *ps);
+// void send_proxy_request(struct proxy_service *ps);
 
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
 

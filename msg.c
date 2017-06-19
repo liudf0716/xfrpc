@@ -217,6 +217,51 @@ int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)
 	return nret;
 }
 
+int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
+{
+	const char *tmp = NULL;
+	int  nret = 0;
+	struct json_object *j_np_req = json_object_new_object();
+	if ( ! j_np_req)
+		return 0;
+	
+	JSON_MARSHAL_TYPE(j_np_req, "proxy_name", string, np_req->proxy_name);
+	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
+	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
+	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
+	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int64, np_req->remote_port);
+
+	json_object *j_cdm_array = json_object_new_array();
+	if (np_req->custom_domains) {
+		json_object_object_add(j_np_req, "custom_domains", j_cdm_array);
+	} else {
+		json_object_object_add(j_np_req, "custom_domains", NULL);
+	}
+
+	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));
+
+	json_object *j_location_array = json_object_new_array();
+	if (np_req->locations) {
+		json_object_object_add(j_np_req, "locations", j_location_array);
+	} else {
+		json_object_object_add(j_np_req, "locations", NULL);
+	}
+	
+	JSON_MARSHAL_TYPE(j_np_req, "host_header_rewrite", string, SAFE_JSON_STRING(np_req->host_header_rewrite));
+	JSON_MARSHAL_TYPE(j_np_req, "http_user", string, SAFE_JSON_STRING(np_req->http_user));
+	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
+		
+	tmp = json_object_to_json_string(j_np_req);
+	if (tmp && strlen(tmp) > 0) {
+		nret = strlen(tmp);
+		*msg = strdup(tmp);
+	}
+	json_object_put(j_np_req);
+
+	return nret;
+}
+
+
 // { "run_id": "75f9b163e4d10861" }
 int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 {
@@ -298,13 +343,11 @@ END_PROCESS:
 // login_resp_unmarshal NEED FREE
 struct login_resp *login_resp_unmarshal(const char *jres)
 {
-	printf("login_resp jres = %s\n", jres);
-
 	struct json_object *j_lg_res = json_tokener_parse(jres);
 	if (is_error(j_lg_res))
 		return NULL;
 	
-	struct login_resp *lr = calloc(sizeof(struct login_resp), 1);
+	struct login_resp *lr = calloc(1, sizeof(struct login_resp));
 	if (lr == NULL) {
 		goto END_ERROR;
 	}
@@ -330,6 +373,27 @@ struct login_resp *login_resp_unmarshal(const char *jres)
 END_ERROR:
 	json_object_put(j_lg_res);
 	return lr;
+}
+
+struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg)
+{
+	struct json_object *j_start_w_res = json_tokener_parse(resp_msg);
+	if (is_error(j_start_w_res))
+		return NULL;
+
+	struct start_work_conn_resp *sr = calloc(1, sizeof(struct start_work_conn_resp));
+	if (! sr) 
+		goto START_W_C_R_END;
+
+	struct json_object *pn = json_object_object_get(j_start_w_res, "proxy_name");
+	if (is_error(pn))
+		goto START_W_C_R_END;
+		
+	sr->proxy_name = strdup(json_object_get_string(pn));
+
+START_W_C_R_END:
+	json_object_put(j_start_w_res);
+	return sr;
 }
 
 struct control_response *control_response_unmarshal(const char *jres)

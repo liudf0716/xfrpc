@@ -231,6 +231,8 @@ static struct proxy_client *new_proxy_client(const char *name)
 	pc->http_user		= NULL;
 	pc->http_pwd		= NULL;
 
+	pc->ps 				= NULL;
+
 	if (c_conf->auth_token)
 		bc->auth_token	= strdup(c_conf->auth_token);
 	if (c_conf->privilege_token)
@@ -287,6 +289,7 @@ static struct proxy_service *new_proxy_service(const char *name)
 
 
 // value of client will be changed
+// UNUSED
 struct new_proxy *raw_new_proxy(struct proxy_client *client)
 {
 	struct new_proxy *np = calloc(sizeof(struct new_proxy), 1);

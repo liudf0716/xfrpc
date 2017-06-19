@@ -170,10 +170,20 @@ void start_frp_tunnel(const struct proxy_client *client)
 {
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
-	
-	struct bufferevent *b_clt = connect_server(base, client->local_ip, client->local_port);
+	struct proxy_service *ps = client->ps;
+	if (! ps) {
+		debug(LOG_ERR, "service tunnel started failed, no proxy service resource.");
+		return;
+	}
+
+	if (! ps->local_port) {
+		debug(LOG_ERR, "service tunnel started failed, proxy service resource unvalid.");
+		return;
+	}
+
+	struct bufferevent *b_clt = connect_server(base, ps->local_ip, ps->local_port);
 	if (!b_clt) {
-		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", client->local_port);
+		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
 		bufferevent_free(client->ctl_bev);
 		return;
 	}
@@ -181,8 +191,8 @@ void start_frp_tunnel(const struct proxy_client *client)
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
 		  c_conf->server_addr, 
 		  c_conf->server_port, 
-		  client->local_ip ? client->local_ip:"::1",
-		  client->local_port);
+		  ps->local_ip ? ps->local_ip:"::1",
+		  ps->local_port);
 	
 	bufferevent_setcb(client->ctl_bev, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
 	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, client->ctl_bev);
@@ -216,4 +226,13 @@ void del_proxy_client(struct proxy_client *client)
 	HASH_DEL(all_pc, client);
 	
 	free_proxy_client(client);
+}
+
+// Return NULL if proxy service not found with proxy_name
+struct proxy_service *get_proxy_service(const char *proxy_name)
+{
+	struct proxy_service *ps = NULL;
+	struct proxy_service *all_ps = get_all_proxy_services();
+	HASH_FIND_STR(all_ps, proxy_name, ps);
+	return ps;
 }

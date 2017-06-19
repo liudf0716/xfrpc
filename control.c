@@ -96,6 +96,7 @@ static int is_client_work_started(struct proxy_client *client) {
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	struct proxy_client *client = ctx;
+	assert(client);
 	struct common_conf 	*c_conf = get_common_config();
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
@@ -133,6 +134,43 @@ static void start_client_connect(struct proxy_client *client)
 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
 }
 
+static void new_client_connect()
+{
+	struct proxy_client *client = calloc(1, sizeof(struct proxy_client)); //NEED FREE
+	assert(client);
+	struct common_conf *c_conf = get_common_config();
+	assert(c_conf);
+	client->base = main_ctl->connect_base;;
+	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+	if (!bev) {
+		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		return;
+	}
+
+	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+
+	client->ctl_bev = bev;
+	bufferevent_enable(bev, EV_WRITE);
+	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
+}
+
+// static void start_proxy_services(struct proxy_service *ps)
+// {
+// 	struct common_conf *c_conf = get_common_config();
+// 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+// 	if (!bev) {
+// 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+// 		return;
+// 	}
+
+// 	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+
+// 	client->ctl_bev = bev;
+// 	bufferevent_enable(bev, EV_WRITE);
+// 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
+// }
+
+// UNUSED
 static void start_xfrp_client_service()
 {
 	struct proxy_client *all_pc = get_all_pc();
@@ -150,7 +188,25 @@ static void start_xfrp_client_service()
 		pc->base = main_ctl->connect_base;
 		start_client_connect(pc);
 		raw_new_proxy(pc);
-		send_new_proxy(pc);
+		// send_new_proxy(pc);
+	}
+}
+
+static void start_proxy_services()
+{
+	struct proxy_service *all_ps = get_all_proxy_services();
+	assert(all_ps);
+
+	struct proxy_service *ps = NULL, *tmp = NULL;
+	
+	debug(LOG_INFO, "Start xfrp proxy services ...");
+	
+	HASH_ITER(hh, all_ps, ps, tmp) {
+		if(ps == NULL) {
+			debug(LOG_ERR, "pc is null!");
+			return;
+		}
+		send_new_proxy(ps);
 	}
 }
 
@@ -421,6 +477,8 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			debug(LOG_DEBUG, "raw client [%s] control message.", client->name);
 		}
 	}
+
+	struct start_work_conn_resp *sr = NULL; //used in TypeStartWorkConn
 	switch(msg->type) {
 		case TypeLoginResp:
 			if (msg->data_p == NULL)
@@ -445,20 +503,37 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 		case TypeReqWorkConn:
 			if (! is_client_connected()) {
 				debug(LOG_DEBUG, "recv the client work connect start request ...");
-				start_xfrp_client_service();
-
+				// start_xfrp_client_service();
+				start_proxy_services();
 				client_connected(1);
 				ping(bev);
 			} else {
 				debug(LOG_DEBUG, "clients have been connected.");
 			}
+
+			new_client_connect();
 			break;
 
 		case TypeNewProxyResp:
 			break;
 			
 		case TypeStartWorkConn:
-			debug(LOG_DEBUG, "client [%s] start work connection.", client->name);
+			sr = start_work_conn_resp_unmarshal(msg->data_p); 
+			if (! sr) {
+				debug(LOG_ERR, "TypeStartWorkConn unmarshal failed, it should never be happend!");
+				break;
+			}
+
+			struct proxy_service *ps = get_proxy_service(sr->proxy_name);
+			if (! ps) {
+				debug(LOG_ERR, "TypeStartWorkConn requested proxy service [%s] not found, it should nerver be happend!", sr->proxy_name);
+				break;
+			}
+
+			client->ps = ps;
+			debug(LOG_INFO, "proxy service [%s] start work connection.", sr->proxy_name);
+			debug(LOG_DEBUG, "proxy service resource: [%s] [%s:%d]", ps->proxy_name, ps->local_ip, ps->local_port);
+
 			start_frp_tunnel(client);
 			set_client_work_start(client, 1);
 			break;
@@ -965,20 +1040,37 @@ void start_login_frp_server(struct event_base *base)
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
 }
 
-void send_new_proxy(struct proxy_client *client)
+// UNUSED
+// void send_new_proxy(struct proxy_client *client)
+// {
+// 	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
+
+// 	char *new_proxy_msg = NULL;
+// 	int len = new_proxy_request_marshal(client->n_proxy, &new_proxy_msg); //marshal login request
+// 	if ( ! new_proxy_msg) {
+// 		debug(LOG_ERR, "login_request_marshal failed");
+// 		assert(new_proxy_msg);
+// 	}
+
+// 	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
+// 	free(new_proxy_msg);
+// }
+
+void send_new_proxy(struct proxy_service *ps)
 {
-	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
+	debug(LOG_DEBUG, "control proxy client: [%s]", ps->proxy_name);
 
 	char *new_proxy_msg = NULL;
-	int len = new_proxy_request_marshal(client->n_proxy, &new_proxy_msg); //marshal login request
+	int len = new_proxy_service_marshal(ps, &new_proxy_msg);
 	if ( ! new_proxy_msg) {
-		debug(LOG_ERR, "login_request_marshal failed");
+		debug(LOG_ERR, "proxy service request marshal failed");
 		assert(new_proxy_msg);
 	}
 
 	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
 	free(new_proxy_msg);
 }
+
 
 int init_main_control() 
 {

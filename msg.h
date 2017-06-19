@@ -121,6 +121,11 @@ struct message {
 	size_t	data_len;
 };
 
+struct start_work_conn_resp {
+	char 	*proxy_name;
+};
+
+int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg);
 int msg_type_valid_check(char msg_type);
 int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg);
 struct message *new_message();
@@ -135,6 +140,7 @@ struct message *unpack(unsigned char *recv_msg, const ushort len);
 int control_request_marshal(const struct control_request *req, char **msg);
 
 struct login_resp *login_resp_unmarshal(const char *jres);
+struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg);
 
 // parse json string to control response
 struct control_response *control_response_unmarshal(const char *jres);

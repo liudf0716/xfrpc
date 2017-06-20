@@ -44,6 +44,7 @@
 #include <event2/event.h>
 #include <event2/dns.h>
 #include <event2/event_struct.h>
+#include <event2/dns.h>
 
 #include "debug.h"
 #include "client.h"
@@ -373,12 +374,12 @@ static void sync_new_work_connection(struct bufferevent *bev)
 }
 
 // connect to server
-struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
+struct bufferevent *connect_server(struct proxy_client *client, const char *name, const int port)
 {
-	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+	struct bufferevent *bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
 	
-	if (bufferevent_socket_connect_hostname(bev, NULL, AF_INET, name, port)<0) {
+	if (bufferevent_socket_connect_hostname(bev, client->dnsbase, AF_INET, name, port)<0) {
 		bufferevent_free(bev);
 		return NULL;
 	}

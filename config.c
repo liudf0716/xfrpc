@@ -136,6 +136,10 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 {
 	if (!ps)
 		return;
+
+	if (NULL == pc->bconf->type) {
+		pc->bconf->type = strdup("tcp");
+	}
 	
 	if (0 > ps->local_port) {
 		debug(LOG_ERR, "Proxy [%s] error: local_port not found", ps->proxy_name);

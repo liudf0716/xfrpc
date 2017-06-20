@@ -56,6 +56,7 @@
 #include "crypto.h"
 #include "utils.h"
 #include "session.h"
+#include "common.h"
 
 static struct control *main_ctl;
 static char *request_buf;
@@ -212,10 +213,10 @@ static void init_msg_writer()
 {
 	if (! is_encoder_inited()) {
 		struct frp_coder * e = init_main_encoder();
-		if (!e)
-			debug(LOG_ERR, "xfrp encoder init failed!");
-		else
+#ifdef USEENCRYPTION
+		if (e)
 			sync_iv(e->iv);
+#endif // USEENCRYPTION
 	}
 }
 
@@ -244,13 +245,15 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 		goto REQ_END;
 	}
 
+#define DEV_DEBUG 1
 #ifdef DEV_DEBUG
 	/* debug showing */
+	debug(LOG_DEBUG, "send request byte:");
 	unsigned int i = 0;
-	if (f->len > 20) {
+	if (f->len) {
 		printf("[");
-		for(i = 0; i<20; i++) {
-			printf("%x ", f->data[i]);
+		for(i = 0; i<f->len; i++) {
+			printf("%u ", f->data[i]);
 		}
 		printf("]\n");
 	}
@@ -563,8 +566,10 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	printf("]\n");
 	/* debug show over */
 
+	int min_buf_len = 0;
 	if (get_common_config()->tcp_mux) {
 		f = raw_frame(buf, len);
+		min_buf_len = get_header_size();
 	} else {
 		f = raw_frame_only_msg(buf, len);
 		set_frame_cmd(f, cmdPSH);
@@ -581,13 +586,15 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		"recv [%d] bits from frp server, frame: ver[%d], cmd[%d], len[%u], sid[%d]", 
 		len, f->ver, f->cmd, f->len, f->sid);
 
+#ifdef USEENCRYPTION
 	if (! is_decoder_inited() && f->len == get_block_size()) {
 		init_msg_reader((unsigned char *)f->data);
 		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed!");
 		goto DATA_H_END;
 	}
+#endif //USEENCRYPTION
 
-	if (len <= get_header_size()) {
+	if (len <= min_buf_len) {
 		if (f->cmd == 3) {
 			base_control_ping(bev);
 		}
@@ -695,9 +702,9 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 {
 	unsigned char *unraw_buf_p = NULL;
 	unsigned char *raw_buf = NULL;
-	size_t split_lv = 16;		// latest buffer split level
+	size_t split_lv = sizeof(msg_size_t);		// latest buffer split level
 	size_t split_len = 0;
-	size_t raw_static_size = 9; //type 1 + bigend 8
+	size_t raw_static_size = 1 + sizeof(msg_size_t); //type 1 + bigend 8
 	int splited = 0; 			// signal argument, ==1 after buffer split
 
 	*ret_len = 0;
@@ -710,15 +717,17 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 		}
 	}
 
+	debug(LOG_DEBUG, "split MIN level length:%d", split_lv);
+
 	for(;;) {
 		if (buf_len > split_lv) {
 			if (! is_logged()) {
 				if (buf[0] == 49) {
 					debug(LOG_DEBUG, "mulity raw login-response...");
 
-					uint64_t  data_len_bigend;
-					data_len_bigend = *(uint64_t *)(buf + MSG_LEN_I);
-					uint64_t data_len = ntoh64(&data_len_bigend);
+					msg_size_t  data_len_bigend;
+					data_len_bigend = *(msg_size_t *)(buf + MSG_LEN_I);
+					msg_size_t data_len = msg_ntoh(data_len_bigend);
 					debug(LOG_DEBUG, "raw data len = %u", data_len);
 
 					split_len = raw_static_size + data_len;
@@ -727,6 +736,7 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 				}
 			}
 
+#ifdef USEENCRYPTION
 			if (! is_decoder_inited()) {
 				raw_static_size = get_block_size();
 				if (buf_len < raw_static_size) {
@@ -738,15 +748,16 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 				splited = 1;
 				break;
 			}
-				
+#endif // USEENCRYPTION
+
 			if (! splited) { //ordinary message split
 				char msg_type = buf[0];
 				int type_valid = msg_type_valid_check(msg_type);
 				if (type_valid) {
 					debug(LOG_DEBUG, "buffer raw type [%c]", msg_type);
-					uint64_t  data_len_bigend;
-					data_len_bigend = *(uint64_t *)(buf + MSG_LEN_I);
-					uint64_t data_len = ntoh64(&data_len_bigend);
+					msg_size_t  data_len_bigend;
+					data_len_bigend = *(msg_size_t *)(buf + MSG_LEN_I);
+					msg_size_t data_len = msg_ntoh(data_len_bigend);
 
 					split_len = raw_static_size + data_len;
 					splited = 1;
@@ -806,7 +817,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		unsigned char *raw_buf_p = buf;
 		for( ; raw_buf_p && read_n ; ) {
 
-// #define CONN_DEBUG 1
+#define CONN_DEBUG 1
 #ifdef CONN_DEBUG
 			unsigned int i = 0;
 			char *dbg_buf = calloc(1, read_n * 4 + 1);
@@ -963,7 +974,8 @@ void send_msg_frp_server(struct bufferevent *bev,
 		debug(LOG_ERR, "login buffer pack failed!");
 		return;
 	}
-
+	
+#define SEND_MSG_DEBUG 1
 #ifdef SEND_MSG_DEBUG
 	debug(LOG_DEBUG, "**puck result:");
 	size_t j = 0;

@@ -53,6 +53,7 @@
 #include "uthash.h"
 #include "zip.h"
 #include "msg.h"
+#include "common.h"
 
 #define MAX_OUTPUT (512*1024)
 

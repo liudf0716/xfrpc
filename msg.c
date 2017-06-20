@@ -32,12 +32,14 @@
 #include <time.h>
 #include <assert.h>
 #include <syslog.h>
+#include <netinet/in.h>
 
 #include "msg.h"
 #include "const.h"
 #include "config.h"
 #include "frame.h"
 #include "debug.h"
+#include "common.h"
 
 #define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
@@ -45,43 +47,8 @@ json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 #define SAFE_JSON_STRING(str_target) \
 str_target?str_target:"\0"
 
-// enum msg_type {
-// 	TypeLogin         = 'o',
-// 	TypeLoginResp     = '1',
-// 	TypeNewProxy      = 'p',
-// 	TypeNewProxyResp  = '2',
-// 	TypeNewWorkConn   = 'w',
-// 	TypeReqWorkConn   = 'r',
-// 	TypeStartWorkConn = 's',
-// 	TypePing          = 'h',
-// 	TypePong          = '4',
-// 	TypeUdpPacket     = 'u',
-// };
-
 const char msg_typs[] = {TypeLogin, TypeLoginResp, TypeNewProxy, TypeNewProxyResp, 
 	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUdpPacket};
-
-uint64_t ntoh64(const uint64_t *input)
-{
-    uint64_t rval;
-    uint8_t *data = (uint8_t *)&rval;
-
-    data[0] = *input >> 56;
-    data[1] = *input >> 48;
-    data[2] = *input >> 40;
-    data[3] = *input >> 32;
-    data[4] = *input >> 24;
-    data[5] = *input >> 16;
-    data[6] = *input >> 8;
-    data[7] = *input >> 0;
-
-    return rval;
-}
-
-uint64_t hton64(const uint64_t *input)
-{
-    return (ntoh64(input));
-}
 
 // TODO: NEED FREE
 char *calc_md5(const char *data, int datalen)
@@ -453,13 +420,17 @@ struct message *unpack(unsigned char *recv_msg, const ushort len)
 	struct message *msg = new_message();
 	msg->type = *(recv_msg + MSG_TYPE_I);
 
-	if (! msg_type_valid_check(msg->type) )
+	if (! msg_type_valid_check(msg->type) ) {
+		debug(LOG_ERR, "message recved type is invalid!");
 		return NULL;
+	}
 
 	debug(LOG_DEBUG, "unpacked message type: %c", msg->type);
-	uint64_t  data_len_bigend;
-	data_len_bigend = *(uint64_t *)(recv_msg + MSG_LEN_I);
-	msg->data_len = ntoh64(&data_len_bigend);
+
+	msg_size_t  data_len_bigend;
+	data_len_bigend = *(msg_size_t *)(recv_msg + MSG_LEN_I);
+	msg->data_len = msg_ntoh(data_len_bigend);
+
 	if (msg->data_len > 0) {
 		msg->data_p = calloc(msg->data_len + 1, 1);
 		assert(msg->data_p);
@@ -472,16 +443,17 @@ struct message *unpack(unsigned char *recv_msg, const ushort len)
 
 size_t pack(struct message *req_msg, unsigned char **ret_buf)
 {
-	uint64_t  data_len_bigend;
-	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len;
-
 	int endian_check = 1;
 	// little endian if true
-	if(*(char *)&endian_check == 1) 
-		data_len_bigend = hton64(&req_msg->data_len);
+
+	msg_size_t data_len_bigend;
+	if(*(char *)&endian_check == 1)
+		data_len_bigend = msg_hton(req_msg->data_len);
 	else 
 		data_len_bigend = req_msg->data_len;
+
 	
+	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len;
 	*ret_buf = calloc(buf_len, 1);
 
 	if (*ret_buf == NULL) {
@@ -489,7 +461,7 @@ size_t pack(struct message *req_msg, unsigned char **ret_buf)
 	}
 
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
-	*(uint64_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
+	*(msg_size_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
 	snprintf((char *)*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 
 				req_msg->data_len + 1, 
 				"%s", 

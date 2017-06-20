@@ -22,6 +22,7 @@ set(src_xfrp_client
 	fastpbkdf2.c
 	utils.c
 	session.c
+	common.c
 	)
 	
 set(libs

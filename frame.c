@@ -1,6 +1,7 @@
 #include "frame.h"
 #include "session.h"
 #include "version.h"
+#include "common.h"
 
 const static int  	size_of_ver = 1;
 const static int  	size_of_cmd = 1;

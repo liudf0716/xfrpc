@@ -26,7 +26,6 @@
 
 #include "xfrp_client.h"
 #include "commandline.h"
-#include "crypto.h"
 
 int main(int argc, char **argv)
 {

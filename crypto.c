@@ -9,6 +9,7 @@
 #include "fastpbkdf2.h"
 #include "crypto.h"
 #include "config.h"
+#include "common.h"
 #include "debug.h"
 
 // #define ENC_DEBUG 1

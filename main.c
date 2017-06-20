@@ -30,6 +30,5 @@
 int main(int argc, char **argv)
 {
 	parse_commandline(argc, argv);
-	
 	xfrp_client_loop();
 }

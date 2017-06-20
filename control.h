@@ -24,13 +24,50 @@
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
+#ifndef	_CONTROL_H_
+#define	_CONTROL_H_
+
+#include "const.h"
+#include "uthash.h"
+#include "msg.h"
+
 struct proxy_client;
 struct bufferevent;
 struct event_base;
 enum msg_type;
 
+struct control {
+	struct event_base 	*connect_base;  //main netevent 
+	struct evdns_base  	*dnsbase;
+    struct bufferevent  *connect_bev;    //main io evet buf
+    char                session_id;
+    struct event		*ticker_ping;    //heartbeat timer
+};
+
+void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
+void sync_iv(unsigned char *iv);
+void start_base_connect();
+void sync_session_id(uint32_t sid);
+int init_main_control();
+void run_control();
+struct control *get_main_control();
+void close_main_control();
+void start_login_frp_server(struct event_base *base);
+void send_login_frp_server(struct bufferevent *bev);
+void login();
+
+void 
+send_msg_frp_server(struct bufferevent *bev, 
+					const enum msg_type type, 
+					const char *msg, 
+					const size_t msg_len, 
+					uint32_t sid);
 void control_process(struct proxy_client *client);
+void send_new_proxy(struct proxy_service *ps);
+// void send_proxy_request(struct proxy_service *ps);
 
 struct bufferevent *connect_server(struct proxy_client *client, const char *name, const int port);
 
-void send_msg_frp_server(enum msg_type type, const struct proxy_client *client, struct bufferevent *bev);
+void control_request_free(struct control_request *req);
+
+#endif //_CONTROL_H_

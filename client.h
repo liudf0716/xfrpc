@@ -27,29 +27,108 @@
 #ifndef _CLIENT_H_
 #define _CLIENT_H_
 
+#include <stdint.h>
+
 #include "uthash.h"
+#include "common.h"
 
 struct event_base;
 struct base_conf;
 struct bufferevent;
 struct event;
-struct evdns_base;
+struct new_proxy;
+struct proxy_service;
 
 struct proxy_client {
 	struct event_base 	*base;
 	struct evdns_base  	*dnsbase;
 	struct bufferevent	*ctl_bev;
+	struct bufferevent 	*local_proxy_bev;
 	struct event		*ev_timeout;
 	
 	struct base_conf	*bconf;
 	char	*name; // pointer to bconf->name
 	char	*local_ip;
+	char 	*type;
 	int		local_port;
 	int		remote_port;
+	int 	use_encryption;
+	int		use_compression;
 	
-	char	*custom_domains;
+	char 	*custom_domains;
+	char 	*subdomain;
 	char	*locations;
+	char	*host_header_rewrite;
+	char	*http_user;
+	char	*http_pwd;
 	
+	//provate arguments
+	UT_hash_handle hh;
+	struct new_proxy 		*n_proxy;
+	int						connected;
+	int 					work_started;
+	struct 	proxy_service 	*ps;
+	unsigned char			*data_tail; // storage untrated data
+	size_t					data_tail_size;
+};
+
+// When frpc login success, send this message to frps for running a new proxy.
+// type NewProxy struct {
+// 	ProxyName      string `json:"proxy_name"`
+// 	ProxyType      string `json:"proxy_type"`
+// 	UseEncryption  bool   `json:"use_encryption"`
+// 	UseCompression bool   `json:"use_compression"`
+
+// 	// tcp and udp only
+// 	RemotePort int64 `json:"remote_port"`
+
+// 	// http and https only
+// 	CustomDomains     []string `json:"custom_domains"`
+// 	SubDomain         string   `json:"subdomain"`
+// 	Locations         []string `json:"locations"`
+// 	HostHeaderRewrite string   `json:"host_header_rewrite"`
+// 	HttpUser          string   `json:"http_user"`
+// 	HttpPwd           string   `json:"http_pwd"`
+// }
+
+struct new_proxy {
+	char 	*proxy_name;
+	char 	*proxy_type;
+	int 	use_encryption;
+	int	use_compression;
+
+	// tcp and udp only
+	int64_t	remote_port;
+
+	// http and https only
+	char 	*custom_domains;
+	char 	*subdomain;
+	char	*locations;
+	char	*host_header_rewrite;
+	char	*http_user;
+	char	*http_pwd;
+};
+
+struct proxy_service {
+	char 	*proxy_name;
+	char 	*proxy_type;
+	int 	use_encryption;
+	int		use_compression;
+
+	char	*local_ip;
+	int		remote_port;
+	int 	local_port;
+
+	// http and https only
+	char 	*custom_domains;
+	char 	*subdomain;
+	char	*locations;
+	char	*host_header_rewrite;
+	char	*http_user;
+	char	*http_pwd;
+
+
+	//provate arguments
 	UT_hash_handle hh;
 };
 
@@ -57,10 +136,15 @@ struct proxy_client {
 // frp server send xfrp client NoticeUserConn request
 // when xfrp client receive that request, it will start
 // frp tunnel
-void start_frp_tunnel(const struct proxy_client *client);
+// if client has data-tail(not NULL), client value will be changed 
+void start_frp_tunnel(struct proxy_client *client);
 
 void del_proxy_client(struct proxy_client *client);
 
 void free_proxy_client(struct proxy_client *client);
 
-#endif
+struct proxy_service *get_proxy_service(const char *proxy_name);
+
+int send_client_data_tail(struct proxy_client *client);
+
+#endif //_CLIENT_H_

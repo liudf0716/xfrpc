@@ -52,6 +52,8 @@
 #include "const.h"
 #include "uthash.h"
 #include "zip.h"
+#include "msg.h"
+#include "common.h"
 
 #define MAX_OUTPUT (512*1024)
 
@@ -114,18 +116,19 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 	struct bufferevent *partner = ctx;
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		debug(LOG_DEBUG, "working connection closed");
 		if (partner) {
 			/* Flush all pending data */
 			xfrp_read_cb(bev, ctx);
 
-			if (evbuffer_get_length(
-				    bufferevent_get_output(partner))) {
+			if (evbuffer_get_length(bufferevent_get_output(partner))) {
 				/* We still have to flush data from the other
 				 * side, but when that's done, close the other
 				 * side. */
 				bufferevent_setcb(partner,
 				    NULL, close_on_finished_writecb,
 				    xfrp_event_cb, NULL);
+
 				bufferevent_disable(partner, EV_READ);
 			} else {
 				/* We have nothing left to say to the other
@@ -142,14 +145,9 @@ xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
 {
 	struct bufferevent *partner = ctx;
 	struct evbuffer *src, *dst;
-	size_t len;
 	src = bufferevent_get_input(bev);
-	len = evbuffer_get_length(src);
-	if (len > 4) {
-		dst = bufferevent_get_output(partner);
-		evbuffer_drain(src, 4);
-		evbuffer_add_buffer(dst, src);
-	}
+	dst = bufferevent_get_output(partner);
+	evbuffer_add_buffer(dst, src);
 }
 
 static void
@@ -162,39 +160,56 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 	len = evbuffer_get_length(src);
 	if (len > 0) {
 		dst = bufferevent_get_output(partner);
-		unsigned int header = htonl(len);
-		evbuffer_prepend(src, &header, sizeof(unsigned int));
 		evbuffer_add_buffer(dst, src);	
 	}
 }
 
 // create frp tunnel for service
-void start_frp_tunnel(const struct proxy_client *client)
+void start_frp_tunnel(struct proxy_client *client)
 {
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
-	
-	struct bufferevent *b_svr = connect_server(client, c_conf->server_addr, c_conf->server_port);
-	if (!b_svr) {
+	struct proxy_service *ps = client->ps;
+	if (! ps) {
+		debug(LOG_ERR, "service tunnel started failed, no proxy service resource.");
 		return;
 	}
-	
-	struct bufferevent *b_clt = connect_server(client, client->local_ip, client->local_port);
-	if (!b_clt) {
-		bufferevent_free(b_svr);
+
+	if (! ps->local_port) {
+		debug(LOG_ERR, "service tunnel started failed, proxy service resource unvalid.");
+		return;
+	}
+
+	client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
+	if (!client->local_proxy_bev) {
+		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
+		bufferevent_free(client->ctl_bev);
 		return;
 	}
 	
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
-		  c_conf->server_addr, c_conf->server_port, client->local_ip, client->local_port);
+		  c_conf->server_addr, 
+		  c_conf->server_port, 
+		  ps->local_ip ? ps->local_ip:"::1",
+		  ps->local_port);
+
+	bufferevent_setcb(client->ctl_bev, xfrp_decrypt_cb, NULL, xfrp_event_cb, client->local_proxy_bev);
+	bufferevent_setcb(client->local_proxy_bev, xfrp_encrypt_cb, NULL, xfrp_event_cb, client->ctl_bev);
 	
-	bufferevent_setcb(b_svr, xfrp_decrypt_cb, NULL, xfrp_event_cb, b_clt);
-	bufferevent_setcb(b_clt, xfrp_encrypt_cb, NULL, xfrp_event_cb, b_svr);
-	
-	bufferevent_enable(b_svr, EV_READ|EV_WRITE);
-	bufferevent_enable(b_clt, EV_READ|EV_WRITE);
-	
-	send_msg_frp_server(NewWorkConn, client, b_svr);
+	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
+	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
+
+	// send_msg_frp_server(TypeNewProxy, client, b_svr);
+}
+
+int send_client_data_tail(struct proxy_client *client)
+{
+	int send_l = 0;
+	if (client->data_tail && client->data_tail_size && client->local_proxy_bev) {
+		send_l = bufferevent_write(client->local_proxy_bev, client->data_tail, client->data_tail_size);
+	}
+
+	return send_l;
 }
 
 void free_proxy_client(struct proxy_client *client)
@@ -220,4 +235,13 @@ void del_proxy_client(struct proxy_client *client)
 	HASH_DEL(all_pc, client);
 	
 	free_proxy_client(client);
+}
+
+// Return NULL if proxy service not found with proxy_name
+struct proxy_service *get_proxy_service(const char *proxy_name)
+{
+	struct proxy_service *ps = NULL;
+	struct proxy_service *all_ps = get_all_proxy_services();
+	HASH_FIND_STR(all_ps, proxy_name, ps);
+	return ps;
 }

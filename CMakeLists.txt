@@ -11,12 +11,18 @@ set(src_xfrp_client
   	client.c
   	config.c
   	control.c
+	frame.c
   	ini.c
   	msg.c
 	xfrp_client.c
 	debug.c
 	zip.c
 	commandline.c
+	crypto.c
+	fastpbkdf2.c
+	utils.c
+	session.c
+	common.c
 	)
 	
 set(libs

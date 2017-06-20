@@ -26,6 +26,9 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#include "client.h"
+#include "common.h"
+
 struct base_conf{
 	char	*name;
 	char	*auth_token;
@@ -54,11 +57,17 @@ struct common_conf {
 	char	*auth_token;
 	int		heartbeat_interval; /* default 10 */
 	int		heartbeat_timeout;	/* default 30 */
+	int 	tcp_mux;	/* default 0 */
 };
-	
+
+struct new_proxy *raw_new_proxy(struct proxy_client *client);
 struct common_conf *get_common_config();
+struct proxy_service *get_all_proxy_services();
+
+struct login *get_common_login_config();
 
 void free_common_config();
+int is_logged();
 
 void free_base_config(struct base_conf *bconf);
 
@@ -66,4 +75,6 @@ struct proxy_client *get_all_pc();
 
 void load_config(const char *confile);
 
-#endif
+char *get_run_id();
+
+#endif //_CONFIG_H_

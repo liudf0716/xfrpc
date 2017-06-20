@@ -132,35 +132,6 @@ static void dump_common_conf()
 			 c_conf->server_addr, c_conf->server_port, c_conf->auth_token, c_conf->privilege_token, c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
 }
 
-static void dump_proxy_client(const int index, const struct proxy_client *pc)
-{
-	if (!pc || !pc->bconf)
-		return;
-	
-	if (1 == pc->bconf->privilege_mode) {
-		if (NULL == pc->bconf->privilege_token) {
-			debug(LOG_ERR, "Proxy [%s] error: privilege_token must be set when privilege_mode = true", pc->bconf->name);
-			exit(0);
-		}
-
-		if (0 > pc->remote_port) {
-			debug(LOG_ERR, "Proxy [%s] error: remote_port must be set when privilege_mode = true", pc->bconf->name);
-			exit(0);
-		}
-	}
-
-	if (0 > pc->local_port) {
-		debug(LOG_ERR, "Proxy [%s] error: local_port not found", pc->bconf->name);
-		exit(0);
-	}
-
-	if (NULL == pc->bconf->type) {
-		pc->bconf->type = strdup("tcp");
-	}
-
-	debug(LOG_DEBUG, "Proxy %d: {name:%s, local_port:%d, type:%s}", index, pc->bconf->name, pc->local_port, pc->bconf->type);
-}
-
 static void dump_proxy_service(const int index, struct proxy_service *ps)
 {
 	if (!ps)
@@ -181,16 +152,6 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 		ps->proxy_name, 
 		ps->local_port, 
 		ps->proxy_type);
-}
-
-static void dump_all_pc()
-{
-	struct proxy_client *s = NULL, *tmp = NULL;
-	
-	int index = 0;
-	HASH_ITER(hh, p_clients, s, tmp) {
-		dump_proxy_client(index++, s);
-	}
 }
 
 static void dump_all_ps()
@@ -268,28 +229,6 @@ static struct proxy_service *new_proxy_service(const char *name)
 	return ps;
 }
 
-
-
-// When frpc login success, send this message to frps for running a new proxy.
-// type NewProxy struct {
-// 	ProxyName      string `json:"proxy_name"`
-// 	ProxyType      string `json:"proxy_type"`
-// 	UseEncryption  bool   `json:"use_encryption"`
-// 	UseCompression bool   `json:"use_compression"`
-
-// 	// tcp and udp only
-// 	RemotePort int64 `json:"remote_port"`
-
-// 	// http and https only
-// 	CustomDomains     []string `json:"custom_domains"`
-// 	SubDomain         string   `json:"subdomain"`
-// 	Locations         []string `json:"locations"`
-// 	HostHeaderRewrite string   `json:"host_header_rewrite"`
-// 	HttpUser          string   `json:"http_user"`
-// 	HttpPwd           string   `json:"http_pwd"`
-// }
-
-
 // value of client will be changed
 // UNUSED
 struct new_proxy *raw_new_proxy(struct proxy_client *client)
@@ -329,8 +268,7 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 	{
 		pc = new_proxy_client(section);
 		HASH_ADD_KEYPTR(hh, p_clients, pc->name, strlen(pc->name), pc);
-		debug(LOG_DEBUG, "Section[%s] not found in p_clients, add pc[%s]",
-			  section, pc->name);
+		debug(LOG_DEBUG, "init proxy service [%s]", section, pc->name);
 	} 
 	
 	#define MATCH_NAME(s) strcmp(nm, s) == 0
@@ -361,7 +299,8 @@ static int service_handler(void *user, const char *section, const char *nm, cons
 	} else if (MATCH_NAME("subdomain")) {
 		pc->bconf->subdomain= strdup(value);
 	} else if (MATCH_NAME("custom_domains")) {
-		pc->custom_domains= strdup(value);
+		pc->custom_domains = strdup(value);
+		debug(LOG_DEBUG, "[%s] using custom_domains: %s", section, pc->custom_domains);
 	} else if (MATCH_NAME("locations")) {
 		pc->locations= strdup(value);
 	} else if (MATCH_NAME("host_header_rewrite")) {
@@ -533,6 +472,5 @@ void load_config(const char *confile)
 	ini_parse(confile, service_handler, NULL);
 	ini_parse(confile, proxy_service_handler, NULL);
 	
-	dump_all_pc();
 	dump_all_ps();
 }

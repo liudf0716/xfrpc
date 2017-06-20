@@ -12,7 +12,7 @@
 #define BIGENDIAN_32BIT 1
 
 #define SAFE_FREE(m) 	\
-if (m) free(m);
+if (m) free(m)
 
 uint64_t ntoh64(const uint64_t input);
 uint64_t hton64(const uint64_t input);

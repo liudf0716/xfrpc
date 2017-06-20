@@ -70,6 +70,22 @@ char *calc_md5(const char *data, int datalen)
     return out;
 }
 
+static void fill_custom_domains(struct json_object *j_ctl_req, const char *custom_domains)
+{
+	struct json_object *jarray_cdomains = json_object_new_array();
+	assert(jarray_cdomains);
+	char *tmp = strdup(custom_domains);
+	char *tok = tmp, *end = tmp;
+	while (tok != NULL) {
+		strsep(&end, ",");
+		json_object_array_add(jarray_cdomains, json_object_new_string(tok));
+		tok = end;
+	}
+	free(tmp);
+	
+	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
+}
+
 //TODO: NEED FREE
 struct message *new_message() {
 	struct message *msg = calloc(1, sizeof(struct message)); //TODO: FREE
@@ -139,51 +155,6 @@ size_t login_request_marshal(char **msg)
 	return nret;
 }
 
-// {"proxy_name":"G_22","proxy_type":"tcp","use_encryption":false,"use_compression":false,"remote_port":20099,"custom_domains":null,"subdomain":"","locations":null,"host_header_rewrite":"","http_user":"","http_pwd":""}
-int new_proxy_request_marshal(const struct new_proxy *np_req, char **msg)
-{
-	const char *tmp = NULL;
-	int  nret = 0;
-	struct json_object *j_np_req = json_object_new_object();
-	if ( ! j_np_req)
-		return 0;
-	
-	JSON_MARSHAL_TYPE(j_np_req, "proxy_name", string, np_req->proxy_name);
-	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
-	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
-	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
-	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int64, np_req->remote_port);
-
-	json_object *j_cdm_array = json_object_new_array();
-	if (np_req->custom_domains) {
-		json_object_object_add(j_np_req, "custom_domains", j_cdm_array);
-	} else {
-		json_object_object_add(j_np_req, "custom_domains", NULL);
-	}
-
-	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));
-
-	json_object *j_location_array = json_object_new_array();
-	if (np_req->locations) {
-		json_object_object_add(j_np_req, "locations", j_location_array);
-	} else {
-		json_object_object_add(j_np_req, "locations", NULL);
-	}
-	
-	JSON_MARSHAL_TYPE(j_np_req, "host_header_rewrite", string, SAFE_JSON_STRING(np_req->host_header_rewrite));
-	JSON_MARSHAL_TYPE(j_np_req, "http_user", string, SAFE_JSON_STRING(np_req->http_user));
-	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
-		
-	tmp = json_object_to_json_string(j_np_req);
-	if (tmp && strlen(tmp) > 0) {
-		nret = strlen(tmp);
-		*msg = strdup(tmp);
-	}
-	json_object_put(j_np_req);
-
-	return nret;
-}
-
 int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 {
 	const char *tmp = NULL;
@@ -198,9 +169,8 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
 	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int64, np_req->remote_port);
 
-	json_object *j_cdm_array = json_object_new_array();
 	if (np_req->custom_domains) {
-		json_object_object_add(j_np_req, "custom_domains", j_cdm_array);
+		fill_custom_domains(j_np_req, np_req->custom_domains);
 	} else {
 		json_object_object_add(j_np_req, "custom_domains", NULL);
 	}

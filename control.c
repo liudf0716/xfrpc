@@ -637,9 +637,10 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 			break;
 	}
 
+	SAFE_FREE(msg);
+
 DATA_H_END:
-	if(f)
-		free(f);
+	SAFE_FREE(f);
 
 	return len;
 }

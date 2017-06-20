@@ -213,10 +213,8 @@ static void init_msg_writer()
 {
 	if (! is_encoder_inited()) {
 		struct frp_coder * e = init_main_encoder();
-#ifdef USEENCRYPTION
 		if (e)
 			sync_iv(e->iv);
-#endif // USEENCRYPTION
 	}
 }
 
@@ -491,15 +489,17 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 				return;
 			}
 
-			debug(LOG_DEBUG, "login repose unmarshal succeed!");
-			int is_logged = login_resp_check(lr);
 			debug(LOG_INFO, "xfrp login succeed!");
 			free(lr);
 
+#ifdef USEENCRYPTION
+			int is_logged = login_resp_check(lr);
 			if (is_logged) {
 				init_msg_writer();
 				// sync_new_work_connection(NULL);
 			}
+#endif // USEENCRYPTION
+
 			break;
 		case TypeReqWorkConn:
 			if (! is_client_connected()) {
@@ -817,12 +817,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		unsigned char *raw_buf_p = buf;
 		for( ; raw_buf_p && read_n ; ) {
 
-#define CONN_DEBUG 1
+// #define CONN_DEBUG 1
 #ifdef CONN_DEBUG
 			unsigned int i = 0;
 			char *dbg_buf = calloc(1, read_n * 4 + 1);
 			assert(dbg_buf);
-			int si = i;
 			for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
 				snprintf(dbg_buf + 4*i, 5, "%3u ", (unsigned char)raw_buf_p[i]);
 			}
@@ -975,11 +974,11 @@ void send_msg_frp_server(struct bufferevent *bev,
 		return;
 	}
 	
-#define SEND_MSG_DEBUG 1
+// #define SEND_MSG_DEBUG 1
 #ifdef SEND_MSG_DEBUG
 	debug(LOG_DEBUG, "**puck result:");
 	size_t j = 0;
-	for(j;j<pack_buf_len; j++) {
+	for(j=0; j<pack_buf_len; j++) {
 		printf("%d ", (unsigned char)puck_buf[j]);
 	}
 	printf("\n\n");

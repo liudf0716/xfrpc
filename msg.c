@@ -50,7 +50,7 @@ str_target?str_target:"\0"
 const char msg_typs[] = {TypeLogin, TypeLoginResp, TypeNewProxy, TypeNewProxyResp, 
 	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUdpPacket};
 
-// TODO: NEED FREE
+// NEED FREE
 char *calc_md5(const char *data, int datalen)
 {
 	unsigned char digest[16] = {0};
@@ -86,7 +86,7 @@ static void fill_custom_domains(struct json_object *j_ctl_req, const char *custo
 	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
 }
 
-//TODO: NEED FREE
+//NEED FREE
 struct message *new_message() {
 	struct message *msg = calloc(1, sizeof(struct message)); //TODO: FREE
 	if (msg)
@@ -106,7 +106,7 @@ struct work_conn *new_work_conn() {
 	return work_c;
 }
 
-// TODO: NEED FREE
+// calc_md5 NEED FREE
 char *get_auth_key(const char *token)
 {
 	char seed[128] = {0};
@@ -198,8 +198,6 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	return nret;
 }
 
-
-// { "run_id": "75f9b163e4d10861" }
 int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 {
 	const char *tmp = NULL;
@@ -217,63 +215,6 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 
 	json_object_put(j_new_work_conn);
 
-	return nret;
-}
-
-// old not used
-int control_request_marshal(const struct control_request *req, char **msg)
-{
-	const char *tmp = NULL;
-	int  nret = 0;
-	struct json_object *j_ctl_req = json_object_new_object();
-	if (!j_ctl_req)
-		return 0;
-	
-	json_object_object_add(j_ctl_req, "type", json_object_new_int(req->type));
-	json_object_object_add(j_ctl_req, "proxy_name", json_object_new_string(req->proxy_name));
-	json_object_object_add(j_ctl_req, "auth_key", 
-						   json_object_new_string(req->auth_key?req->auth_key:""));
-	if (req->type == TypeLogin)
-		goto END_PROCESS; //TODO
-	json_object_object_add(j_ctl_req, "use_encryption", json_object_new_boolean(req->use_encryption));
-	json_object_object_add(j_ctl_req, "use_gzip", json_object_new_boolean(req->use_gzip));
-	json_object_object_add(j_ctl_req, "pool_count", json_object_new_int(req->pool_count));
-	json_object_object_add(j_ctl_req, "privilege_mode", json_object_new_boolean(req->privilege_mode));
-	json_object_object_add(j_ctl_req, "privilege_key", 
-						   json_object_new_string(req->privilege_key?req->privilege_key:""));
-	json_object_object_add(j_ctl_req, "proxy_type", 
-						   json_object_new_string(req->proxy_type?req->proxy_type:""));
-	json_object_object_add(j_ctl_req, "remote_port", json_object_new_int(req->remote_port));
-	if (!req->custom_domains)
-		json_object_object_add(j_ctl_req, "custom_domains", json_object_new_string(NULL));
-	else {
-		// need to implement it
-		;
-	}
-	if (!req->locations)
-		json_object_object_add(j_ctl_req, "locations", NULL);
-	else {
-		// need to implement it
-		;
-	}
-		
-	json_object_object_add(j_ctl_req, "host_header_rewrite", 
-						   json_object_new_string(req->host_header_rewrite?req->host_header_rewrite:""));
-	json_object_object_add(j_ctl_req, "http_username", 
-						   json_object_new_string(req->http_username?req->http_username:""));
-	json_object_object_add(j_ctl_req, "http_password", 
-						   json_object_new_string(req->http_password?req->http_password:""));
-	json_object_object_add(j_ctl_req, "subdomain", 
-						   json_object_new_string(req->subdomain?req->subdomain:""));
-	json_object_object_add(j_ctl_req, "timestamp", json_object_new_int(req->timestamp));
-	
-END_PROCESS:
-	tmp = json_object_to_json_string(j_ctl_req);
-	if (tmp && strlen(tmp) > 0) {
-		nret = strlen(tmp);
-		*msg = strdup(tmp);
-	}
-	json_object_put(j_ctl_req);
 	return nret;
 }
 

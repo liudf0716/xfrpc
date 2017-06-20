@@ -192,7 +192,7 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 		goto REQ_END;
 	}
 
-#define DEV_DEBUG 1
+// #define DEV_DEBUG 1
 #ifdef DEV_DEBUG
 	/* debug showing */
 	debug(LOG_DEBUG, "send request byte:");
@@ -212,7 +212,6 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 
 	int headersize = get_header_size();
 	size_t len = (1<<16) + headersize;
-	printf("SET FRAME CMD:%d\n", f->cmd);
 
 	memset(request_buf, 0, len);
 	if (c->tcp_mux) {
@@ -232,12 +231,10 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 		write_len = (size_t)f->len;
 	}
 
-	debug(LOG_DEBUG, "request send data len = %u", write_len);
 	if ( 0 == write_len)
 		goto REQ_END;;
 
 	bufferevent_write(bout, request_buf, write_len);
-
 	memset(request_buf, 0, len);
 
 REQ_END:
@@ -505,6 +502,8 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	}
 	unsigned char *ret_buf = NULL;
 	struct frame *f = NULL;
+
+#ifdef DEV_DEBUG
 	/* debug showing */
 	unsigned int i = 0;
 	debug(LOG_DEBUG, "RECV from frps:");
@@ -514,6 +513,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	}
 	printf("]\n");
 	/* debug show over */
+#endif // DEV_DEBUG
 
 	int min_buf_len = 0;
 	if (get_common_config()->tcp_mux) {
@@ -523,8 +523,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		f = raw_frame_only_msg(buf, len);
 		set_frame_cmd(f, cmdPSH);
 	}
-
-	debug(LOG_DEBUG, "message recv from frps length: %u", f->len);
 
 	if (f == NULL) {
 		debug(LOG_ERR, "raw_frame faild!");
@@ -667,8 +665,6 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 		}
 	}
 
-	debug(LOG_DEBUG, "split MIN level length:%d", split_lv);
-
 	for(;;) {
 		if (buf_len > split_lv) {
 			if (! is_logged()) {
@@ -733,7 +729,6 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 	}
 	
 	if (split_len != 0 && raw_buf != NULL){
-		debug(LOG_DEBUG, "buffer need splite, raw len: %u", split_len);
 		data_handler(raw_buf, split_len, ctx);
 		free(raw_buf);
 		*ret_len = buf_len - split_len;
@@ -1048,6 +1043,7 @@ int init_main_control()
 		return 1;
 
 	evdns_base_set_option(dnsbase, "timeout", "1.0");
+
     // thanks to the following article
     // http://www.wuqiong.info/archives/13/
     evdns_base_set_option(dnsbase, "randomize-case:", "0");//TurnOff DNS-0x20 encoding

@@ -35,4 +35,6 @@ uint64_t hton64(const uint64_t input);
 	typedef uint32_t msg_size_t;
 #endif //BIGENDIAN_64BIT
 
+typedef unsigned short ushort;
+
 #endif //_COMMON_H_

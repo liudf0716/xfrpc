@@ -34,7 +34,6 @@
 #include <syslog.h>
 
 #include <event2/event.h>
-#include <event2/dns.h>
 
 #include "commandline.h"
 #include "client.h"

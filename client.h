@@ -41,7 +41,6 @@ struct proxy_service;
 
 struct proxy_client {
 	struct event_base 	*base;
-	struct evdns_base  	*dnsbase;
 	struct bufferevent	*ctl_bev;
 	struct bufferevent 	*local_proxy_bev;
 	struct event		*ev_timeout;

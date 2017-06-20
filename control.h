@@ -66,7 +66,7 @@ void control_process(struct proxy_client *client);
 void send_new_proxy(struct proxy_service *ps);
 // void send_proxy_request(struct proxy_service *ps);
 
-struct bufferevent *connect_server(struct proxy_client *client, const char *name, const int port);
+struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
 
 void control_request_free(struct control_request *req);
 

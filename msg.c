@@ -86,7 +86,7 @@ static void fill_custom_domains(struct json_object *j_ctl_req, const char *custo
 	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
 }
 
-//NEED FREE
+// NEED FREE
 struct message *new_message() {
 	struct message *msg = calloc(1, sizeof(struct message)); //TODO: FREE
 	if (msg)

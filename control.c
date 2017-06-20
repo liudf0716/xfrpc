@@ -44,7 +44,6 @@
 #include <event2/event.h>
 #include <event2/dns.h>
 #include <event2/event_struct.h>
-#include <event2/dns.h>
 
 #include "debug.h"
 #include "client.h"
@@ -374,12 +373,12 @@ static void sync_new_work_connection(struct bufferevent *bev)
 }
 
 // connect to server
-struct bufferevent *connect_server(struct proxy_client *client, const char *name, const int port)
+struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
 {
-	struct bufferevent *bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
+	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
 	
-	if (bufferevent_socket_connect_hostname(bev, client->dnsbase, AF_INET, name, port)<0) {
+	if (bufferevent_socket_connect_hostname(bev, NULL, AF_INET, name, port)<0) {
 		bufferevent_free(bev);
 		return NULL;
 	}
@@ -503,8 +502,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	}
 	unsigned char *ret_buf = NULL;
 	struct frame *f = NULL;
-
-#ifdef DEV_DEBUG
 	/* debug showing */
 	unsigned int i = 0;
 	debug(LOG_DEBUG, "RECV from frps:");
@@ -514,7 +511,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	}
 	printf("]\n");
 	/* debug show over */
-#endif // DEV_DEBUG
 
 	int min_buf_len = 0;
 	if (get_common_config()->tcp_mux) {
@@ -1044,7 +1040,6 @@ int init_main_control()
 		return 1;
 
 	evdns_base_set_option(dnsbase, "timeout", "1.0");
-
     // thanks to the following article
     // http://www.wuqiong.info/archives/13/
     evdns_base_set_option(dnsbase, "randomize-case:", "0");//TurnOff DNS-0x20 encoding

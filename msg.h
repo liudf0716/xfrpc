@@ -34,6 +34,7 @@
 #include <inttypes.h>
 
 #include "client.h"
+#include "common.h"
 
 #define TYPE_LEN 1 //byte, char
 

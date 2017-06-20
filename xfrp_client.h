@@ -24,4 +24,9 @@
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
+#ifndef _XFRP_CLIENT_H_
+#define _XFRP_CLIENT_H_
+
 void xfrp_client_loop();
+
+#endif //_XFRP_CLIENT_H_

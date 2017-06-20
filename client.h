@@ -30,6 +30,7 @@
 #include <stdint.h>
 
 #include "uthash.h"
+#include "common.h"
 
 struct event_base;
 struct base_conf;

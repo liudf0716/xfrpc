@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "uthash.h"
+#include "common.h"
 
 #define VERI 0
 #define CMDI 1

@@ -27,6 +27,7 @@
 #define _CONFIG_H_
 
 #include "client.h"
+#include "common.h"
 
 struct base_conf{
 	char	*name;

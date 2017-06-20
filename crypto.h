@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "common.h"
+
 struct frp_coder {
 	unsigned char 	*key;
 	ushort 			key_len;

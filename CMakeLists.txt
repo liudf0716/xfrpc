@@ -31,8 +31,7 @@ set(libs
 	event
 	z
 	m
-	json-c
-	pthread)
+	json-c)
 	
 set(test_libs
 	event

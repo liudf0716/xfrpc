@@ -378,7 +378,7 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
 	
-	if (bufferevent_socket_connect_hostname(bev, NULL, AF_INET, name, port)<0) {
+	if (bufferevent_socket_connect_hostname(bev, main_ctl->dnsbase, AF_INET, name, port)<0) {
 		bufferevent_free(bev);
 		return NULL;
 	}

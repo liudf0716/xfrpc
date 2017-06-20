@@ -42,6 +42,7 @@
 #include <event2/listener.h>
 #include <event2/util.h>
 #include <event2/event.h>
+#include <event2/dns.h>
 #include <event2/event_struct.h>
 
 #include "debug.h"
@@ -1017,22 +1018,6 @@ void start_login_frp_server(struct event_base *base)
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
 }
 
-// UNUSED
-// void send_new_proxy(struct proxy_client *client)
-// {
-// 	debug(LOG_DEBUG, "control proxy client: [%s]", client->name);
-
-// 	char *new_proxy_msg = NULL;
-// 	int len = new_proxy_request_marshal(client->n_proxy, &new_proxy_msg); //marshal login request
-// 	if ( ! new_proxy_msg) {
-// 		debug(LOG_ERR, "login_request_marshal failed");
-// 		assert(new_proxy_msg);
-// 	}
-
-// 	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
-// 	free(new_proxy_msg);
-// }
-
 void send_new_proxy(struct proxy_service *ps)
 {
 	debug(LOG_DEBUG, "control proxy client: [%s]", ps->proxy_name);
@@ -1048,19 +1033,31 @@ void send_new_proxy(struct proxy_service *ps)
 	free(new_proxy_msg);
 }
 
-
 int init_main_control() 
 {
 	main_ctl = calloc(sizeof(struct control), 1);
 	assert(main_ctl);
 	struct event_base *base = NULL;
-
+	struct evdns_base *dnsbase  = NULL; 
 	base = event_base_new();
-	if (!base) {
-		debug(LOG_ERR, "event_base_new() error");
+	if (!base)
 		return 1;
-	}
+	
+	dnsbase = evdns_base_new(base, 1);
+	if (!dnsbase)
+		return 1;
+
+	evdns_base_set_option(dnsbase, "timeout", "1.0");
+    // thanks to the following article
+    // http://www.wuqiong.info/archives/13/
+    evdns_base_set_option(dnsbase, "randomize-case:", "0");//TurnOff DNS-0x20 encoding
+    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");//BaiduDNS
+    evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");//AliDNS
+    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");//AliDNS
+    evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");//114DNS
+
 	main_ctl->connect_base = base;
+	main_ctl->dnsbase = dnsbase;
 
 	size_t len = (1<<16) + get_header_size();
 	request_buf = calloc(1, len);
@@ -1084,6 +1081,7 @@ void close_main_control()
 	assert(main_ctl);
 	event_base_dispatch(main_ctl->connect_base);
 	event_base_free(main_ctl->connect_base);
+	evdns_base_free(main_ctl->dnsbase, 0);
 }
 
 void run_control() {

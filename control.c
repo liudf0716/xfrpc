@@ -117,22 +117,6 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 	}
 }
 
-static void start_client_connect(struct proxy_client *client)
-{
-	struct common_conf *c_conf = get_common_config();
-	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
-	if (!bev) {
-		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-		return;
-	}
-
-	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
-
-	client->ctl_bev = bev;
-	bufferevent_enable(bev, EV_WRITE);
-	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
-}
-
 static void new_client_connect()
 {
 	struct proxy_client *client = calloc(1, sizeof(struct proxy_client)); //NEED FREE
@@ -153,44 +137,6 @@ static void new_client_connect()
 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
 }
 
-// static void start_proxy_services(struct proxy_service *ps)
-// {
-// 	struct common_conf *c_conf = get_common_config();
-// 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
-// 	if (!bev) {
-// 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-// 		return;
-// 	}
-
-// 	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
-
-// 	client->ctl_bev = bev;
-// 	bufferevent_enable(bev, EV_WRITE);
-// 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
-// }
-
-// UNUSED
-static void start_xfrp_client_service()
-{
-	struct proxy_client *all_pc = get_all_pc();
-	assert(all_pc);
-
-	struct proxy_client *pc = NULL, *tmp = NULL;
-	
-	debug(LOG_INFO, "Start xfrp clients ...");
-	
-	HASH_ITER(hh, all_pc, pc, tmp) {
-		if(pc == NULL) {
-			debug(LOG_ERR, "pc is null!");
-			return;
-		}
-		pc->base = main_ctl->connect_base;
-		start_client_connect(pc);
-		raw_new_proxy(pc);
-		// send_new_proxy(pc);
-	}
-}
-
 static void start_proxy_services()
 {
 	struct proxy_service *all_ps = get_all_proxy_services();
@@ -209,6 +155,7 @@ static void start_proxy_services()
 	}
 }
 
+#ifdef USEENCRYPTION
 static void init_msg_writer()
 {
 	if (! is_encoder_inited()) {
@@ -227,6 +174,7 @@ static void init_msg_reader(unsigned char *iv)
 		}
 	}
 }
+#endif // USEENCRYPTION
 
 static size_t request(struct bufferevent *bev, struct frame *f) 
 {
@@ -490,7 +438,7 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			}
 
 			debug(LOG_INFO, "xfrp login succeed!");
-			free(lr);
+			login_resp_check(lr);
 
 #ifdef USEENCRYPTION
 			int is_logged = login_resp_check(lr);
@@ -500,11 +448,11 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			}
 #endif // USEENCRYPTION
 
+			free(lr);
 			break;
 		case TypeReqWorkConn:
 			if (! is_client_connected()) {
 				debug(LOG_DEBUG, "recv the client work connect start request ...");
-				// start_xfrp_client_service();
 				start_proxy_services();
 				client_connected(1);
 				ping(bev);

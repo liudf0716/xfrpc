@@ -407,11 +407,25 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 static int login_resp_check(struct login_resp *lr)
 {
 	struct login *cl = get_common_login_config();
-	cl->logged = 1;
-	if (cl->run_id)
-		free(cl->run_id);
+	debug(LOG_DEBUG, "xfrp login response: run_id: [%s], version: [%s], error: [%s]", 
+		lr->run_id, 
+		lr->version, 
+		lr->error);
+	
+	if (lr->run_id == NULL || strlen(lr->run_id) <= 1) {
+		if (lr->error && strlen(lr->error) > 0) {
+			debug(LOG_ERR, "login response error: %s", lr->error);
+		}
+		debug(LOG_ERR, "login falied!");
+		cl->logged = 0;
+	} else {
+		cl->logged = 1;
+		if (cl->run_id)
+			free(cl->run_id);
 
-	cl->run_id = strdup(lr->run_id);
+		cl->run_id = strdup(lr->run_id);
+	}
+	
 	return cl->logged;
 }
 
@@ -436,7 +450,6 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 			}
 
 			debug(LOG_INFO, "xfrp login succeed!");
-			login_resp_check(lr);
 
 #ifdef USEENCRYPTION
 			int is_logged = login_resp_check(lr);
@@ -444,6 +457,8 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 				init_msg_writer();
 				// sync_new_work_connection(NULL);
 			}
+#else 		// USEENCRYPTION
+			login_resp_check(lr);
 #endif // USEENCRYPTION
 
 			free(lr);
@@ -502,15 +517,18 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	}
 	unsigned char *ret_buf = NULL;
 	struct frame *f = NULL;
+
+#ifdef  RECV_DEBUG
 	/* debug showing */
-	unsigned int i = 0;
+	unsigned int j = 0;
 	debug(LOG_DEBUG, "RECV from frps:");
 	printf("[");
-	for(i = 0; i<len; i++) {
-		printf("%d ", (unsigned char)buf[i]);
+	for(j = 0; j<len; j++) {
+		printf("%d ", (unsigned char)buf[j]);
 	}
 	printf("]\n");
 	/* debug show over */
+#endif //  RECV_DEBUG
 
 	int min_buf_len = 0;
 	if (get_common_config()->tcp_mux) {
@@ -536,7 +554,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed!");
 		goto DATA_H_END;
 	}
-#endif //USEENCRYPTION
+#endif // USEENCRYPTION
 
 	if (len <= min_buf_len) {
 		if (f->cmd == 3) {
@@ -547,7 +565,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	}
 
 #ifdef ENCRYPTO
-	//fuck debug
 	size_t ret_len3 = encrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
 	if (ret_len3 <= 0) {
 		debug(LOG_ERR, "message recved decrypt result is 0 bit");
@@ -601,7 +618,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		printf("%u ", (unsigned char)ret_buf[i]);
 	}
 	printf("\n\n");
-#endif //ENCRYPTO
+#endif // ENCRYPTO
 
 	if (! ret_buf) 
 		ret_buf = f->data; //test: no crypto
@@ -802,10 +819,8 @@ static void open_connection_session(struct bufferevent *bev)
 {
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
-	debug(LOG_DEBUG, "open session ID:%d", main_ctl->session_id);
 	request(bev, f);
 }
-
 
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {

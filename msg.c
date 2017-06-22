@@ -106,14 +106,14 @@ struct work_conn *new_work_conn() {
 	return work_c;
 }
 
-// calc_md5 NEED FREE
-char *get_auth_key(const char *token)
+char *get_auth_key(const char *token, long int *timestamp)
 {
 	char seed[128] = {0};
+	*timestamp = time(NULL);
 	if (token)
-		snprintf(seed, 128, "%s%ld", token, time(NULL));
+		snprintf(seed, 128, "%s%ld", token, *timestamp);
 	else
-		snprintf(seed, 128, "%ld", time(NULL));
+		snprintf(seed, 128, "%ld", *timestamp);
 	
 	return calc_md5(seed, strlen(seed));
 }
@@ -130,7 +130,7 @@ size_t login_request_marshal(char **msg)
 		return 0;
 	
 	struct common_conf *cf = get_common_config();
-	char *auth_key = get_auth_key(cf->privilege_token);
+	char *auth_key = get_auth_key(cf->privilege_token, &lg->timestamp);
 	lg->privilege_key = strdup(auth_key);
 	
 	JSON_MARSHAL_TYPE(j_login_req, "version", string, lg->version);

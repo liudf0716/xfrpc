@@ -378,7 +378,12 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
 	
-	if (bufferevent_socket_connect_hostname(bev, main_ctl->dnsbase, AF_INET, name, port)<0) {
+	if (bufferevent_socket_connect_hostname(bev, 
+		main_ctl->dnsbase, 
+		AF_INET, 
+		name, 
+		port) <0 ) {
+
 		bufferevent_free(bev);
 		return NULL;
 	}
@@ -425,7 +430,7 @@ static int login_resp_check(struct login_resp *lr)
 
 		cl->run_id = strdup(lr->run_id);
 	}
-	
+
 	return cl->logged;
 }
 
@@ -449,20 +454,21 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 				return;
 			}
 
-			debug(LOG_INFO, "xfrp login succeed!");
-
-#ifdef USEENCRYPTION
 			int is_logged = login_resp_check(lr);
+#ifdef USEENCRYPTION
 			if (is_logged) {
 				init_msg_writer();
-				// sync_new_work_connection(NULL);
 			}
-#else 		// USEENCRYPTION
-			login_resp_check(lr);
 #endif // USEENCRYPTION
 
+			if ( ! is_logged) {
+				login();
+				return;
+			}
+			debug(LOG_INFO, "xfrp login succeed!");
 			free(lr);
 			break;
+
 		case TypeReqWorkConn:
 			if (! is_client_connected()) {
 				debug(LOG_DEBUG, "recv the client work connect start request ...");
@@ -633,13 +639,11 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 			break;
 		case cmdPSH:	//2
 			msg = unpack(ret_buf, f->len);
-			if (msg && msg->data_p) {
-				debug(LOG_DEBUG, "RECV:%s\n", msg->data_p);
-				debug(LOG_DEBUG, "recv <---- %s" ,msg->data_p);
-			} else {
+			if ( ! (msg && msg->data_p)) {
 				debug(LOG_ERR, "message received format invalid");
 				goto DATA_H_END;
 			}
+			debug(LOG_DEBUG, "recv <---- %s" ,msg->data_p);
 
 			if (msg->data_p == NULL)
 				goto DATA_H_END;
@@ -827,6 +831,10 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	struct common_conf 	*c_conf = get_common_config();
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
+		event_base_loopbreak(main_ctl->connect_base);
+		init_main_control();
+		start_base_connect();
+		close_main_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
 
@@ -1008,6 +1016,7 @@ void login()
 	}
 	
 	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
+	free(lg_msg);
 }
 
 void start_login_frp_server(struct event_base *base)
@@ -1040,19 +1049,17 @@ void send_new_proxy(struct proxy_service *ps)
 	free(new_proxy_msg);
 }
 
-int init_main_control() 
+void main_control_conn()
 {
-	main_ctl = calloc(sizeof(struct control), 1);
-	assert(main_ctl);
 	struct event_base *base = NULL;
 	struct evdns_base *dnsbase  = NULL; 
 	base = event_base_new();
 	if (!base)
-		return 1;
-	
+		return;
+
 	dnsbase = evdns_base_new(base, 1);
 	if (!dnsbase)
-		return 1;
+		return;
 
 	evdns_base_set_option(dnsbase, "timeout", "1.0");
     // thanks to the following article
@@ -1075,6 +1082,13 @@ int init_main_control()
 	main_ctl->session_id = *sid;
 
 	debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
+}
+
+int init_main_control() 
+{
+	main_ctl = calloc(sizeof(struct control), 1);
+	assert(main_ctl);
+	main_control_conn();
 	return 0;
 }
 
@@ -1082,6 +1096,7 @@ struct control *get_main_control()
 {
 	return main_ctl;
 }
+
 
 void close_main_control()
 {

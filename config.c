@@ -433,7 +433,7 @@ static void init_login(struct login *lg)
 	lg->arch 			= strdup(uname_buf.machine);
 	lg->user 			= NULL;
 
-	lg->timestamp 		= time(NULL);
+	lg->timestamp 		= 0;
 	lg->run_id 			= NULL;
 	lg->pool_count 		= 1;//TODO
 	lg->privilege_key 	= NULL; //TODO

@@ -254,6 +254,8 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->auth_token = strdup(value);
 	} else if (MATCH("common", "user")) {
 		config->user = strdup(value);
+	} else if (MATCH("common", "tcp_mux")) {
+		config->tcp_mux = 0;	// set tcp_mux to default: false
 	}
 	return 1;
 }

@@ -40,6 +40,7 @@
 #include "frame.h"
 #include "debug.h"
 #include "common.h"
+#include "login.h"
 
 #define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));

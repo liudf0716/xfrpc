@@ -64,17 +64,12 @@ struct common_conf {
 struct common_conf *get_common_config();
 struct proxy_service *get_all_proxy_services();
 
-struct login *get_common_login_config();
-
 void free_common_config();
-int is_logged();
 
 void free_base_config(struct base_conf *bconf);
 
 struct proxy_client *get_all_pc();
 
 void load_config(const char *confile);
-
-char *get_run_id();
 
 #endif //_CONFIG_H_

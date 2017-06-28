@@ -94,28 +94,6 @@ struct work_conn {
 	char *run_id;
 };
 
-
-struct login {
-	char		*version;
-	char		*hostname;
-	char 		*os;
-	char		*arch;
-	char 		*user;
-	char 		*privilege_key;
-	long int 	timestamp;
-	char 		*run_id;
-	int 		pool_count;
-
-	/* fields not need json marshal */
-	int			logged;		//0 not login 1:logged
-};
-
-struct login_resp {
-	char 	*version;
-	char	*run_id;
-	char 	*error;
-};
-
 struct message {
 	char 	type;
 	char	*data_p;

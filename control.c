@@ -58,6 +58,7 @@
 #include "utils.h"
 #include "session.h"
 #include "common.h"
+#include "login.h"
 
 static struct control *main_ctl;
 static char *request_buf;

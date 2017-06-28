@@ -839,12 +839,9 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		start_base_connect();
 		close_main_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
-		debug(LOG_INFO, "Xfrp connected: send msg to frp server");
-
 		// recv frpc login-response message before recv othfer fprs messages, 
 		bufferevent_setcb(bev, recv_cb, NULL, connect_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);
-		bufferevent_setwatermark(bev, EV_READ, 0, 0);
 		
 		open_connection_session(bev);
 		login();

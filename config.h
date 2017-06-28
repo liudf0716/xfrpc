@@ -58,6 +58,7 @@ struct common_conf {
 	int		heartbeat_interval; /* default 10 */
 	int		heartbeat_timeout;	/* default 30 */
 	int 	tcp_mux;	/* default 0 */
+	char	*user;
 };
 
 struct new_proxy *raw_new_proxy(struct proxy_client *client);

@@ -393,10 +393,9 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->heartbeat_timeout = atoi(value);
 	} else if (MATCH("common", "auth_token")) {
 		config->auth_token = strdup(value);
-	} /*else if (MATCH("common", "tcp_mux")) {
-		
-	}*/
-	
+	} else if (MATCH("common", "user")) {
+		config->user = strdup(value);
+	}
 	return 1;
 }
 
@@ -414,9 +413,9 @@ static void init_common_conf(struct common_conf *config)
 	config->heartbeat_interval 	= 10;
 	config->heartbeat_timeout	= 30;
 	config->tcp_mux				= 0;
+	config->user				= NULL;
 }
 
-//{"version":"0.10.0","hostname":"","os":"linux","arch":"amd64","user":"","privilege_key":"9583ffe40c4f854a2aa4ba80387d5dca","timestamp":1495165129,"run_id":"","pool_count":1}
 static void init_login(struct login *lg)
 {
 	if (!lg)
@@ -437,6 +436,7 @@ static void init_login(struct login *lg)
 	lg->run_id 			= NULL;
 	lg->pool_count 		= 1;//TODO
 	lg->privilege_key 	= NULL; //TODO
+	lg->user			= c_conf->user;
 
 	lg->logged 			= 0;
 }
@@ -448,7 +448,6 @@ void load_config(const char *confile)
 	assert(c_conf);
 	
 	init_common_conf(c_conf);
-	init_login(c_login);
 
 	debug(LOG_DEBUG, "Reading configuration file '%s'", confile);
 	
@@ -472,5 +471,6 @@ void load_config(const char *confile)
 	ini_parse(confile, service_handler, NULL);
 	ini_parse(confile, proxy_service_handler, NULL);
 	
+	init_login(c_login);
 	dump_all_ps();
 }

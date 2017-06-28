@@ -43,27 +43,12 @@
 static struct common_conf 	*c_conf;
 static struct proxy_client 	*p_clients;
 static struct proxy_service *p_services;
-static struct login 		*c_login;
+
 
 struct common_conf *get_common_config()
 {
 	return c_conf;
 };
-
-char *get_run_id()
-{
-	return c_login->run_id;
-}
-
-struct login *get_common_login_config()
-{
-	return c_login;
-}
-
-int is_logged()
-{
-	return c_login->logged;
-}
 
 void free_common_config()
 {
@@ -290,35 +275,9 @@ static void init_common_conf(struct common_conf *config)
 	config->user				= NULL;
 }
 
-static void init_login(struct login *lg)
-{
-	if (!lg)
-		return;
-	
-	struct utsname uname_buf;
-	if (uname(&uname_buf)) {
-		return;
-	}
-
-	lg->version 		= strdup(PROTOCOL_VERESION);
-	lg->hostname 		= NULL;
-	lg->os 				= strdup(uname_buf.sysname);
-	lg->arch 			= strdup(uname_buf.machine);
-	lg->user 			= NULL;
-
-	lg->timestamp 		= 0;
-	lg->run_id 			= NULL;
-	lg->pool_count 		= 1;//TODO
-	lg->privilege_key 	= NULL; //TODO
-	lg->user			= c_conf->user;
-
-	lg->logged 			= 0;
-}
-
 void load_config(const char *confile)
 {
 	c_conf = calloc(sizeof(struct common_conf), 1);
-	c_login = calloc(sizeof(struct login), 1);
 	assert(c_conf);
 	
 	init_common_conf(c_conf);
@@ -344,6 +303,5 @@ void load_config(const char *confile)
 	
 	ini_parse(confile, proxy_service_handler, NULL);
 	
-	init_login(c_login);
 	dump_all_ps();
 }

@@ -19,6 +19,7 @@ set(src_xfrp_client
 	utils.c
 	session.c
 	common.c
+	login.c
 	)
 	
 set(libs

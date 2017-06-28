@@ -831,8 +831,9 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
-		event_base_loopbreak(main_ctl->connect_base);
+		debug(LOG_ERR, "connect server [%s:%d] failed", 
+				c_conf->server_addr, 
+				c_conf->server_port);
 		free_control();
 		init_main_control();
 		start_base_connect();
@@ -865,17 +866,17 @@ static void keep_control_alive()
 void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
+	assert(c_conf);
+
 	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
 												c_conf->server_addr, 
 												c_conf->server_port);
-
 	if ( ! main_ctl->connect_bev) {
-		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-		return;
+		debug(LOG_ERR, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		exit(0);
 	}
 
-	debug(LOG_INFO, "Xfrpc: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
-
+	debug(LOG_INFO, "connect server [%s:%d]...", c_conf->server_addr, c_conf->server_port);
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
 }
@@ -1058,6 +1059,9 @@ void send_new_proxy(struct proxy_service *ps)
 
 void init_main_control()
 {
+	if (main_ctl->connect_base)
+		event_base_loopbreak(main_ctl->connect_base);
+
 	main_ctl = calloc(sizeof(struct control), 1);
 	assert(main_ctl);
 	struct event_base *base = NULL;
@@ -1112,6 +1116,6 @@ void free_control()
 	if (!main_ctl)
 		return;
 
-	if (request_buf)
-		free(request_buf);
+	SAFE_FREE(request_buf);
+	SAFE_FREE(main_ctl);
 }

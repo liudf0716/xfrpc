@@ -999,6 +999,11 @@ void send_msg_frp_server(struct bufferevent *bev,
 		free(req_msg.data_p);
 }
 
+struct control *get_main_control() 
+{
+	return main_ctl;
+}
+
 void login()
 {
 	debug(LOG_INFO, "login frps ...");
@@ -1050,8 +1055,10 @@ void send_new_proxy(struct proxy_service *ps)
 	free(new_proxy_msg);
 }
 
-void main_control_conn()
+void init_main_control()
 {
+	main_ctl = calloc(sizeof(struct control), 1);
+	assert(main_ctl);
 	struct event_base *base = NULL;
 	struct evdns_base *dnsbase  = NULL; 
 	base = event_base_new();
@@ -1084,20 +1091,6 @@ void main_control_conn()
 
 	debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
 }
-
-void init_main_control() 
-{
-	main_ctl = calloc(sizeof(struct control), 1);
-	assert(main_ctl);
-	main_control_conn();
-	return 0;
-}
-
-struct control *get_main_control() 
-{
-	return main_ctl;
-}
-
 
 void close_main_control()
 {

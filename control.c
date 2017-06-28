@@ -833,6 +833,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		debug(LOG_ERR, "Xfrp login: connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
 		event_base_loopbreak(main_ctl->connect_base);
+		free_control();
 		init_main_control();
 		start_base_connect();
 		close_main_control();
@@ -1070,7 +1071,7 @@ void init_main_control()
 		return;
 
 	evdns_base_set_option(dnsbase, "timeout", "1.0");
-	
+
     // thanks to the following article
     // http://www.wuqiong.info/archives/13/
     evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
@@ -1104,4 +1105,13 @@ void close_main_control()
 void run_control() {
 	start_base_connect();	//with login
 	keep_control_alive();
+}
+
+void free_control()
+{
+	if (!main_ctl)
+		return;
+
+	if (request_buf)
+		free(request_buf);
 }

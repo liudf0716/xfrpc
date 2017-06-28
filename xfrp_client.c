@@ -48,10 +48,7 @@
 
 void xfrp_client_loop()
 {
-	int ctl_ret = init_main_control();
-	if (ctl_ret)
-		debug(LOG_ERR, "xfrp main control init faild");
-	
+	init_main_control();
 	run_control();
 	
 	close_main_control();

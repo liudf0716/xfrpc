@@ -1085,7 +1085,7 @@ void main_control_conn()
 	debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
 }
 
-int init_main_control() 
+void init_main_control() 
 {
 	main_ctl = calloc(sizeof(struct control), 1);
 	assert(main_ctl);

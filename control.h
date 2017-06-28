@@ -48,7 +48,7 @@ void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
 void sync_iv(unsigned char *iv);
 void start_base_connect();
 void sync_session_id(uint32_t sid);
-int init_main_control();
+void init_main_control();
 void run_control();
 struct control *get_main_control();
 void close_main_control();

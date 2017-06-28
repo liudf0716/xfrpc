@@ -164,47 +164,6 @@ static void dump_all_ps()
 	}
 }
 
-static struct proxy_client *new_proxy_client(const char *name)
-{
-	struct proxy_client *pc = calloc(sizeof(struct proxy_client), 1);
-	assert(pc);
-	struct base_conf	*bc = calloc(sizeof(struct base_conf), 1);
-	assert(bc);
-	assert(c_conf);
-
-	bc->name 			= strdup(name);
-	bc->use_encryption 	= 0;
-	bc->use_gzip		= 0;
-	bc->privilege_mode	= 0;
-	bc->pool_count		= 0;
-
-	pc->bconf			= bc;
-	pc->name			= strdup(name);
-	pc->local_port		= -1;
-	pc->remote_port		= -1;
-	pc->use_compression = 0;
-	pc->use_encryption	= 0;
-
-	pc->custom_domains	= NULL;
-	pc->subdomain		= NULL;
-	pc->locations		= NULL;
-	pc->host_header_rewrite	= NULL;
-	pc->http_user		= NULL;
-	pc->http_pwd		= NULL;
-
-	pc->ps 				= NULL;
-	pc->data_tail		= NULL;
-	pc->data_tail_size 	= 0;
-
-	if (c_conf->auth_token)
-		bc->auth_token	= strdup(c_conf->auth_token);
-	if (c_conf->privilege_token)
-		bc->privilege_token = strdup(c_conf->privilege_token);
-
-	return pc;
-}
-
-
 static struct proxy_service *new_proxy_service(const char *name)
 {
 	struct proxy_service *ps = calloc(sizeof(struct proxy_service), 1);
@@ -227,91 +186,6 @@ static struct proxy_service *new_proxy_service(const char *name)
 	ps->http_pwd			= NULL;
 
 	return ps;
-}
-
-// value of client will be changed
-// UNUSED
-struct new_proxy *raw_new_proxy(struct proxy_client *client)
-{
-	struct new_proxy *np = calloc(sizeof(struct new_proxy), 1);
-	if ( ! np) {
-		return NULL;
-	}
-
-	debug(LOG_DEBUG, "init client porxy argu: [%s]", client->name);
-
-	np->proxy_name = client->name?strdup(client->name):NULL;
-	np->proxy_type = client->type?strdup(client->type):NULL;
-
-	if (np->proxy_type == NULL) {
-		debug(LOG_INFO, "proxy_type is nil, instead of tcp");
-		np->proxy_type = strdup("tcp");
-	}
-	
-	np->use_encryption = client->use_encryption;
-	np->use_compression = client->use_compression;
-	np->remote_port = client->remote_port;
-
-	client->n_proxy = np;
-	return np;
-}
-
-static int service_handler(void *user, const char *section, const char *nm, const char *value)
-{
- 	struct proxy_client	*pc = NULL;
-
-	if (strcmp(section, "common") == 0)
-		return 0;
-	
-	HASH_FIND_STR(p_clients, section, pc);
-	if (!pc) 
-	{
-		pc = new_proxy_client(section);
-		HASH_ADD_KEYPTR(hh, p_clients, pc->name, strlen(pc->name), pc);
-		debug(LOG_DEBUG, "init proxy service [%s]", section, pc->name);
-	} 
-	
-	#define MATCH_NAME(s) strcmp(nm, s) == 0
-	#define TO_BOOL(v) strcmp(value, "true") ? 0:1
-
-	if (MATCH_NAME("type")) {
-		pc->bconf->type = get_valid_type(value);
-	} else if (MATCH_NAME("type")) {
-		pc->type = strdup(value);
-	} else if (MATCH_NAME("local_ip")) {
-		pc->local_ip = strdup(value);
-	} else if (MATCH_NAME("local_port")) {
-		pc->local_port = atoi(value);
-	} else if (MATCH_NAME("use_encryption")) {
-		pc->bconf->use_encryption = is_true(value);
-	} else if (MATCH_NAME("use_gzip")) {
-		pc->bconf->use_gzip = is_true(value);
-	} else if (MATCH_NAME("privilege_mode")) {
-		pc->bconf->privilege_mode = is_true(value);
-	} else if (MATCH_NAME("pool_count")) {
-		pc->bconf->pool_count = atoi(value);
-	} else if (MATCH_NAME("remote_port")) {
-		pc->remote_port = atoi(value);
-	} else if (MATCH_NAME("http_user")) {
-		pc->bconf->http_username = strdup(value);
-	} else if (MATCH_NAME("http_pwd")) {
-		pc->bconf->http_password = strdup(value);
-	} else if (MATCH_NAME("subdomain")) {
-		pc->bconf->subdomain= strdup(value);
-	} else if (MATCH_NAME("custom_domains")) {
-		pc->custom_domains = strdup(value);
-		debug(LOG_DEBUG, "[%s] using custom_domains: %s", section, pc->custom_domains);
-	} else if (MATCH_NAME("locations")) {
-		pc->locations= strdup(value);
-	} else if (MATCH_NAME("host_header_rewrite")) {
-		pc->bconf->host_header_rewrite= strdup(value);
-	} else if (MATCH_NAME("use_encryption")) {
-		pc->use_encryption = TO_BOOL(value);
-	} else if (MATCH_NAME("use_compression")) {
-		pc->use_compression = TO_BOOL(value);
-	}
-	
-	return 1;
 }
 
 static int proxy_service_handler(void *user, const char *section, const char *nm, const char *value)
@@ -468,7 +342,6 @@ void load_config(const char *confile)
 		exit(0);
 	}
 	
-	ini_parse(confile, service_handler, NULL);
 	ini_parse(confile, proxy_service_handler, NULL);
 	
 	init_login(c_login);

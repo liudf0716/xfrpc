@@ -897,8 +897,6 @@ void sync_iv(unsigned char *iv)
 
 void login()
 {
-	debug(LOG_INFO, "login frps ...");
-	
 	char *lg_msg = NULL;
 	int len = login_request_marshal(&lg_msg); //marshal login request
 	if ( ! lg_msg) {
@@ -953,7 +951,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 		req_msg.data_p = strdup(msg);
 	}
 
-	unsigned char *puck_buf = NULL; //TODO: NEED FREE
+	unsigned char *puck_buf = NULL;
 	size_t pack_buf_len = pack(&req_msg, &puck_buf);
 	if ( ! pack_buf_len || ! puck_buf) {
 		debug(LOG_ERR, "login buffer pack failed!");
@@ -962,7 +960,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	
 // #define SEND_MSG_DEBUG 1
 #ifdef SEND_MSG_DEBUG
-	debug(LOG_DEBUG, "**puck result:");
+	debug(LOG_DEBUG, "puck result:");
 	size_t j = 0;
 	for(j=0; j<pack_buf_len; j++) {
 		printf("%d ", (unsigned char)puck_buf[j]);
@@ -1015,8 +1013,11 @@ void send_msg_frp_server(struct bufferevent *bev,
 
 	set_frame_cmd(f, frame_type);
 	request(bout, f);
-	if (req_msg.data_p)
-		free(req_msg.data_p);
+
+	SAFE_FREE(req_msg.data_p);
+	SAFE_FREE(puck_buf);
+	f->data = NULL;
+	SAFE_FREE(f);
 }
 
 struct control *get_main_control() 

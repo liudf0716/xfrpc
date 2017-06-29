@@ -115,7 +115,6 @@ struct message *unpack(unsigned char *recv_msg, const ushort len);
 
 // tranlate control request to json string
 int control_request_marshal(const struct control_request *req, char **msg);
-
 struct login_resp *login_resp_unmarshal(const char *jres);
 struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg);
 

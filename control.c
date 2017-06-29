@@ -384,7 +384,6 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	SAFE_FREE(work_c);
 }
 
-// connect to server
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
 {
 	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
@@ -394,7 +393,7 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 		main_ctl->dnsbase, 
 		AF_INET, 
 		name, 
-		port) <0 ) {
+		port) < 0 ) {
 
 		bufferevent_free(bev);
 		return NULL;

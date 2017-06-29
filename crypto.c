@@ -105,7 +105,6 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 	printf("encrypt_key = ");
 	int i = 0;
 	for(i=0; i<block_size; i++ ) {
-		// key_ret[i] = (unsigned char)0x41;
 		printf("%u ", *(key_ret + i));
 	}
 
@@ -219,14 +218,11 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 			enc_per_len = 10;
 		}
 
-		// printf("++++++enc per len = %d\n", enc_per_len);
-		
 		if(!EVP_DecryptUpdate(&ctx, outbuf + (i*10), &outlen, inbuf + (i*10), enc_per_len)) {
 			debug(LOG_ERR, "EVP_DecryptUpdate error!");
 			goto D_END;
 		}
 		totol_len += outlen;
-		// printf("+++++++totol_len = %d\n", totol_len);
 	}
 
 
@@ -269,7 +265,6 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 #endif //ENC_DEBUG
 
 D_END:
-	// free(inbuf);
 	return totol_len;
 }
 

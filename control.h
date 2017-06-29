@@ -37,11 +37,11 @@ struct event_base;
 enum msg_type;
 
 struct control {
-	struct event_base 	*connect_base;  //main netevent 
+	struct event_base 	*connect_base;  	//main netevent 
 	struct evdns_base  	*dnsbase;
-    struct bufferevent  *connect_bev;    //main io evet buf
+    struct bufferevent  *connect_bev;    	//main io evet buf
     char                session_id;
-    struct event		*ticker_ping;    //heartbeat timer
+    struct event		*ticker_ping;    	//heartbeat timer
 };
 
 void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
@@ -58,17 +58,17 @@ void login();
 void free_control();
 void sync_session_id(uint32_t sid);
 
-void 
-send_msg_frp_server(struct bufferevent *bev, 
+void send_msg_frp_server(struct bufferevent *bev, 
 					const enum msg_type type, 
 					const char *msg, 
 					const size_t msg_len, 
 					uint32_t sid);
+
 void control_process(struct proxy_client *client);
 void send_new_proxy(struct proxy_service *ps);
-// void send_proxy_request(struct proxy_service *ps);
 
-struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
+struct bufferevent 
+*connect_server(struct event_base *base, const char *name, const int port);
 
 void control_request_free(struct control_request *req);
 

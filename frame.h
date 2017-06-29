@@ -29,13 +29,6 @@ struct frame {
 	unsigned char *data;
 };
 
-// const (
-// 	sizeOfVer    = 1
-// 	sizeOfCmd    = 1
-// 	sizeOfLength = 2
-// 	sizeOfSid    = 4
-// 	headerSize   = sizeOfVer + sizeOfCmd + sizeOfSid + sizeOfLength
-// )
 struct frame *new_frame(char cmd, uint32_t sid);
 int get_header_size();
 struct frame *raw_frame(unsigned char *buf, const size_t buf_len);

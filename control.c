@@ -156,7 +156,7 @@ static void start_proxy_services()
 	debug(LOG_INFO, "Start xfrp proxy services ...");
 	
 	HASH_ITER(hh, all_ps, ps, tmp) {
-		debug(LOG_DEBUG, "==============================================");
+		debug(LOG_DEBUG, "==1==================ps->name= %s ============", ps->proxy_name);
 		if(ps == NULL) {
 			debug(LOG_ERR, "pc is null!");
 			return;
@@ -1036,6 +1036,10 @@ void start_login_frp_server(struct event_base *base)
 
 void send_new_proxy(struct proxy_service *ps)
 {
+	if (! ps) {
+		debug(LOG_ERR, "proxy service is invalid!");
+		return;
+	}
 	debug(LOG_DEBUG, "control proxy client: [%s]", ps->proxy_name);
 
 	char *new_proxy_msg = NULL;

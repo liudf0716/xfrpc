@@ -913,10 +913,9 @@ void login()
 	}
 	
 	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
-	free(lg_msg);
+	SAFE_FREE(lg_msg);
 }
 
-// TODO: NEED FREE frame
 void sync_session_id(uint32_t sid)
 {
 	struct frame *f = new_frame(cmdNOP, sid);
@@ -924,6 +923,7 @@ void sync_session_id(uint32_t sid)
 
 	size_t send_len = request(NULL, f);
 	debug(LOG_DEBUG, "sync session id %d, len %ld", sid, send_len);
+	SAFE_FREE(f);
 }
 
 void send_msg_frp_server(struct bufferevent *bev, 

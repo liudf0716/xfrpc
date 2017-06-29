@@ -451,11 +451,12 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 #endif // USEENCRYPTION
 
 			if ( ! is_logged) {
+				debug(LOG_ERR, "xfrp login failed, try again!");
 				login();
 				SAFE_FREE(lr);
 				return;
 			}
-			debug(LOG_INFO, "xfrp login succeed!");
+
 			SAFE_FREE(lr);
 			break;
 
@@ -465,8 +466,6 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 				start_proxy_services();
 				client_connected(1);
 				ping(bev);
-			} else {
-				debug(LOG_DEBUG, "clients have been connected.");
 			}
 
 			new_client_connect();
@@ -474,24 +473,30 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 
 		case TypeNewProxyResp:
 			break;
-			
+
 		case TypeStartWorkConn:
 			sr = start_work_conn_resp_unmarshal(msg->data_p); 
 			if (! sr) {
-				debug(LOG_ERR, "TypeStartWorkConn unmarshal failed, it should never be happend!");
+				debug(LOG_ERR, 
+					"TypeStartWorkConn unmarshal failed, it should never be happend!");
 				break;
 			}
 
 			struct proxy_service *ps = get_proxy_service(sr->proxy_name);
 			if (! ps) {
-				debug(LOG_ERR, "TypeStartWorkConn requested proxy service [%s] not found, it should nerver be happend!", sr->proxy_name);
+				debug(LOG_ERR, 
+					"TypeStartWorkConn requested proxy service [%s] not found, it should nerver be happend!", 
+					sr->proxy_name);
 				break;
 			}
 
 			client->ps = ps;
 			client->name = ps->proxy_name;
-			debug(LOG_INFO, "proxy service [%s] start work connection.", sr->proxy_name);
-			debug(LOG_DEBUG, "proxy service resource: [%s] [%s:%d]", ps->proxy_name, ps->local_ip, ps->local_port);
+			debug(LOG_INFO, 
+				"proxy service [%s] [%s:%d] start work connection.", 
+				sr->proxy_name, 
+				ps->local_ip, 
+				ps->local_port);
 
 			start_frp_tunnel(client);
 			set_client_work_start(client, 1);
@@ -502,6 +507,7 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 		default:
 			break;
 	}
+	SAFE_FREE(sr);
 }
 
 static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *client)

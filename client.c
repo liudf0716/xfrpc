@@ -193,13 +193,20 @@ void start_frp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
-	bufferevent_setcb(client->ctl_bev, xfrp_decrypt_cb, NULL, xfrp_event_cb, client->local_proxy_bev);
-	bufferevent_setcb(client->local_proxy_bev, xfrp_encrypt_cb, NULL, xfrp_event_cb, client->ctl_bev);
-	
+	bufferevent_setcb(client->ctl_bev, 
+						xfrp_decrypt_cb, 
+						NULL, 
+						xfrp_event_cb, 
+						client->local_proxy_bev);
+
+	bufferevent_setcb(client->local_proxy_bev, 
+						xfrp_encrypt_cb, 
+						NULL, 
+						xfrp_event_cb, 
+						client->ctl_bev);
+						
 	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
-
-	// send_msg_frp_server(TypeNewProxy, client, b_svr);
 }
 
 int send_client_data_tail(struct proxy_client *client)

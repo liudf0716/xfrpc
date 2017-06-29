@@ -14,8 +14,8 @@
 [4]: https://github.com/KunTengRom/xfrp/blob/master/LICENSE
 [5]: https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=plastic
 [6]: https://github.com/KunTengRom/xfrp/pulls
-[7]: https://img.shields.io/badge/FRP-Supported-blue.svg?style=plastic
-[8]: https://github.com/fatedier/frp
+[7]: https://img.shields.io/badge/XFRPS-Supported-blue.svg?style=plastic
+[8]: https://github.com/KunTengRom/xfrps
 [9]: https://img.shields.io/badge/Issues-welcome-brightgreen.svg?style=plastic
 [10]: https://github.com/KunTengRom/xfrp/issues/new
 [11]: https://img.shields.io/badge/Platform-%20OpenWRT%20%7CLEDE%20-brightgreen.svg?style=plastic

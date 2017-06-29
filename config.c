@@ -177,7 +177,8 @@ static struct proxy_service *new_proxy_service(const char *name)
 	return ps;
 }
 
-static int proxy_service_handler(void *user, const char *section, const char *nm, const char *value)
+static int 
+proxy_service_handler(void *user, const char *section, const char *nm, const char *value)
 {
  	struct proxy_service *ps = NULL;
 
@@ -189,7 +190,7 @@ static int proxy_service_handler(void *user, const char *section, const char *nm
 	{
 		ps = new_proxy_service(section);
 		assert(ps);
-		
+
 		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
 	} 
 	

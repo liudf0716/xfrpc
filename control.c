@@ -1056,7 +1056,7 @@ void send_new_proxy(struct proxy_service *ps)
 
 void init_main_control()
 {
-	if (main_ctl->connect_base)
+	if (main_ctl && main_ctl->connect_base)
 		event_base_loopbreak(main_ctl->connect_base);
 
 	main_ctl = calloc(sizeof(struct control), 1);

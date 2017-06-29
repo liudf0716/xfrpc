@@ -1089,11 +1089,13 @@ void init_main_control()
 	request_buf = calloc(1, len);
 	assert(request_buf);
 
-	uint32_t *sid = init_sid_index();
-	assert(sid);
-	main_ctl->session_id = *sid;
+	if (get_common_config()->tcp_mux) {
+		uint32_t *sid = init_sid_index();
+		assert(sid);
+		main_ctl->session_id = *sid;
 
-	debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
+		debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
+	}
 }
 
 void close_main_control()
@@ -1104,8 +1106,9 @@ void close_main_control()
 	evdns_base_free(main_ctl->dnsbase, 0);
 }
 
-void run_control() {
-	start_base_connect();	//with login
+void run_control() 
+{
+	start_base_connect();
 	keep_control_alive();
 }
 

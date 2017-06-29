@@ -156,6 +156,7 @@ static void start_proxy_services()
 	debug(LOG_INFO, "Start xfrp proxy services ...");
 	
 	HASH_ITER(hh, all_ps, ps, tmp) {
+		debug(LOG_DEBUG, "==============================================");
 		if(ps == NULL) {
 			debug(LOG_ERR, "pc is null!");
 			return;

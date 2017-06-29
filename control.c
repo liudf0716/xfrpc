@@ -288,6 +288,7 @@ static void base_control_ping(struct bufferevent *bev) {
 	assert(f);
 
 	request(bout, f);
+	free_frame(f);
 }
 
 static void ping(struct bufferevent *bev)
@@ -527,7 +528,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 {
 	struct bufferevent *bev = NULL;
 	if (client) {
-		debug(LOG_DEBUG, "client [name:%s] recved data", client->name);
+		debug(LOG_DEBUG, "client [name:%s] recved control data", client->name);
 		bev = client->ctl_bev;
 	}
 	unsigned char *ret_buf = NULL;
@@ -558,10 +559,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		debug(LOG_ERR, "raw_frame faild!");
 		goto DATA_H_END;
 	}
-
-	debug(LOG_DEBUG, 
-		"recv [%d] bits from frp server, frame: ver[%d], cmd[%d], len[%u], sid[%d]", 
-		len, f->ver, f->cmd, f->len, f->sid);
 
 #ifdef USEENCRYPTION
 	if (! is_decoder_inited() && f->len == get_block_size()) {
@@ -666,14 +663,15 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	SAFE_FREE(msg);
 
 DATA_H_END:
-	SAFE_FREE(f);
+	free_frame(f);
 
 	return len;
 }
 
-// ctx: if recv_cb was called by common control, ctx == NULL
-//		else ctx == client struct
-static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, size_t *ret_len, void *ctx)
+// ctx: if recv_cb was called by common control, ctx is NULL
+//		when ctx is not NULL it was called by client struct
+static unsigned char 
+*multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, size_t *ret_len, void *ctx)
 {
 	unsigned char *unraw_buf_p = NULL;
 	unsigned char *raw_buf = NULL;
@@ -687,7 +685,9 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 	if (ctx) {
 		struct proxy_client *client = (struct proxy_client *)ctx;
 		if (is_client_work_started(client)) {
-			debug(LOG_DEBUG, "client [%s] send all work data to proxy tunnel.", client->name);
+			debug(LOG_DEBUG, 
+				"client [%s] send all work data to proxy tunnel.", 
+				client->name);
 			return NULL;
 		}
 	}
@@ -740,7 +740,6 @@ static unsigned char *multy_recv_buffer_raw(unsigned char *buf, size_t buf_len, 
 				break;
 			}
 		}
-
 		break;
 	}
 
@@ -798,7 +797,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				snprintf(dbg_buf + 4*i, 5, "%3u ", (unsigned char)raw_buf_p[i]);
 			}
 			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", client ? "client":"control", dbg_buf);
-			free(dbg_buf);
+			SAFE_FREE(dbg_buf);
 #endif //CONN_DEBUG
 
 			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len, client);
@@ -808,14 +807,15 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 				is_client_work_started(client) && 
 				raw_buf_p && 
 				ret_len) {
-				debug(LOG_WARNING, "warning: data recved from frps is not split clear!");
+
+				debug(LOG_WARNING, "warning: data recved from frps is not split clear");
 				unsigned char *dtail = calloc(1, read_n);
 				assert(dtail);
 				memcpy(dtail, raw_buf_p, read_n);
 				client->data_tail = dtail;
 				client->data_tail_size = ret_len;
 				send_client_data_tail(client);
-				free(dtail);
+				SAFE_FREE(dtail);
 				client->data_tail = NULL;
 				client->data_tail_size = 0;
 			}
@@ -823,7 +823,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	} else {
 		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
 	}
-	free(buf);
+	SAFE_FREE(buf);
 
 	return;
 }

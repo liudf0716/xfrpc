@@ -33,5 +33,6 @@ void init_login();
 char *get_run_id();
 struct login *get_common_login_config();
 int is_logged();
+int login_resp_check(struct login_resp *lr);
 
 #endif //_LOGIN_H_

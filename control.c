@@ -419,32 +419,8 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
 }
 
-static int login_resp_check(struct login_resp *lr)
-{
-	struct login *cl = get_common_login_config();
-	debug(LOG_DEBUG, "xfrp login response: run_id: [%s], version: [%s], error: [%s]", 
-		lr->run_id, 
-		lr->version, 
-		lr->error);
-	
-	if (lr->run_id == NULL || strlen(lr->run_id) <= 1) {
-		if (lr->error && strlen(lr->error) > 0) {
-			debug(LOG_ERR, "login response error: %s", lr->error);
-		}
-		debug(LOG_ERR, "login falied!");
-		cl->logged = 0;
-	} else {
-		cl->logged = 1;
-		if (cl->run_id)
-			free(cl->run_id);
-
-		cl->run_id = strdup(lr->run_id);
-	}
-
-	return cl->logged;
-}
-
-static void raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *client)
+static void 
+raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *client)
 {
 	if (client) {
 		if (client->work_started) {
@@ -455,8 +431,11 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 	struct start_work_conn_resp *sr = NULL; //used in TypeStartWorkConn
 	switch(msg->type) {
 		case TypeLoginResp:
-			if (msg->data_p == NULL)
+			if (msg->data_p == NULL) {
+				debug(LOG_ERR, 
+					"recved TypeLoginResp but no data, it should be never happend!");
 				break;
+			}
 
 			struct login_resp *lr = login_resp_unmarshal(msg->data_p);
 			if (lr == NULL) {
@@ -473,10 +452,11 @@ static void raw_message(struct message *msg, struct bufferevent *bev, struct pro
 
 			if ( ! is_logged) {
 				login();
+				SAFE_FREE(lr);
 				return;
 			}
 			debug(LOG_INFO, "xfrp login succeed!");
-			free(lr);
+			SAFE_FREE(lr);
 			break;
 
 		case TypeReqWorkConn:
@@ -572,7 +552,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		if (f->cmd == 3) {
 			base_control_ping(bev);
 		}
-
 		goto DATA_H_END;
 	}
 

@@ -1042,15 +1042,15 @@ void send_new_proxy(struct proxy_service *ps)
 	}
 	debug(LOG_DEBUG, "control proxy client: [%s]", ps->proxy_name);
 
-	// char *new_proxy_msg = NULL;
-	// int len = new_proxy_service_marshal(ps, &new_proxy_msg);
-	// if ( ! new_proxy_msg) {
-	// 	debug(LOG_ERR, "proxy service request marshal failed");
-	// 	assert(new_proxy_msg);
-	// }
+	char *new_proxy_msg = NULL;
+	int len = new_proxy_service_marshal(ps, &new_proxy_msg);
+	if ( ! new_proxy_msg) {
+		debug(LOG_ERR, "proxy service request marshal failed");
+		return;
+	}
 
-	// send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
-	// SAFE_FREE(new_proxy_msg);
+	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
+	SAFE_FREE(new_proxy_msg);
 }
 
 void init_main_control()

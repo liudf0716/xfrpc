@@ -168,7 +168,7 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
 	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
 	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
-	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int64, np_req->remote_port);
+	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int, np_req->remote_port);
 
 	if (np_req->custom_domains) {
 		fill_custom_domains(j_np_req, np_req->custom_domains);

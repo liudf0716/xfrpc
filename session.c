@@ -2,10 +2,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <syslog.h>
 
 #include "uthash.h"
 #include "session.h"
 #include "version.h"
+#include "debug.h"
+#include "frame.h"
 
 uint32_t *sid_index = NULL;
 

@@ -56,6 +56,7 @@ void start_login_frp_server(struct event_base *base);
 void send_login_frp_server(struct bufferevent *bev);
 void login();
 void free_control();
+void sync_session_id(uint32_t sid);
 
 void 
 send_msg_frp_server(struct bufferevent *bev, 

@@ -886,10 +886,9 @@ void start_base_connect()
 	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
 }
 
-// TODO: NEED FREE IN FUNC
 void sync_iv(unsigned char *iv)
 {
-	struct frame *f = new_frame(cmdPSH, main_ctl->session_id); // frame_type not truely matter, it will reset by set_frame_cmd
+	struct frame *f = new_frame(cmdPSH, main_ctl->session_id);
 	assert(f);
 	f->len = (ushort) get_encrypt_block_size();
 	f->data = calloc(f->len, 1);
@@ -901,23 +900,23 @@ void sync_iv(unsigned char *iv)
 	}
 
 	request(bout, f);
+	SAFE_FREE(f->data);
+	free_frame(f);
 }
 
 void login()
 {
 	char *lg_msg = NULL;
 	int len = login_request_marshal(&lg_msg); //marshal login request
-	if ( ! lg_msg) {
+	if ( ! lg_msg || ! len) {
 		debug(LOG_ERR, "login_request_marshal failed");
 		assert(lg_msg);
 	}
 
-	struct common_conf *c = get_common_config();
-	if (c->tcp_mux) {
+	if (get_common_config()->tcp_mux) {
 		// using sid = 3 is only for matching fprs, it will change after using tcp-mux
 		sync_session_id(3); 
 	}
-	
 	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
 	SAFE_FREE(lg_msg);
 }

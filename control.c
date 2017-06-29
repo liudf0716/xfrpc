@@ -72,6 +72,13 @@ static int is_client_connected()
 	return clients_conn_signel;
 }
 
+static void init_request_buffer()
+{
+	size_t len = (1<<16) + get_header_size();
+	request_buf = calloc(1, len);
+	assert(request_buf);
+}
+
 static int client_connected(int is_connected)
 {
 	if (is_connected)
@@ -298,12 +305,13 @@ static void ping(struct bufferevent *bev)
 	}
 	
 	/* tcp-mux using frame */
-	// struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
-	// assert(f);
-	// request(bout, f);
-
+	if (get_common_config()->tcp_mux) {
+		struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
+		assert(f);
+		request(bout, f);
+	}
+	
 	uint32_t sid = get_main_control()->session_id;
-
 	char *ping_msg = "{}";
 	send_msg_frp_server(bev, TypePing, ping_msg, strlen(ping_msg), sid);
 }
@@ -1084,10 +1092,7 @@ void init_main_control()
 
 	main_ctl->connect_base = base;
 	main_ctl->dnsbase = dnsbase;
-
-	size_t len = (1<<16) + get_header_size();
-	request_buf = calloc(1, len);
-	assert(request_buf);
+	init_request_buffer();
 
 	if (get_common_config()->tcp_mux) {
 		uint32_t *sid = init_sid_index();

@@ -1045,7 +1045,7 @@ void send_new_proxy(struct proxy_service *ps)
 	}
 
 	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
-	free(new_proxy_msg);
+	SAFE_FREE(new_proxy_msg);
 }
 
 void init_main_control()

@@ -151,11 +151,15 @@ static void dump_all_ps()
 
 static struct proxy_service *new_proxy_service(const char *name)
 {
+	if (! name)
+		return NULL;
 	struct proxy_service *ps = calloc(sizeof(struct proxy_service), 1);
 	assert(ps);
 	assert(c_conf);
 
 	ps->proxy_name 			= strdup(name);
+	assert(ps->proxy_name);
+
 	ps->proxy_type 			= NULL;
 	ps->use_encryption 		= 0;
 	ps->local_port			= -1;
@@ -184,6 +188,8 @@ static int proxy_service_handler(void *user, const char *section, const char *nm
 	if (!ps) 
 	{
 		ps = new_proxy_service(section);
+		assert(ps);
+		
 		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
 	} 
 	

@@ -51,7 +51,6 @@ str_target?str_target:"\0"
 const char msg_typs[] = {TypeLogin, TypeLoginResp, TypeNewProxy, TypeNewProxyResp, 
 	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUdpPacket};
 
-// NEED FREE
 char *calc_md5(const char *data, int datalen)
 {
 	unsigned char digest[16] = {0};
@@ -130,6 +129,7 @@ size_t login_request_marshal(char **msg)
 	if (!lg)
 		return 0;
 	
+	SAFE_FREE(lg->privilege_key);
 	struct common_conf *cf = get_common_config();
 	char *auth_key = get_auth_key(cf->privilege_token, &lg->timestamp);
 	lg->privilege_key = strdup(auth_key);

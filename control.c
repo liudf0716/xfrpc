@@ -365,7 +365,8 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	assert(work_c);
 	work_c->run_id = get_run_id();
 	if (! work_c->run_id) {
-		debug(LOG_ERR, "login is not init the run ID!");
+		debug(LOG_ERR, "cannot found run ID, it should inited when login!");
+		SAFE_FREE(work_c);
 		return;
 	}
 	char *new_work_conn_request_message = NULL;
@@ -379,7 +380,8 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
 	request(bout, f);
 
-	free(f);
+	free_frame(f);
+	SAFE_FREE(work_c);
 }
 
 // connect to server

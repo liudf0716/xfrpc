@@ -1017,7 +1017,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	SAFE_FREE(req_msg.data_p);
 	SAFE_FREE(puck_buf);
 	f->data = NULL;
-	SAFE_FREE(f);
+	free_frame(f);
 }
 
 struct control *get_main_control() 

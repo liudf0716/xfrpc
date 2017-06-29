@@ -25,11 +25,9 @@
 
 ## What is xfrp and why start xfrp
 
-xfrp was [frp](https://github.com/fatedier/frp) client implemented by c for OpenWRT system
+xfrp was [xfrps](https://github.com/KunTengRom/xfrp) client implemented by c for OpenWRT system
 
-If you dont know what is frp, please visit [this](https://github.com/fatedier/frp)
-
-The motivation to start xfrp project is that we are OpenWRTer, and openwrt usually ran in wireless router which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrp project
+The motivation to start xfrp project is that we are OpenWRTer, and openwrt usually ran in device which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrp project
 
 ## Compile
 

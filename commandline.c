@@ -145,7 +145,10 @@ parse_commandline(int argc, char **argv)
 
         case 'c':
             if (optarg) {
-				confile = strdup(optarg);          
+				confile = strdup(optarg); //never free it
+                if (! confile)
+                    exit(0);
+
 				flag = 1;
             }
             break;

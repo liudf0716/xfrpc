@@ -99,8 +99,12 @@ static char *get_valid_type(const char *val)
 		return NULL;
 	
 	#define MATCH_VALUE(s) strcmp(val, s) == 0
-	if (MATCH_VALUE("tcp") || MATCH_VALUE("http") || MATCH_VALUE("https") || MATCH_VALUE("udp")) {
-		return strdup(val);
+	if (MATCH_VALUE("tcp") || 
+		MATCH_VALUE("http") || 
+		MATCH_VALUE("https") || 
+		MATCH_VALUE("udp")) { // will add ftp support in here 
+
+		return val;
 	}
 	
 	return NULL;
@@ -207,7 +211,11 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 	#define TO_BOOL(v) strcmp(value, "true") ? 0:1
 
 	if (MATCH_NAME("type")) {
-		ps->proxy_type = get_valid_type(value);
+		if (! get_valid_type(value)) {
+			debug(LOG_ERR, "proxy service type %s is not supportted", value);
+			exit(0);
+		}
+		ps->proxy_type = strdup(value);
 	} else if (MATCH_NAME("local_ip")) {
 		ps->local_ip = strdup(value);
 	} else if (MATCH_NAME("local_port")) {

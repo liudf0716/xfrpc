@@ -93,7 +93,7 @@ static int is_true(const char *val)
 	return 0;
 }
 
-static char *get_valid_type(const char *val)
+static const char *get_valid_type(const char *val)
 {
 	if (!val)
 		return NULL;
@@ -252,32 +252,36 @@ static int common_handler(void *user, const char *section, const char *name, con
 	
 	#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 	if (MATCH("common", "server_addr")) {
-		if (config->server_addr) free(config->server_addr);
+		SAFE_FREE(config->server_addr);
 		config->server_addr = strdup(value);
 	} else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
 	} else if (MATCH("common", "http_proxy")) {
+		SAFE_FREE(config->http_proxy);
 		config->http_proxy = strdup(value);
 	} else if (MATCH("common", "log_file")) {
-		if (config->log_file) free(config->log_file);
+		SAFE_FREE(config->log_file);
 		config->log_file = strdup(value);
 	} else if (MATCH("common", "log_way")) {
-		if (config->log_way) free(config->log_way);
+		SAFE_FREE(config->log_way);
 		config->log_way = strdup(value);
 	} else if (MATCH("common", "log_level")) {
-		if (config->log_level) free(config->log_level);
+		SAFE_FREE(config->log_level);
 		config->log_level = strdup(value);
 	} else if (MATCH("common", "log_max_days")) {
 		config->log_max_days = atoi(value);
 	} else if (MATCH("common", "privilege_token")) {
+		SAFE_FREE(config->privilege_token);
 		config->privilege_token = strdup(value);
 	} else if (MATCH("common", "heartbeat_interval")) {
 		config->heartbeat_interval = atoi(value);
 	} else if (MATCH("common", "heartbeat_timeout")) {
 		config->heartbeat_timeout = atoi(value);
 	} else if (MATCH("common", "auth_token")) {
+		SAFE_FREE(config->auth_token);
 		config->auth_token = strdup(value);
 	} else if (MATCH("common", "user")) {
+		SAFE_FREE(config->user);
 		config->user = strdup(value);
 	} else if (MATCH("common", "tcp_mux")) {
 		config->tcp_mux = 0;	// set tcp_mux to default: false

@@ -81,7 +81,7 @@ static void fill_custom_domains(struct json_object *j_ctl_req, const char *custo
 		json_object_array_add(jarray_cdomains, json_object_new_string(tok));
 		tok = end;
 	}
-	free(tmp);
+	SAFE_FREE(tmp);
 	
 	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
 }
@@ -152,7 +152,7 @@ size_t login_request_marshal(char **msg)
 		*msg = strdup(tmp);
 	}
 	json_object_put(j_login_req);
-	free(auth_key);
+	SAFE_FREE(auth_key);
 	return nret;
 }
 
@@ -310,9 +310,8 @@ void control_response_free(struct control_response *res)
 	if (!res)
 		return;
 	
-	if (res->msg) free(res->msg);
-	
-	free(res);
+	SAFE_FREE(res->msg);
+	SAFE_FREE(res);
 }
 
 int msg_type_valid_check(char msg_type)

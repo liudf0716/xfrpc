@@ -36,7 +36,6 @@ struct event_base;
 struct base_conf;
 struct bufferevent;
 struct event;
-struct new_proxy;
 struct proxy_service;
 
 struct proxy_client {
@@ -63,49 +62,11 @@ struct proxy_client {
 	
 	//provate arguments
 	UT_hash_handle hh;
-	struct new_proxy 		*n_proxy;
 	int						connected;
 	int 					work_started;
 	struct 	proxy_service 	*ps;
 	unsigned char			*data_tail; // storage untrated data
 	size_t					data_tail_size;
-};
-
-// When frpc login success, send this message to frps for running a new proxy.
-// type NewProxy struct {
-// 	ProxyName      string `json:"proxy_name"`
-// 	ProxyType      string `json:"proxy_type"`
-// 	UseEncryption  bool   `json:"use_encryption"`
-// 	UseCompression bool   `json:"use_compression"`
-
-// 	// tcp and udp only
-// 	RemotePort int64 `json:"remote_port"`
-
-// 	// http and https only
-// 	CustomDomains     []string `json:"custom_domains"`
-// 	SubDomain         string   `json:"subdomain"`
-// 	Locations         []string `json:"locations"`
-// 	HostHeaderRewrite string   `json:"host_header_rewrite"`
-// 	HttpUser          string   `json:"http_user"`
-// 	HttpPwd           string   `json:"http_pwd"`
-// }
-
-struct new_proxy {
-	char 	*proxy_name;
-	char 	*proxy_type;
-	int 	use_encryption;
-	int	use_compression;
-
-	// tcp and udp only
-	int64_t	remote_port;
-
-	// http and https only
-	char 	*custom_domains;
-	char 	*subdomain;
-	char	*locations;
-	char	*host_header_rewrite;
-	char	*http_user;
-	char	*http_pwd;
 };
 
 struct proxy_service {
@@ -125,7 +86,6 @@ struct proxy_service {
 	char	*host_header_rewrite;
 	char	*http_user;
 	char	*http_pwd;
-
 
 	//provate arguments
 	UT_hash_handle hh;

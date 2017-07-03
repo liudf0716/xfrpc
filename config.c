@@ -178,16 +178,25 @@ static struct proxy_service *new_proxy_service(const char *name)
 }
 
 static int 
-proxy_service_handler(void *user, const char *section, const char *nm, const char *value)
+proxy_service_handler(void *user, const char *sect, const char *nm, const char *value)
 {
  	struct proxy_service *ps = NULL;
 
+	char *section = NULL;
+
+	if (strlen(sect) == 25) {//fix proxy name length = 25 bug, not find the reason
+		section = calloc(1, 26);
+		memset(section, '_', 26);
+		memcpy(section, sect, 25);
+	} else {
+		section = strdup(sect);
+	}
+
 	if (strcmp(section, "common") == 0)
 		return 0;
-	
+
 	HASH_FIND_STR(p_services, section, ps);
-	if (!ps) 
-	{
+	if (!ps) {
 		ps = new_proxy_service(section);
 		assert(ps);
 
@@ -225,6 +234,7 @@ proxy_service_handler(void *user, const char *section, const char *nm, const cha
 		ps->use_compression = TO_BOOL(value);
 	}
 	
+	free(section);
 	return 1;
 }
 

@@ -156,7 +156,6 @@ static void start_proxy_services()
 	debug(LOG_INFO, "Start xfrp proxy services ...");
 	
 	HASH_ITER(hh, all_ps, ps, tmp) {
-		debug(LOG_DEBUG, "==1==================ps->name= %s ============", ps->proxy_name);
 		if(ps == NULL) {
 			debug(LOG_ERR, "proxy service is invalid!");
 			return;

@@ -336,8 +336,6 @@ struct message *unpack(unsigned char *recv_msg, const ushort len)
 		return NULL;
 	}
 
-	debug(LOG_DEBUG, "unpacked message type: %c", msg->type);
-
 	msg_size_t  data_len_bigend;
 	data_len_bigend = *(msg_size_t *)(recv_msg + MSG_LEN_I);
 	msg->data_len = msg_ntoh(data_len_bigend);

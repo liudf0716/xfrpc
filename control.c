@@ -115,14 +115,14 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 			bufferevent_free(client->ctl_bev);
 			client->ctl_bev = NULL;
 		}
-		debug(LOG_ERR, "Proxy [%s]: connect server [%s:%d] error", client->name, c_conf->server_addr, c_conf->server_port);
+		debug(LOG_ERR, "Proxy connect server [%s:%d] error", c_conf->server_addr, c_conf->server_port);
 		bufferevent_free(bev);
 		free_proxy_client(client);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		sync_new_work_connection(bev);
-		debug(LOG_INFO, "new proxy connected");
+		debug(LOG_INFO, "proxy service connected");
 	}
 }
 
@@ -139,7 +139,7 @@ static void new_client_connect()
 		return;
 	}
 
-	debug(LOG_INFO, "Proxy [%s]: connect server [%s:%d] ......", client->name, c_conf->server_addr, c_conf->server_port);
+	debug(LOG_INFO, "work connection: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
 
 	client->ctl_bev = bev;
 	bufferevent_enable(bev, EV_WRITE);
@@ -375,7 +375,6 @@ static void sync_new_work_connection(struct bufferevent *bev)
 		debug(LOG_ERR, "new work connection request run_id marshal failed!");
 		return;
 	}
-	debug(LOG_DEBUG, "marshal new work connection:%s", new_work_conn_request_message);
 
 	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, f->sid);
 	request(bout, f);
@@ -463,7 +462,6 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 
 		case TypeReqWorkConn:
 			if (! is_client_connected()) {
-				debug(LOG_DEBUG, "recv the client work connect start request ...");
 				start_proxy_services();
 				client_connected(1);
 				ping(bev);
@@ -635,7 +633,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 				debug(LOG_ERR, "message received format invalid");
 				goto DATA_H_END;
 			}
-			debug(LOG_DEBUG, "recv <---- %s" ,msg->data_p);
+			debug(LOG_DEBUG, "recv <---- %c: %s", msg->type, msg->data_p);
 
 			if (msg->data_p == NULL)
 				goto DATA_H_END;
@@ -687,7 +685,6 @@ static unsigned char
 					msg_size_t  data_len_bigend;
 					data_len_bigend = *(msg_size_t *)(buf + MSG_LEN_I);
 					msg_size_t data_len = msg_ntoh(data_len_bigend);
-					debug(LOG_DEBUG, "raw data len = %u", data_len);
 
 					split_len = raw_static_size + data_len;
 					splited = 1;
@@ -713,7 +710,6 @@ static unsigned char
 				char msg_type = buf[0];
 				int type_valid = msg_type_valid_check(msg_type);
 				if (type_valid) {
-					debug(LOG_DEBUG, "buffer raw type [%c]", msg_type);
 					msg_size_t  data_len_bigend;
 					data_len_bigend = *(msg_size_t *)(buf + MSG_LEN_I);
 					msg_size_t data_len = msg_ntoh(data_len_bigend);
@@ -933,7 +929,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	if ( ! bout) {
 		return;
 	}
-	debug(LOG_DEBUG, "send message to frps ... [type: %c %s]", type, msg);
+	debug(LOG_DEBUG, "send ----> [%c: %s]", type, msg);
 
 	struct message req_msg;
 	req_msg.data_p = NULL;

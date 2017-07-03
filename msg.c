@@ -231,22 +231,20 @@ struct login_resp *login_resp_unmarshal(const char *jres)
 		goto END_ERROR;
 	}
 
-	struct json_object *l_version = json_object_object_get(j_lg_res, "version");
-	if (is_error(l_version)) {
+	struct json_object *l_version = NULL;
+	if (! json_object_object_get_ex(j_lg_res, "version", &l_version))
 		goto END_ERROR;
-	}
 	lr->version = strdup(json_object_get_string(l_version));
-	
-	struct json_object *l_run_id = json_object_object_get(j_lg_res, "run_id");
-	if (is_error(l_run_id)) {
+
+	struct json_object *l_run_id = NULL;
+	if (! json_object_object_get_ex(j_lg_res, "run_id", &l_run_id))
 		goto END_ERROR;
-	}
 	lr->run_id = strdup(json_object_get_string(l_run_id));
 
-	struct json_object *l_error = json_object_object_get(j_lg_res, "error");
-	if (is_error(l_error)) {
+
+	struct json_object *l_error = NULL;
+	if(! json_object_object_get_ex(j_lg_res, "error", &l_error))
 		goto END_ERROR;
-	}
 	lr->error = strdup(json_object_get_string(l_error));
 
 END_ERROR:
@@ -264,10 +262,9 @@ struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg
 	if (! sr) 
 		goto START_W_C_R_END;
 
-	struct json_object *pn = json_object_object_get(j_start_w_res, "proxy_name");
-	if (is_error(pn))
+	struct json_object *pn = NULL;
+	if(! json_object_object_get_ex(j_start_w_res, "proxy_name", &pn))
 		goto START_W_C_R_END;
-		
 	sr->proxy_name = strdup(json_object_get_string(pn));
 
 START_W_C_R_END:
@@ -285,19 +282,18 @@ struct control_response *control_response_unmarshal(const char *jres)
 		goto END_ERROR;
 	}
 	
-	struct json_object *jtype = json_object_object_get(j_ctl_res, "type");
-	if (jtype == NULL) {
+	struct json_object *jtype = NULL;
+	if(! json_object_object_get_ex(j_ctl_res, "type", &jtype))
 		goto END_ERROR;
-	}
 	ctl_res->type = json_object_get_int(jtype);
 	
-	struct json_object *jcode = json_object_object_get(j_ctl_res, "code");
-	if (jcode == NULL)
+	struct json_object *jcode = NULL;
+	if(! json_object_object_get_ex(j_ctl_res, "code", &jcode))
 		goto END_ERROR;
 	ctl_res->code = json_object_get_int(jcode);
 	
-	struct json_object *jmsg = json_object_object_get(j_ctl_res, "msg");
-	if (jmsg)
+	struct json_object *jmsg = NULL;
+	if(json_object_object_get_ex(j_ctl_res, "msg", &jmsg))
 		ctl_res->msg = strdup(json_object_get_string(jmsg));
 	
 END_ERROR:

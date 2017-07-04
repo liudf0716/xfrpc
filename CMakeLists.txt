@@ -34,7 +34,7 @@ set(test_libs
 	event
 	)
 
-ADD_DEFINITIONS(-Wall -g  --std=gnu99 -Wmissing-declarations)
+ADD_DEFINITIONS(-Wall -g  --std=gnu99)
 
 add_executable(xfrp_client ${src_xfrp_client})
 target_link_libraries(xfrp_client ${libs})

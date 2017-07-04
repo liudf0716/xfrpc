@@ -987,19 +987,23 @@ void send_msg_frp_server(struct bufferevent *bev,
 		f->data = puck_buf;
 	}
 	
-	switch (type)
-	{
-	case TypeLogin:
-	case TypePong:
-	case TypePing:
-	case TypeNewProxy:
+	if (get_common_config()->tcp_mux) {
+		switch (type)
+		{
+		case TypeLogin:
+		case TypePong:
+		case TypePing:
+		case TypeNewProxy:
+			frame_type = cmdPSH;
+			break;
+
+		default:
+			break;
+		}
+	} else {
 		frame_type = cmdPSH;
-		break;
-
-	default:
-		break;
 	}
-
+	
 	set_frame_cmd(f, frame_type);
 	request(bout, f);
 

@@ -102,7 +102,8 @@ static const char *get_valid_type(const char *val)
 	if (MATCH_VALUE("tcp") || 
 		MATCH_VALUE("http") || 
 		MATCH_VALUE("https") || 
-		MATCH_VALUE("udp")) { // will add ftp support in here 
+		MATCH_VALUE("udp") || 
+		MATCH_VALUE("ftp") ) { 
 
 		return val;
 	}

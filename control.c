@@ -804,7 +804,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		start_base_connect();
 		close_main_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
-		// recv frpc login-response message before recv othfer fprs messages, 
+		// recv login-response message before recving othfer fprs messages, 
 		bufferevent_setcb(bev, recv_cb, NULL, connect_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);
 		
@@ -983,8 +983,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	request(bout, f);
 
 	SAFE_FREE(req_msg.data_p);
-	SAFE_FREE(puck_buf);
-	f->data = NULL;
+	SAFE_FREE(f->data);
 	free_frame(f);
 }
 

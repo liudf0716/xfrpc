@@ -34,7 +34,7 @@ struct frame *raw_frame(unsigned char *buf, const size_t buf_len)
 	}
 	char ver = buf[VERI];
 	char cmd = buf[CMDI];
-	uint32_t sid = *(uint32_t *)(buf + SIDI);
+	uint32_t sid = htonl(*(uint32_t *)(buf + SIDI));
 
 	struct frame *f = new_frame(cmd, sid);
 	f->ver = ver;

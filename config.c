@@ -188,14 +188,8 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
  	struct proxy_service *ps = NULL;
 
 	char *section = NULL;
-
-	if (strlen(sect) == 25) {//fix proxy name length = 25 bug, not find the reason
-		section = calloc(1, 26);
-		memset(section, '_', 26);
-		memcpy(section, sect, 25);
-	} else {
-		section = strdup(sect);
-	}
+	section = strdup(sect);
+	assert(section);
 
 	if (strcmp(section, "common") == 0)
 		return 0;
@@ -243,7 +237,7 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		ps->use_compression = TO_BOOL(value);
 	}
 	
-	free(section);
+	SAFE_FREE(section);
 	return 1;
 }
 

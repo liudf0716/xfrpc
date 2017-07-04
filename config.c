@@ -302,8 +302,8 @@ static void init_common_conf(struct common_conf *config)
 	config->log_way				= strdup("console");
 	config->log_level			= strdup("info");
 	config->log_max_days		= 3;
-	config->heartbeat_interval 	= 10;
-	config->heartbeat_timeout	= 30;
+	config->heartbeat_interval 	= 30;
+	config->heartbeat_timeout	= 60;
 	config->tcp_mux				= 0;
 	config->user				= NULL;
 }

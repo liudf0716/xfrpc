@@ -199,20 +199,6 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 		goto REQ_END;
 	}
 
-// #define DEV_DEBUG 1
-#ifdef DEV_DEBUG
-	/* debug showing */
-	debug(LOG_DEBUG, "send request byte:");
-	unsigned int i = 0;
-	if (f->len) {
-		printf("[");
-		for(i = 0; i<f->len; i++) {
-			printf("%u ", f->data[i]);
-		}
-		printf("]\n");
-	}
-#endif // DEV_DEBUG
-
 	struct common_conf *c = get_common_config();
 	if ( ! c)
 		goto REQ_END;
@@ -911,31 +897,22 @@ void send_msg_frp_server(struct bufferevent *bev,
 	req_msg.type = type;
 	req_msg.data_len = msg_len;
 
+	char frame_type = 0;
+	struct frame *f = NULL;
+	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
+	assert(f);
+
 	if (msg) {
 		req_msg.data_p = strdup(msg);
+		assert(req_msg.data_p);
 	}
 
 	unsigned char *puck_buf = NULL;
 	size_t pack_buf_len = pack(&req_msg, &puck_buf);
 	if ( ! pack_buf_len || ! puck_buf) {
-		debug(LOG_ERR, "login buffer pack failed!");
-		return;
+		debug(LOG_ERR, "send buffer pack failed!");
+		goto S_M_F_END;
 	}
-	
-// #define SEND_MSG_DEBUG 1
-#ifdef SEND_MSG_DEBUG
-	debug(LOG_DEBUG, "puck result:");
-	size_t j = 0;
-	for(j=0; j<pack_buf_len; j++) {
-		printf("%d ", (unsigned char)puck_buf[j]);
-	}
-	printf("\n\n");
-#endif	// SEND_MSG_DEBUG
-
-	char frame_type = 0;
-	struct frame *f = NULL;
-	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
-	assert(f);
 
 #ifdef ENCRYPTO
 	debug(LOG_DEBUG, "start encode message ...");
@@ -982,6 +959,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	set_frame_cmd(f, frame_type);
 	request(bout, f);
 
+S_M_F_END:
 	SAFE_FREE(req_msg.data_p);
 	SAFE_FREE(f->data);
 	free_frame(f);

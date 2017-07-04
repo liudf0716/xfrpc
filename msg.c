@@ -75,6 +75,7 @@ static void fill_custom_domains(struct json_object *j_ctl_req, const char *custo
 	struct json_object *jarray_cdomains = json_object_new_array();
 	assert(jarray_cdomains);
 	char *tmp = strdup(custom_domains);
+	assert(tmp);
 	char *tok = tmp, *end = tmp;
 	while (tok != NULL) {
 		strsep(&end, ",");
@@ -133,6 +134,7 @@ size_t login_request_marshal(char **msg)
 	struct common_conf *cf = get_common_config();
 	char *auth_key = get_auth_key(cf->privilege_token, &lg->timestamp);
 	lg->privilege_key = strdup(auth_key);
+	assert(lg->privilege_key);
 	
 	JSON_MARSHAL_TYPE(j_login_req, "version", string, lg->version);
 	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, SAFE_JSON_STRING(lg->hostname));
@@ -150,6 +152,7 @@ size_t login_request_marshal(char **msg)
 	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp);
 		*msg = strdup(tmp);
+		assert(*msg);
 	}
 	json_object_put(j_login_req);
 	SAFE_FREE(auth_key);
@@ -193,6 +196,7 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp);
 		*msg = strdup(tmp);
+		assert(*msg);
 	}
 	json_object_put(j_np_req);
 
@@ -212,6 +216,7 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp);
 		*msg = strdup(tmp);
+		assert(*msg);
 	}
 
 	json_object_put(j_new_work_conn);
@@ -227,25 +232,25 @@ struct login_resp *login_resp_unmarshal(const char *jres)
 		return NULL;
 	
 	struct login_resp *lr = calloc(1, sizeof(struct login_resp));
-	if (lr == NULL) {
-		goto END_ERROR;
-	}
+	assert(lr);
 
 	struct json_object *l_version = NULL;
 	if (! json_object_object_get_ex(j_lg_res, "version", &l_version))
 		goto END_ERROR;
 	lr->version = strdup(json_object_get_string(l_version));
+	assert(lr->version);
 
 	struct json_object *l_run_id = NULL;
 	if (! json_object_object_get_ex(j_lg_res, "run_id", &l_run_id))
 		goto END_ERROR;
 	lr->run_id = strdup(json_object_get_string(l_run_id));
-
+	assert(lr->run_id);
 
 	struct json_object *l_error = NULL;
 	if(! json_object_object_get_ex(j_lg_res, "error", &l_error))
 		goto END_ERROR;
 	lr->error = strdup(json_object_get_string(l_error));
+	assert(lr->error);
 
 END_ERROR:
 	json_object_put(j_lg_res);
@@ -259,13 +264,14 @@ struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg
 		return NULL;
 
 	struct start_work_conn_resp *sr = calloc(1, sizeof(struct start_work_conn_resp));
-	if (! sr) 
-		goto START_W_C_R_END;
+	assert(sr);
 
 	struct json_object *pn = NULL;
 	if(! json_object_object_get_ex(j_start_w_res, "proxy_name", &pn))
 		goto START_W_C_R_END;
+
 	sr->proxy_name = strdup(json_object_get_string(pn));
+	assert(sr->proxy_name);
 
 START_W_C_R_END:
 	json_object_put(j_start_w_res);
@@ -278,9 +284,7 @@ struct control_response *control_response_unmarshal(const char *jres)
 	if (is_error(j_ctl_res))
 		return NULL;
 	struct control_response *ctl_res = calloc(sizeof(struct control_response), 1);
-	if (ctl_res == NULL) {
-		goto END_ERROR;
-	}
+	assert(ctl_res);
 	
 	struct json_object *jtype = NULL;
 	if(! json_object_object_get_ex(j_ctl_res, "type", &jtype))
@@ -293,9 +297,11 @@ struct control_response *control_response_unmarshal(const char *jres)
 	ctl_res->code = json_object_get_int(jcode);
 	
 	struct json_object *jmsg = NULL;
-	if(json_object_object_get_ex(j_ctl_res, "msg", &jmsg))
+	if(json_object_object_get_ex(j_ctl_res, "msg", &jmsg)) {
 		ctl_res->msg = strdup(json_object_get_string(jmsg));
-	
+		assert(ctl_res->msg);
+	}
+
 END_ERROR:
 	json_object_put(j_ctl_res);
 	return ctl_res;
@@ -357,13 +363,9 @@ size_t pack(struct message *req_msg, unsigned char **ret_buf)
 	else 
 		data_len_bigend = req_msg->data_len;
 
-	
 	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len;
 	*ret_buf = calloc(1, buf_len);
-
-	if (*ret_buf == NULL) {
-		return 0;
-	}
+	assert(*ret_buf);
 
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
 	*(msg_size_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;

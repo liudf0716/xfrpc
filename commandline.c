@@ -30,6 +30,7 @@
 #include <string.h>
 #include <signal.h>
 #include <syslog.h>
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -146,8 +147,7 @@ parse_commandline(int argc, char **argv)
         case 'c':
             if (optarg) {
 				confile = strdup(optarg); //never free it
-                if (! confile)
-                    exit(0);
+                assert(confile);
 
 				flag = 1;
             }

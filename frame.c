@@ -20,6 +20,7 @@ struct frame *new_frame(char cmd, uint32_t sid) {
 		f->cmd = cmd;
 		f->sid = sid;
 		f->len = 0;
+		f->data = NULL;
 	}
 
 	return f;

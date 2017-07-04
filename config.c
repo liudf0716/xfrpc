@@ -134,6 +134,7 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 
 	if (NULL == ps->proxy_type) {
 		ps->proxy_type = strdup("tcp");
+		assert(ps->proxy_type);
 	}
 
 	debug(LOG_DEBUG, 
@@ -218,8 +219,10 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 			exit(0);
 		}
 		ps->proxy_type = strdup(value);
+		assert(ps->proxy_type);
 	} else if (MATCH_NAME("local_ip")) {
 		ps->local_ip = strdup(value);
+		assert(ps->local_ip);
 	} else if (MATCH_NAME("local_port")) {
 		ps->local_port = atoi(value);
 	} else if (MATCH_NAME("use_encryption")) {
@@ -228,16 +231,22 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		ps->remote_port = atoi(value);
 	} else if (MATCH_NAME("http_user")) {
 		ps->http_user = strdup(value);
+		assert(ps->http_user);
 	} else if (MATCH_NAME("http_pwd")) {
 		ps->http_pwd = strdup(value);
+		assert(ps->http_pwd);
 	} else if (MATCH_NAME("subdomain")) {
-		ps->subdomain= strdup(value);
+		ps->subdomain = strdup(value);
+		assert(ps->http_pwd);
 	} else if (MATCH_NAME("custom_domains")) {
-		ps->custom_domains= strdup(value);
+		ps->custom_domains = strdup(value);
+		assert(ps->custom_domains);
 	} else if (MATCH_NAME("locations")) {
-		ps->locations= strdup(value);
+		ps->locations = strdup(value);
+		assert(ps->locations);
 	} else if (MATCH_NAME("host_header_rewrite")) {
-		ps->host_header_rewrite= strdup(value);
+		ps->host_header_rewrite = strdup(value);
+		assert(ps->host_header_rewrite);
 	} else if (MATCH_NAME("use_encryption")) {
 		ps->use_encryption = TO_BOOL(value);
 	} else if (MATCH_NAME("use_compression")) {
@@ -256,25 +265,31 @@ static int common_handler(void *user, const char *section, const char *name, con
 	if (MATCH("common", "server_addr")) {
 		SAFE_FREE(config->server_addr);
 		config->server_addr = strdup(value);
+		assert(config->server_addr);
 	} else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
 	} else if (MATCH("common", "http_proxy")) {
 		SAFE_FREE(config->http_proxy);
 		config->http_proxy = strdup(value);
+		assert(config->http_proxy);
 	} else if (MATCH("common", "log_file")) {
 		SAFE_FREE(config->log_file);
 		config->log_file = strdup(value);
+		assert(config->log_file);
 	} else if (MATCH("common", "log_way")) {
 		SAFE_FREE(config->log_way);
 		config->log_way = strdup(value);
+		assert(config->log_way);
 	} else if (MATCH("common", "log_level")) {
 		SAFE_FREE(config->log_level);
 		config->log_level = strdup(value);
+		assert(config->log_level);
 	} else if (MATCH("common", "log_max_days")) {
 		config->log_max_days = atoi(value);
 	} else if (MATCH("common", "privilege_token")) {
 		SAFE_FREE(config->privilege_token);
 		config->privilege_token = strdup(value);
+		assert(config->privilege_token);
 	} else if (MATCH("common", "heartbeat_interval")) {
 		config->heartbeat_interval = atoi(value);
 	} else if (MATCH("common", "heartbeat_timeout")) {
@@ -282,9 +297,11 @@ static int common_handler(void *user, const char *section, const char *name, con
 	} else if (MATCH("common", "auth_token")) {
 		SAFE_FREE(config->auth_token);
 		config->auth_token = strdup(value);
+		assert(config->auth_token);
 	} else if (MATCH("common", "user")) {
 		SAFE_FREE(config->user);
 		config->user = strdup(value);
+		assert(config->user);
 	} else if (MATCH("common", "tcp_mux")) {
 		config->tcp_mux = 0;	// set tcp_mux to default: false
 	}
@@ -297,10 +314,14 @@ static void init_common_conf(struct common_conf *config)
 		return;
 	
 	config->server_addr			= strdup("0.0.0.0");
+	assert(config->server_addr);
 	config->server_port			= 7000;
 	config->log_file			= strdup("console");
+	assert(config->log_file);
 	config->log_way				= strdup("console");
+	assert(config->log_way);
 	config->log_level			= strdup("info");
+	assert(config->log_level);
 	config->log_max_days		= 3;
 	config->heartbeat_interval 	= 30;
 	config->heartbeat_timeout	= 60;

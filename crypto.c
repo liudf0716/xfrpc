@@ -31,8 +31,10 @@ struct frp_coder *new_coder(const char *privilege_token, const char *salt)
 	assert(enc);
 
 	enc->privilege_token = privilege_token ? strdup(privilege_token):"\0";
+	assert(enc->privilege_token);
 	enc->key_len = block_size;
 	enc->salt = strdup(salt);
+	assert(enc->salt);
 	enc->key = encrypt_key(enc->privilege_token, strlen(enc->privilege_token), enc->salt);
 	enc->iv = calloc(block_size, 1);
 	encrypt_iv(enc->iv, block_size);

@@ -37,6 +37,7 @@ void init_login()
 {
 	if (! c_login) 
 		c_login = calloc(sizeof(struct login), 1);
+		
 	assert(c_login);
 
 	struct common_conf *c_conf = get_common_config();
@@ -48,9 +49,12 @@ void init_login()
 	}
 
 	c_login->version 		= strdup(PROTOCOL_VERESION);
+	assert(c_login->version);
 	c_login->hostname 		= NULL;
-	c_login->os 				= strdup(uname_buf.sysname);
+	c_login->os 			= strdup(uname_buf.sysname);
+	assert(c_login->os);
 	c_login->arch 			= strdup(uname_buf.machine);
+	assert(c_login->arch);
 	c_login->user 			= NULL;
 
 	c_login->timestamp 		= 0;
@@ -78,6 +82,7 @@ int login_resp_check(struct login_resp *lr)
 		SAFE_FREE(c_login->run_id);
 
 		c_login->run_id = strdup(lr->run_id);
+		assert(c_login->run_id);
 	}
 
 	return c_login->logged;

@@ -158,6 +158,7 @@ static struct proxy_service *new_proxy_service(const char *name)
 {
 	if (! name)
 		return NULL;
+
 	struct proxy_service *ps = calloc(sizeof(struct proxy_service), 1);
 	assert(ps);
 	assert(c_conf);
@@ -191,13 +192,18 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 	section = strdup(sect);
 	assert(section);
 
-	if (strcmp(section, "common") == 0)
+	if (strcmp(section, "common") == 0) {
+		SAFE_FREE(section);
 		return 0;
+	}
 
 	HASH_FIND_STR(p_services, section, ps);
 	if (!ps) {
 		ps = new_proxy_service(section);
-		assert(ps);
+		if (! ps) {
+			debug(LOG_ERR, "cannot create proxy service, it should not happenned!");
+			exit(0);
+		}
 
 		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
 	} 
@@ -208,6 +214,7 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 	if (MATCH_NAME("type")) {
 		if (! get_valid_type(value)) {
 			debug(LOG_ERR, "proxy service type %s is not supportted", value);
+			SAFE_FREE(section);
 			exit(0);
 		}
 		ps->proxy_type = strdup(value);
@@ -236,7 +243,7 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 	} else if (MATCH_NAME("use_compression")) {
 		ps->use_compression = TO_BOOL(value);
 	}
-	
+
 	SAFE_FREE(section);
 	return 1;
 }

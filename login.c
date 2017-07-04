@@ -64,11 +64,6 @@ void init_login()
 
 int login_resp_check(struct login_resp *lr)
 {
-	debug(LOG_DEBUG, "xfrp login response: run_id: [%s], version: [%s], error: [%s]", 
-		lr->run_id, 
-		lr->version, 
-		lr->error);
-	
 	if (lr->run_id == NULL || strlen(lr->run_id) <= 1) {
 		if (lr->error && strlen(lr->error) > 0) {
 			debug(LOG_ERR, "login response error: %s", lr->error);
@@ -77,6 +72,9 @@ int login_resp_check(struct login_resp *lr)
 		c_login->logged = 0;
 	} else {
 		c_login->logged = 1;
+		debug(LOG_DEBUG, "xfrp login response: run_id: [%s], version: [%s]", 
+			lr->run_id, 
+			lr->version);
 		SAFE_FREE(c_login->run_id);
 
 		c_login->run_id = strdup(lr->run_id);

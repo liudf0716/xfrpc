@@ -359,7 +359,7 @@ size_t pack(struct message *req_msg, unsigned char **ret_buf)
 
 	
 	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len;
-	*ret_buf = calloc(buf_len, 1);
+	*ret_buf = calloc(1, buf_len);
 
 	if (*ret_buf == NULL) {
 		return 0;
@@ -367,10 +367,7 @@ size_t pack(struct message *req_msg, unsigned char **ret_buf)
 
 	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
 	*(msg_size_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
-	snprintf((char *)*ret_buf + TYPE_LEN + sizeof(data_len_bigend), 
-				req_msg->data_len + 1, 
-				"%s", 
-				req_msg->data_p);
+	memcpy((char *)*ret_buf+TYPE_LEN+sizeof(data_len_bigend), req_msg->data_p, req_msg->data_len);
 
 	return buf_len;
 }

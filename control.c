@@ -35,7 +35,6 @@
 
 #include <json-c/json.h>
 #include <syslog.h>
-#include <pthread.h>
 
 #include <event2/bufferevent.h>
 #include <event2/buffer.h>
@@ -218,32 +217,11 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 	if ( ! c)
 		goto REQ_END;
 
-	int headersize = get_header_size();
-	size_t len = (1<<16) + headersize;
-
-	memset(request_buf, 0, len);
-	if (c->tcp_mux) {
-		request_buf[VERI] = f->ver;
-		request_buf[CMDI] = f->cmd;
-		*((ushort *)(request_buf + 2)) = f->len;
-		*((uint32_t *)(request_buf + 4)) = f->sid;
-
-		// 	insert data to request buffer
-		if (f->data != NULL && f->len > 0) { //TODO: ENCODE when control
-			memcpy(request_buf + DATAI, f->data, f->len);
-		}
-		write_len = (size_t) (headersize + f->len);
-
-	} else {
-		memcpy(request_buf, f->data, f->len);
-		write_len = (size_t)f->len;
-	}
-
+	write_len = (size_t)f->len;
 	if ( 0 == write_len)
 		goto REQ_END;;
 
-	bufferevent_write(bout, request_buf, write_len);
-	memset(request_buf, 0, len);
+	bufferevent_write(bout, f->data, write_len);
 
 REQ_END:
 	return write_len;
@@ -680,8 +658,6 @@ static unsigned char
 		if (buf_len > split_lv) {
 			if (! is_logged()) {
 				if (buf[0] == 49) {
-					debug(LOG_DEBUG, "mulity raw login-response...");
-
 					msg_size_t  data_len_bigend;
 					data_len_bigend = *(msg_size_t *)(buf + MSG_LEN_I);
 					msg_size_t data_len = msg_ntoh(data_len_bigend);
@@ -769,7 +745,6 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	if (read_n) {
 		unsigned char *raw_buf_p = buf;
 		for( ; raw_buf_p && read_n ; ) {
-
 // #define CONN_DEBUG 1
 #ifdef CONN_DEBUG
 			unsigned int i = 0;

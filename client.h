@@ -50,15 +50,10 @@ struct proxy_client {
 	char 	*type;
 	int		local_port;
 	int		remote_port;
-	int 	use_encryption;
-	int		use_compression;
 	
-	char 	*custom_domains;
 	char 	*subdomain;
 	char	*locations;
 	char	*host_header_rewrite;
-	char	*http_user;
-	char	*http_pwd;
 	
 	//provate arguments
 	UT_hash_handle hh;

@@ -223,7 +223,6 @@ void free_proxy_client(struct proxy_client *client)
 {
 	if (client->name) free(client->name);
 	if (client->local_ip) free(client->local_ip);
-	if (client->custom_domains) free(client->custom_domains);
 	if (client->locations) free(client->locations);
 	
 	free_base_config(client->bconf);

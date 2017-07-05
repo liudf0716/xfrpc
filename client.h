@@ -45,7 +45,6 @@ struct proxy_client {
 	struct event		*ev_timeout;
 
 	struct base_conf	*bconf;
-	char	*name; // pointer to bconf->name
 	char	*local_ip;
 	char 	*type;
 	int		local_port;

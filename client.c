@@ -231,7 +231,6 @@ int send_client_data_tail(struct proxy_client *client)
 
 void free_proxy_client(struct proxy_client *client)
 {
-	if (client->name) free(client->name);
 	if (client->local_ip) free(client->local_ip);
 	if (client->locations) free(client->locations);
 	

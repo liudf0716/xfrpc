@@ -90,16 +90,17 @@ static int client_connected(int is_connected)
 
 static int set_client_work_start(struct proxy_client *client, int is_start_work)
 {
-	if (is_start_work)
+	if (is_start_work) {
+		assert(client->ps);
 		client->work_started = 1;
-	else
+	}else
 		client->work_started = 0;
 
 	return client->work_started;
 }
 
 static int is_client_work_started(struct proxy_client *client) {
-	return client->work_started;
+	return client->work_started && client->ps;
 }
 
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
@@ -388,7 +389,7 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 {
 	if (client) {
 		if (client->work_started) {
-			debug(LOG_DEBUG, "raw client [%s] control message.", client->name);
+			debug(LOG_DEBUG, "raw client [%s] control message.", client->ps->proxy_name);
 		}
 	}
 
@@ -454,7 +455,6 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 			}
 
 			client->ps = ps;
-			client->name = ps->proxy_name;
 			debug(LOG_INFO, 
 				"proxy service [%s] [%s:%d] start work connection.", 
 				sr->proxy_name, 
@@ -477,7 +477,7 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 {
 	struct bufferevent *bev = NULL;
 	if (client) {
-		debug(LOG_DEBUG, "client [name:%s] recved control data", client->name);
+		debug(LOG_DEBUG, "client event recved control data");
 		bev = client->ctl_bev;
 	}
 	unsigned char *ret_buf = NULL;
@@ -635,7 +635,7 @@ static unsigned char
 		if (is_client_work_started(client)) {
 			debug(LOG_DEBUG, 
 				"client [%s] send all work data to proxy tunnel.", 
-				client->name);
+				client->ps->proxy_name);
 			return NULL;
 		}
 	}

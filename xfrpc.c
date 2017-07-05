@@ -19,14 +19,37 @@
  *                                                                  *
 \********************************************************************/
 
-/** @file xfrp_client.h
-    @brief xfrp client header file
+/** @file xfrpc.c
+    @brief xfrp client
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
-#ifndef _XFRP_CLIENT_H_
-#define _XFRP_CLIENT_H_
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <errno.h>
+#include <assert.h>
+#include <errno.h>
 
-void xfrp_client_loop();
+#include <syslog.h>
 
-#endif //_XFRP_CLIENT_H_
+#include <event2/event.h>
+
+#include "commandline.h"
+#include "client.h"
+#include "config.h"
+#include "uthash.h"
+#include "control.h"
+#include "debug.h"
+#include "xfrpc.h"
+#include "crypto.h"
+#include "msg.h"
+#include "utils.h"
+
+void xfrpc_loop()
+{
+	init_main_control();
+	run_control();
+	
+	close_main_control();
+}

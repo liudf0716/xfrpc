@@ -24,7 +24,7 @@
     @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
 */
 
-#include "xfrp_client.h"
+#include "xfrpc.h"
 #include "commandline.h"
 #include "login.h"
 
@@ -32,5 +32,5 @@ int main(int argc, char **argv)
 {
 	parse_commandline(argc, argv);
 	init_login();
-	xfrp_client_loop();
+	xfrpc_loop();
 }

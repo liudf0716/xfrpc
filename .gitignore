@@ -39,7 +39,7 @@ Makefile
 cmake_install.cmake
 
 # bin generated
-xfrp_client
+xfrpc
 xfrp_test_server
 bin
 .vscode

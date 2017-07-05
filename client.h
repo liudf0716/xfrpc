@@ -43,7 +43,7 @@ struct proxy_client {
 	struct bufferevent	*ctl_bev;
 	struct bufferevent 	*local_proxy_bev;
 	struct event		*ev_timeout;
-	
+
 	struct base_conf	*bconf;
 	char	*name; // pointer to bconf->name
 	char	*local_ip;
@@ -72,6 +72,7 @@ struct proxy_service {
 
 	char	*local_ip;
 	int		remote_port;
+	int 	remote_data_port;
 	int 	local_port;
 
 	// http and https only

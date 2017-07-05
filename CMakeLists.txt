@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.6)
 
 project(xfrp C)
 
-set(src_xfrp_client
+set(src_xfrpc
 	main.c
   	client.c
   	config.c
@@ -10,7 +10,7 @@ set(src_xfrp_client
 	frame.c
   	ini.c
   	msg.c
-	xfrp_client.c
+	xfrpc.c
 	debug.c
 	zip.c
 	commandline.c
@@ -36,9 +36,9 @@ set(test_libs
 
 ADD_DEFINITIONS(-Wall -g  --std=gnu99)
 
-add_executable(xfrp_client ${src_xfrp_client})
-target_link_libraries(xfrp_client ${libs})
+add_executable(xfrpc ${src_xfrpc})
+target_link_libraries(xfrpc ${libs})
 
-install(TARGETS xfrp_client
+install(TARGETS xfrpc
         RUNTIME DESTINATION bin
 )

@@ -48,13 +48,13 @@ make
 Run in debug mode :
 
 ```shell
-xfrp_client -c frpc_mini.ini -f -d 7 
+xfrpc -c frpc_mini.ini -f -d 7 
 ```
 
 Run in release mode :
 
 ```shell
-xfrp_client -c frpc_mini.ini -d 0
+xfrpc -c frpc_mini.ini -d 0
 ```
 
 ----

@@ -132,6 +132,11 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 	if (NULL == ps->proxy_type) {
 		ps->proxy_type = strdup("tcp");
 		assert(ps->proxy_type);
+	} else if (strcmp(ps->proxy_type, "ftp") == 0) {
+		if (ps->remote_data_port <= 0) {
+			debug(LOG_ERR, 
+				"Proxy [%s] error: remote_data_port must be exist when type is ftp");
+		}
 	}
 
 	debug(LOG_DEBUG, 
@@ -157,7 +162,7 @@ static struct proxy_service *new_proxy_service(const char *name)
 	if (! name)
 		return NULL;
 
-	struct proxy_service *ps = calloc(sizeof(struct proxy_service), 1);
+	struct proxy_service *ps = (struct proxy_service *)calloc(sizeof(struct proxy_service), 1);
 	assert(ps);
 	assert(c_conf);
 
@@ -168,6 +173,7 @@ static struct proxy_service *new_proxy_service(const char *name)
 	ps->use_encryption 		= 0;
 	ps->local_port			= -1;
 	ps->remote_port			= -1;
+	ps->remote_data_port	= -1;
 	ps->use_compression 	= 0;
 	ps->use_encryption		= 0;
 
@@ -328,7 +334,7 @@ static void init_common_conf(struct common_conf *config)
 
 void load_config(const char *confile)
 {
-	c_conf = calloc(sizeof(struct common_conf), 1);
+	c_conf = (struct common_conf *)calloc(sizeof(struct common_conf), 1);
 	assert(c_conf);
 	
 	init_common_conf(c_conf);

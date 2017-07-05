@@ -1,2 +1,2 @@
-/usr/bin/xfrp_client
+/usr/bin/xfrpc
 /usr/bin/xfrp_test_server

@@ -135,7 +135,9 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 	} else if (strcmp(ps->proxy_type, "ftp") == 0) {
 		if (ps->remote_data_port <= 0) {
 			debug(LOG_ERR, 
-				"Proxy [%s] error: remote_data_port must be exist when type is ftp");
+				"Proxy [%s] error: remote_data_port must be exist when type is ftp", 
+				ps->proxy_name);
+			exit(0);
 		}
 	}
 
@@ -232,6 +234,8 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		ps->use_encryption = is_true(value);
 	} else if (MATCH_NAME("remote_port")) {
 		ps->remote_port = atoi(value);
+	} else if (MATCH_NAME("remote_data_port")) {
+		ps->remote_data_port = atoi(value);
 	} else if (MATCH_NAME("http_user")) {
 		ps->http_user = strdup(value);
 		assert(ps->http_user);

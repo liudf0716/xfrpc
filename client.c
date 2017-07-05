@@ -52,7 +52,6 @@
 #include "const.h"
 #include "uthash.h"
 #include "zip.h"
-#include "msg.h"
 #include "common.h"
 
 #define MAX_OUTPUT (512*1024)
@@ -162,6 +161,17 @@ xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
 		dst = bufferevent_get_output(partner);
 		evbuffer_add_buffer(dst, src);	
 	}
+}
+
+int is_ftp_proxy(const struct proxy_service *ps)
+{
+	if (! ps || ! ps->proxy_type)
+		return 0;
+
+	if (0 == strcmp(ps->proxy_type, "ftp") && ps->remote_data_port > 0)
+		return 1;
+
+	return 0;
 }
 
 // create frp tunnel for service

@@ -46,12 +46,9 @@ struct proxy_client {
 
 	struct base_conf	*bconf;
 	char	*local_ip;
-	char 	*type;
 	int		local_port;
 	int		remote_port;
 	
-	char 	*subdomain;
-	char	*locations;
 	char	*host_header_rewrite;
 	
 	//provate arguments

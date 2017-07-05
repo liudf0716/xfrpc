@@ -61,29 +61,6 @@ struct general_response {
 	char	*msg;
 };
 
-// messages between control connections of frpc and frps
-struct control_request {
-	int		type;
-	char	*proxy_name;
-	char	*auth_key;
-	int		use_encryption;
-	int		use_gzip;
-	int		pool_count;
-	
-	int		privilege_mode;
-	char	*privilege_key;
-	char	*proxy_type;
-	int		remote_port;
-	char	*custom_domains;
-	char	*locations;
-	char	*host_header_rewrite;
-	char	*http_username;
-	char	*http_password;
-	char	*subdomain;
-	long	timestamp;
-};
-
-
 struct control_response {
 	int		type;
 	int		code;
@@ -114,7 +91,6 @@ size_t pack(struct message *req_msg, unsigned char **ret_buf);
 struct message *unpack(unsigned char *recv_msg, const ushort len);
 
 // tranlate control request to json string
-int control_request_marshal(const struct control_request *req, char **msg);
 struct login_resp *login_resp_unmarshal(const char *jres);
 struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg);
 

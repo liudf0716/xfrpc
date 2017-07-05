@@ -214,25 +214,6 @@ REQ_END:
 	return write_len;
 }
 
-void control_request_free(struct control_request *req)
-{
-	if (!req)
-		return;
-	
-	if (req->proxy_name) free(req->proxy_name);
-	if (req->auth_key) free(req->auth_key);
-	if (req->privilege_key) free(req->privilege_key);
-	if (req->proxy_type) free(req->proxy_type);
-	if (req->custom_domains) free(req->custom_domains);
-	if (req->locations) free(req->locations);
-	if (req->host_header_rewrite) free(req->host_header_rewrite);
-	if (req->http_username) free(req->http_username);
-	if (req->http_password) free(req->http_password);
-	if (req->subdomain) free(req->subdomain);
-	
-	free(req);
-}
-
 static void base_control_ping(struct bufferevent *bev) {
 	if ( ! is_client_connected())
 		return;
@@ -477,7 +458,8 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 {
 	struct bufferevent *bev = NULL;
 	if (client) {
-		debug(LOG_DEBUG, "client event recved control data");
+		debug(LOG_DEBUG, "client(%s): recved control data", 
+			is_client_work_started(client)?"work":"free");
 		bev = client->ctl_bev;
 	}
 	unsigned char *ret_buf = NULL;

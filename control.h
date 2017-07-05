@@ -70,6 +70,4 @@ void send_new_proxy(struct proxy_service *ps);
 struct bufferevent 
 *connect_server(struct event_base *base, const char *name, const int port);
 
-void control_request_free(struct control_request *req);
-
 #endif //_CONTROL_H_

@@ -67,11 +67,8 @@ void free_base_config(struct base_conf *bconf)
 {
 	if (bconf->name) free(bconf->name);
 	if (bconf->auth_token) free(bconf->auth_token);
-	if (bconf->type) free(bconf->type);
 	if (bconf->privilege_token) free(bconf->privilege_token);
 	if (bconf->host_header_rewrite) free(bconf->host_header_rewrite);
-	if (bconf->http_username) free(bconf->http_username);
-	if (bconf->http_password) free(bconf->http_password);
 	if (bconf->subdomain) free(bconf->subdomain);
 }
 
@@ -103,7 +100,7 @@ static const char *get_valid_type(const char *val)
 		MATCH_VALUE("http") || 
 		MATCH_VALUE("https") || 
 		MATCH_VALUE("udp") || 
-		MATCH_VALUE("ftp") ) { 
+		MATCH_VALUE("ftp")) { 
 
 		return val;
 	}

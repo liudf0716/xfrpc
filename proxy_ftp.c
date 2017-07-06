@@ -17,6 +17,7 @@
 #include "uthash.h"
 #include "common.h"
 #include "proxy.h"
+#include "config.h"
 
 #define FTP_PRO_BUF 		256
 #define FTP_PASV_PORT_BLOCK 256
@@ -29,7 +30,7 @@ static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p);
 // read from client-working host port
 void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
-	struct bufferevent *partner = (struct bufferevent *)ctx;
+	struct proxy_client *pc = (struct proxy_client *)ctx;
 	struct evbuffer *src, *dst;
 	size_t len;
 	src = bufferevent_get_input(bev);
@@ -59,10 +60,13 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	SAFE_FREE(buf);
 
 	if (fp) {
-		
+		struct common_conf *c_conf = get_common_config();
+		struct ftp_pasv *r_fp = new_ftp_pasv();
+		// strncpy(r_fp, c_conf->server_addr, IP_LEN);
+		// r_fp->ftp_server_port = 
 	}
 
-	dst = bufferevent_get_output(partner);
+	dst = bufferevent_get_output(pc->ctl_bev);
 	evbuffer_add_buffer(dst, src);
 	return;
 }

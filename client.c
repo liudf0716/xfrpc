@@ -245,3 +245,10 @@ struct proxy_service *get_proxy_service(const char *proxy_name)
 	HASH_FIND_STR(all_ps, proxy_name, ps);
 	return ps;
 }
+
+struct proxy_client *new_proxy_client()
+{
+	struct proxy_client *client = calloc(1, sizeof(struct proxy_client));
+	assert(client);
+	return client;
+}

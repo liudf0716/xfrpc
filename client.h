@@ -99,5 +99,5 @@ struct proxy_service *get_proxy_service(const char *proxy_name);
 int send_client_data_tail(struct proxy_client *client);
 
 int is_ftp_proxy(const struct proxy_service *ps);
-
+struct proxy_client *new_proxy_client();
 #endif //_CLIENT_H_

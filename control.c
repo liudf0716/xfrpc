@@ -128,8 +128,7 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 
 static void new_client_connect()
 {
-	struct proxy_client *client = calloc(1, sizeof(struct proxy_client)); //NEED FREE
-	assert(client);
+	struct proxy_client *client = new_proxy_client();
 	struct common_conf *c_conf = get_common_config();
 	assert(c_conf);
 	client->base = main_ctl->connect_base;;

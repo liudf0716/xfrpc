@@ -41,6 +41,9 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	assert(buf);
 	size_t read_n = 0;
 	read_n = evbuffer_copyout(src, buf, len);
+
+#define FTP_P_DEBUG 1
+#ifdef FTP_P_DEBUG
 	char *dbg_buf = calloc(1, read_n * 7 + 1);
 	assert(dbg_buf);
 	unsigned int i = 0;
@@ -49,12 +52,15 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	}
 	debug(LOG_DEBUG, "RECV ctl byte:%s", dbg_buf);
 	debug(LOG_DEBUG, "RECV ctl stri:%s", buf);
-	struct ftp_pasv *fp = pasv_unpack((char *)buf);
-	if (fp) {
-		debug(LOG_DEBUG, "ftp unpacked pasv protocol");
-	}
 	SAFE_FREE(dbg_buf);
+#endif //FTP_P_DEBUG
+
+	struct ftp_pasv *fp = pasv_unpack((char *)buf);
 	SAFE_FREE(buf);
+
+	if (fp) {
+		
+	}
 
 	dst = bufferevent_get_output(partner);
 	evbuffer_add_buffer(dst, src);
@@ -76,7 +82,6 @@ static struct ftp_pasv *pasv_unpack(char *data)
 
 	struct ftp_pasv *fp = new_ftp_pasv();
 	assert(fp);
-	int unpacked = 0;
 
 	fp->code = code;
 	switch(fp->code) {
@@ -116,15 +121,12 @@ static struct ftp_pasv *pasv_unpack(char *data)
 
 			fp->ftp_server_port = atoi(port[0]) * FTP_PASV_PORT_BLOCK + atoi(port[1]);
 			debug(LOG_DEBUG, "ftp pasv unpack:[%s:%d]", fp->ftp_server_ip, fp->ftp_server_port);
-			unpacked = 1;
 			break;
 		}
 		default:
+			free_ftp_pasv(fp);
 			break;
 	}
-
-	if (! unpacked)
-		free_ftp_pasv(fp);
 
 	return fp;
 }
@@ -134,6 +136,7 @@ static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p)
 {
 	*pack_p = (char *)calloc(1, FTP_PRO_BUF);
 	assert(*pack_p);
+	size_t pack_len = 0;
 
 	switch (fp->code){
 		case 227:
@@ -154,14 +157,17 @@ static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p)
 				ftp_ip, 
 				fp->ftp_server_port / FTP_PASV_PORT_BLOCK, 
 				fp->ftp_server_port % FTP_PASV_PORT_BLOCK);
+
+			pack_len = strlen(*pack_p);
 			break;
 		}
 		default:
 			debug(LOG_DEBUG, "ftp pasv protocol data not supportted in pasv_pack");
+			free(*pack_p);
 			break;
 	}
 
-	return strlen(*pack_p);
+	return pack_len;
 }
 
 static struct ftp_pasv *new_ftp_pasv()

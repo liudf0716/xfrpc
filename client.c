@@ -188,7 +188,6 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		proxy_c2s_cb = tcp_proxy_c2s_cb;
 		proxy_s2c_cb = tcp_proxy_s2c_cb;
 	}
-
 	
 	bufferevent_setcb(client->ctl_bev, 
 						proxy_s2c_cb, 

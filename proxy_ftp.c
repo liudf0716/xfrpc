@@ -150,7 +150,7 @@ static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p)
 			}
 			snprintf(*pack_p, 
 				FTP_PRO_BUF, 
-				"227 Entering Passive Mode (%s,%d,%d)", 
+				"227 Entering Passive Mode (%s,%d,%d).\n", 
 				ftp_ip, 
 				fp->ftp_server_port / FTP_PASV_PORT_BLOCK, 
 				fp->ftp_server_port % FTP_PASV_PORT_BLOCK);

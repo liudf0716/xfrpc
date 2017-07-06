@@ -889,9 +889,9 @@ void send_msg_frp_server(struct bufferevent *bev,
 		assert(req_msg.data_p);
 	}
 
-	unsigned char *puck_buf = NULL;
-	size_t pack_buf_len = pack(&req_msg, &puck_buf);
-	if ( ! pack_buf_len || ! puck_buf) {
+	unsigned char *pack_buf = NULL;
+	size_t pack_buf_len = pack(&req_msg, &pack_buf);
+	if ( ! pack_buf_len || ! pack_buf) {
 		debug(LOG_ERR, "send buffer pack failed!");
 		goto S_M_F_END;
 	}
@@ -904,7 +904,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	struct frp_coder *encoder = get_main_encoder();
 
 	if (encoder) {
-		size_t encode_ret_len = encrypt_data(puck_buf, pack_buf_len, encoder, &encode_ret);
+		size_t encode_ret_len = encrypt_data(pack_buf, pack_buf_len, encoder, &encode_ret);
 		debug(LOG_DEBUG, "encode len:[%lu]", encode_ret_len);
 
 		if (encode_ret_len > 0) {
@@ -918,7 +918,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 #endif //ENCRYPTO
 	if (! f->data) {
 		set_frame_len(f, (ushort) pack_buf_len);
-		f->data = puck_buf;
+		f->data = pack_buf;
 	}
 	
 	if (get_common_config()->tcp_mux) {

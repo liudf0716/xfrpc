@@ -5,10 +5,12 @@
 
 #include "common.h"
 
+#define IP_LEN 16
+
 struct ftp_pasv {
 	int 	code;
 	char 	*msg;
-	char	*ftp_server_ip;
+	char	ftp_server_ip[IP_LEN];
 	int		ftp_server_port;
 };
 

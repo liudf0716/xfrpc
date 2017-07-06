@@ -18,9 +18,13 @@
 #include "common.h"
 #include "proxy.h"
 
+#define FTP_PRO_BUF 		256
+#define FTP_PASV_PORT_BLOCK 256
+
 static struct ftp_pasv *new_ftp_pasv();
 static void free_ftp_pasv(struct ftp_pasv *fp);
 static struct ftp_pasv * pasv_unpack(char *data);
+static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p);
 
 // read from client-working host port
 void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
@@ -54,7 +58,6 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 	dst = bufferevent_get_output(partner);
 	evbuffer_add_buffer(dst, src);
-
 	return;
 }
 
@@ -70,7 +73,7 @@ static struct ftp_pasv *pasv_unpack(char *data)
 	int code = atoi(cd_buf);
 	if (code != 227 && code != 211 && code != 229)
 		return NULL;
-	
+
 	struct ftp_pasv *fp = new_ftp_pasv();
 	assert(fp);
 	int unpacked = 0;
@@ -78,8 +81,9 @@ static struct ftp_pasv *pasv_unpack(char *data)
 	fp->code = code;
 	switch(fp->code) {
 		case 227:
+		{
 			int i = 0, ip_i = 0, port_i = 0, ip_start = 0, comma_n = 0;
-			char port[2][4] = {{0}, {0}};
+			char port[2][4] = { {0}, {0} };
 			for (i=0; i<strlen(data) && ip_i<IP_LEN; i++) {
 				if (data[i] == '(') {
 					ip_start = 1;
@@ -110,11 +114,11 @@ static struct ftp_pasv *pasv_unpack(char *data)
 				ip_i++;
 			}
 
-			fp->ftp_server_port = atoi(port[0]) * 256 + atoi(port[1]);
+			fp->ftp_server_port = atoi(port[0]) * FTP_PASV_PORT_BLOCK + atoi(port[1]);
 			debug(LOG_DEBUG, "ftp pasv unpack:[%s:%d]", fp->ftp_server_ip, fp->ftp_server_port);
 			unpacked = 1;
 			break;
-
+		}
 		default:
 			break;
 	}
@@ -125,9 +129,39 @@ static struct ftp_pasv *pasv_unpack(char *data)
 	return fp;
 }
 
+// the value returned need FREE after using
 static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p)
 {
-	
+	*pack_p = (char *)calloc(1, FTP_PRO_BUF);
+	assert(*pack_p);
+
+	switch (fp->code){
+		case 227:
+		{
+			char ftp_ip[IP_LEN] = {0};
+			int i =0;
+			for (i=0; i<strlen(fp->ftp_server_ip) && i < IP_LEN; i++) {
+				if (fp->ftp_server_ip[i] == '.') {
+					ftp_ip[i] = ',';
+					continue;
+				}
+				
+				ftp_ip[i] = fp->ftp_server_ip[i];
+			}
+			snprintf(*pack_p, 
+				FTP_PRO_BUF, 
+				"227 Entering Passive Mode (%s,%d,%d)", 
+				ftp_ip, 
+				fp->ftp_server_port / FTP_PASV_PORT_BLOCK, 
+				fp->ftp_server_port % FTP_PASV_PORT_BLOCK);
+			break;
+		}
+		default:
+			debug(LOG_DEBUG, "ftp pasv protocol data not supportted in pasv_pack");
+			break;
+	}
+
+	return strlen(*pack_p);
 }
 
 static struct ftp_pasv *new_ftp_pasv()

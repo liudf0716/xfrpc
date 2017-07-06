@@ -9,7 +9,6 @@
 
 struct ftp_pasv {
 	int 	code;
-	char 	*msg;
 	char	ftp_server_ip[IP_LEN];
 	int		ftp_server_port;
 };

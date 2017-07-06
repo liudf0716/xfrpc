@@ -78,7 +78,6 @@ static struct ftp_pasv *pasv_unpack(char *data)
 	fp->code = code;
 	switch(fp->code) {
 		case 227:
-			fp->msg = strdup(data);
 			int i = 0, ip_i = 0, port_i = 0, ip_start = 0, comma_n = 0;
 			char port[2][4] = {{0}, {0}};
 			for (i=0; i<strlen(data) && ip_i<IP_LEN; i++) {
@@ -115,6 +114,7 @@ static struct ftp_pasv *pasv_unpack(char *data)
 			debug(LOG_DEBUG, "ftp pasv unpack:[%s:%d]", fp->ftp_server_ip, fp->ftp_server_port);
 			unpacked = 1;
 			break;
+
 		default:
 			break;
 	}
@@ -123,6 +123,11 @@ static struct ftp_pasv *pasv_unpack(char *data)
 		free_ftp_pasv(fp);
 
 	return fp;
+}
+
+static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p)
+{
+	
 }
 
 static struct ftp_pasv *new_ftp_pasv()
@@ -134,7 +139,6 @@ static struct ftp_pasv *new_ftp_pasv()
 	memset(fp->ftp_server_ip, 0, IP_LEN);
 	fp->ftp_server_port = -1;
 	fp->code = -1;
-	fp->msg = NULL;
 
 	return fp;	 
 }
@@ -145,7 +149,6 @@ static void free_ftp_pasv(struct ftp_pasv *fp)
 		return;
 
 	SAFE_FREE(fp->ftp_server_ip);
-	SAFE_FREE(fp->msg);
 	SAFE_FREE(fp);
 	fp = NULL;
 }

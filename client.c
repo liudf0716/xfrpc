@@ -53,6 +53,7 @@
 #include "uthash.h"
 #include "zip.h"
 #include "common.h"
+#include "proxy.h"
 
 #define MAX_OUTPUT (512*1024)
 
@@ -139,30 +140,6 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-static void
-xfrp_decrypt_cb(struct bufferevent *bev, void *ctx)
-{
-	struct bufferevent *partner = ctx;
-	struct evbuffer *src, *dst;
-	src = bufferevent_get_input(bev);
-	dst = bufferevent_get_output(partner);
-	evbuffer_add_buffer(dst, src);
-}
-
-static void
-xfrp_encrypt_cb(struct bufferevent *bev, void *ctx)
-{
-	struct bufferevent *partner = ctx;
-	struct evbuffer *src, *dst;
-	size_t len;
-	src = bufferevent_get_input(bev);
-	len = evbuffer_get_length(src);
-	if (len > 0) {
-		dst = bufferevent_get_output(partner);
-		evbuffer_add_buffer(dst, src);	
-	}
-}
-
 int is_ftp_proxy(const struct proxy_service *ps)
 {
 	if (! ps || ! ps->proxy_type)
@@ -175,7 +152,7 @@ int is_ftp_proxy(const struct proxy_service *ps)
 }
 
 // create frp tunnel for service
-void start_frp_tunnel(struct proxy_client *client)
+void start_xfrp_tunnel(struct proxy_client *client)
 {
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
@@ -203,14 +180,24 @@ void start_frp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
+	bufferevent_data_cb proxy_s2c_cb, proxy_c2s_cb;
+	if (is_ftp_proxy(client->ps)) {
+		proxy_c2s_cb = ftp_proxy_c2s_cb;
+		proxy_s2c_cb = ftp_proxy_s2c_cb;
+	} else {
+		proxy_c2s_cb = tcp_proxy_c2s_cb;
+		proxy_s2c_cb = tcp_proxy_s2c_cb;
+	}
+
+	
 	bufferevent_setcb(client->ctl_bev, 
-						xfrp_decrypt_cb, 
+						proxy_s2c_cb, 
 						NULL, 
 						xfrp_event_cb, 
 						client->local_proxy_bev);
 
 	bufferevent_setcb(client->local_proxy_bev, 
-						xfrp_encrypt_cb, 
+						proxy_c2s_cb, 
 						NULL, 
 						xfrp_event_cb, 
 						client->ctl_bev);

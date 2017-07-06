@@ -88,7 +88,7 @@ struct proxy_service {
 // when xfrp client receive that request, it will start
 // frp tunnel
 // if client has data-tail(not NULL), client value will be changed 
-void start_frp_tunnel(struct proxy_client *client);
+void start_xfrp_tunnel(struct proxy_client *client);
 
 void del_proxy_client(struct proxy_client *client);
 

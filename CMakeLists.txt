@@ -20,6 +20,8 @@ set(src_xfrpc
 	session.c
 	common.c
 	login.c
+	proxy_tcp.c
+	proxy_ftp.c
 	)
 	
 set(libs

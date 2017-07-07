@@ -50,6 +50,9 @@ void set_ftp_data_proxy_tunnel(const char *ftp_proxy_name,
 
 	ps->remote_port = remote_fp->ftp_server_port;
 
+	debug(LOG_DEBUG, 
+		"set ftp proxy DATA port [local:remote] = [%d:%d]", 
+		ps->local_port, ps->remote_port);
 
 FTP_DATA_PROXY_TUNNEL_END:
 	free(ftp_data_proxy_name);
@@ -69,12 +72,15 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	if (len < 0)
 		return;
 
+	dst = bufferevent_get_output(partner);
+	assert(dst);
+
 	unsigned char *buf = calloc(1, len);
 	assert(buf);
 	size_t read_n = 0;
-	read_n = evbuffer_copyout(src, buf, len);
+	read_n = evbuffer_remove(src, buf, len);
 
-#define FTP_P_DEBUG 1
+// #define FTP_P_DEBUG 1
 #ifdef FTP_P_DEBUG
 	char *dbg_buf = calloc(1, read_n * 7 + 1);
 	assert(dbg_buf);
@@ -88,7 +94,6 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 #endif //FTP_P_DEBUG
 
 	struct ftp_pasv *local_fp = pasv_unpack((char *)buf);
-	SAFE_FREE(buf);
 
 	if (local_fp) {
 		struct common_conf *c_conf = get_common_config();
@@ -98,25 +103,28 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
 		r_fp->ftp_server_port = p->remote_data_port;
 		
-		if (r_fp->ftp_server_port <= 0)
+		if (r_fp->ftp_server_port <= 0) {
 			debug(LOG_ERR, "error: remote ftp data port is not init!");
+			goto FTP_C2S_CB_END;
+		}
 
 		char *pasv_msg = NULL;
 		size_t pack_len = pasv_pack(r_fp, &pasv_msg);
-		if (pack_len){
-			debug(LOG_DEBUG, "ftp proxy result: %s", pasv_msg);
+		if ( ! pack_len){
+			debug(LOG_ERROR, "error: ftp proxy replace failed!");
+			SAFE_FREE(pasv_msg);
+			goto FTP_C2S_CB_END;
 		}
 
 		set_ftp_data_proxy_tunnel(p->proxy_name, local_fp, r_fp);
-
-		dst = bufferevent_get_output(partner);
-		evbuffer_add_printf(dst, "%s", pasv_msg);
-		free(pasv_msg);
+		evbuffer_add(dst, pasv_msg, pack_len);
+		SAFE_FREE(pasv_msg);
 	} else {
-		dst = bufferevent_get_output(partner);
-		evbuffer_add_buffer(dst, src);
+		evbuffer_add(dst, buf, read_n);
 	}
 
+FTP_C2S_CB_END:
+	SAFE_FREE(buf);
 	return;
 }
 

@@ -18,7 +18,6 @@
 #include "common.h"
 #include "proxy.h"
 #include "config.h"
-#include "utils.h"
 
 #define FTP_PRO_BUF 		256
 #define FTP_PASV_PORT_BLOCK 256
@@ -67,9 +66,6 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		struct ftp_pasv *r_fp = new_ftp_pasv();
 		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
 		r_fp->ftp_server_port = p->remote_data_port;
-		if (! is_valid_ip_address((const char *)r_fp->ftp_server_ip)){
-			debug(LOG_ERR, "error: proxy ip [%s] is ftp-invalid!", r_fp->ftp_server_ip);
-		}
 		
 		if (r_fp->ftp_server_port <= 0)
 			debug(LOG_ERR, "error: remote ftp data port is not init!");

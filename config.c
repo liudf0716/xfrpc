@@ -38,6 +38,7 @@
 #include "client.h"
 #include "debug.h"
 #include "msg.h"
+#include "utils.h"
 #include "version.h"
 
 static struct common_conf 	*c_conf;
@@ -137,6 +138,11 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 			debug(LOG_ERR, 
 				"Proxy [%s] error: remote_data_port must be exist when type is ftp", 
 				ps->proxy_name);
+			exit(0);
+		}
+
+		if (!is_valid_ip_address((const char *)c_conf->server_addr)){
+			debug(LOG_ERR, "now ftp proxy only support ip address in [server_addr]");
 			exit(0);
 		}
 	}

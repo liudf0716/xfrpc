@@ -224,6 +224,7 @@ static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 		ps->proxy_type = strdup("tcp");
 		ps->remote_port = ftp_ps->remote_data_port;
 		ps->local_ip = ftp_ps->local_ip;
+		ps->local_port = 0; //will be init in working tunnel connectting
 
 		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
 	}

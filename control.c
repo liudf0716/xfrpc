@@ -762,7 +762,14 @@ static void open_connection_session(struct bufferevent *bev)
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();
+	static int retry_times = 0;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		if (retry_times >= 10) {
+			debug(LOG_INFO, "have retry connect to xfrp server for %d times, exit!", retry_times);
+
+			exit(0);
+		}
+		retry_times++;
 		debug(LOG_ERR, "connect server [%s:%d] failed", 
 				c_conf->server_addr, 
 				c_conf->server_port);
@@ -771,6 +778,7 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		start_base_connect();
 		close_main_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
+		retry_times = 0;
 		// recv login-response message before recving othfer fprs messages, 
 		bufferevent_setcb(bev, recv_cb, NULL, connect_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);

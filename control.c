@@ -720,7 +720,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 			for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
 				snprintf(dbg_buf + 4*i, 5, "%3u ", (unsigned char)raw_buf_p[i]);
 			}
-			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", client ? "client":"control", dbg_buf);
+			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", client?"client":"control", dbg_buf);
 			SAFE_FREE(dbg_buf);
 #endif //CONN_DEBUG
 
@@ -765,7 +765,9 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	static int retry_times = 0;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		if (retry_times >= 10) {
-			debug(LOG_INFO, "have retry connect to xfrp server for %d times, exit!", retry_times);
+			debug(LOG_INFO, 
+				"have retry connect to xfrp server for %d times, exit!", 
+				retry_times);
 
 			exit(0);
 		}
@@ -809,7 +811,10 @@ void start_base_connect()
 												c_conf->server_addr, 
 												c_conf->server_port);
 	if ( ! main_ctl->connect_bev) {
-		debug(LOG_ERR, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		debug(LOG_ERR, 
+			"Connect server [%s:%d] failed", 
+			c_conf->server_addr, 
+			c_conf->server_port);
 		exit(0);
 	}
 
@@ -888,7 +893,9 @@ void send_msg_frp_server(struct bufferevent *bev,
 
 	char frame_type = 0;
 	struct frame *f = NULL;
-	f = new_frame(frame_type, sid); // frame_type not truely matter, it will reset by set_frame_cmd
+
+	// frame_type not truely matter, it will reset by set_frame_cmd
+	f = new_frame(frame_type, sid); 
 	assert(f);
 
 	if (msg) {
@@ -962,13 +969,18 @@ struct control *get_main_control()
 void start_login_frp_server(struct event_base *base)
 {
 	struct common_conf *c_conf = get_common_config();
-	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
+	struct bufferevent *bev = connect_server(base, 
+											c_conf->server_addr, 
+											c_conf->server_port);
 	if (!bev) {
-		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
+		debug(LOG_DEBUG, 
+			"Connect server [%s:%d] failed", 
+			c_conf->server_addr, 
+			c_conf->server_port);
 		return;
 	}
 
-	debug(LOG_INFO, "Xfrpc login: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
+	debug(LOG_INFO, "Xfrpc login: connect server [%s:%d] ...", c_conf->server_addr, c_conf->server_port);
 
 	bufferevent_enable(bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);

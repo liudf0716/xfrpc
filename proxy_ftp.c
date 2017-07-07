@@ -64,12 +64,31 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	if (fp) {
 		struct common_conf *c_conf = get_common_config();
 		struct ftp_pasv *r_fp = new_ftp_pasv();
-		// strncpy(r_fp, c_conf->server_addr, IP_LEN);
-		// r_fp->ftp_server_port = 
+		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
+		r_fp->ftp_server_port = p->remote_data_port;
+		if (! is_valid_ip_address((const char *)r_fp->ftp_server_ip)){
+			debug(LOG_ERR, "error: proxy ip [%s] is ftp-invalid!", r_fp->ftp_server_ip);
+		}
+		
+		if (r_fp->ftp_server_port <= 0)
+			debug(LOG_ERR, "error: remote ftp data port is not init!");
+
+		char *pasv_msg = NULL;
+		size_t pack_len = pasv_pack(r_fp, &pasv_msg);
+		
+		if (pack_len){
+			printf("size = %d\n", pack_len);
+			debug(LOG_DEBUG, "ftp proxy result: %s", pasv_msg);
+		}
+
+		dst = bufferevent_get_output(partner);
+		evbuffer_add_buffer(dst, src);
+		evbuffer_add_printf(dst, "%s", pasv_msg);
+	} else {
+		dst = bufferevent_get_output(partner);
+		evbuffer_add_buffer(dst, src);
 	}
 
-	dst = bufferevent_get_output(partner);
-	evbuffer_add_buffer(dst, src);
 	return;
 }
 

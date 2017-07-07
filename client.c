@@ -185,18 +185,18 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
+	struct proxy *ctl_prox = new_proxy_buf(client->ctl_bev);
+	struct proxy *local_prox = new_proxy_buf(client->local_proxy_bev);
 	bufferevent_data_cb proxy_s2c_cb, proxy_c2s_cb;
 	if (is_ftp_proxy(client->ps)) {
 		proxy_c2s_cb = ftp_proxy_c2s_cb;
 		proxy_s2c_cb = ftp_proxy_s2c_cb;
+		ctl_prox->remote_data_port = client->ps->remote_data_port;
 	} else {
 		proxy_c2s_cb = tcp_proxy_c2s_cb;
 		proxy_s2c_cb = tcp_proxy_s2c_cb;
 	}
 
-	struct proxy *ctl_prox = new_proxy_buf(client->ctl_bev);
-	struct proxy *local_prox = new_proxy_buf(client->local_proxy_bev);
-	
 	bufferevent_setcb(client->ctl_bev, 
 						proxy_s2c_cb, 
 						NULL, 

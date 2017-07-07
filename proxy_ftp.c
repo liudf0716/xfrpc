@@ -18,6 +18,7 @@
 #include "common.h"
 #include "proxy.h"
 #include "config.h"
+#include "utils.h"
 
 #define FTP_PRO_BUF 		256
 #define FTP_PASV_PORT_BLOCK 256
@@ -77,7 +78,6 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		size_t pack_len = pasv_pack(r_fp, &pasv_msg);
 		
 		if (pack_len){
-			printf("size = %d\n", pack_len);
 			debug(LOG_DEBUG, "ftp proxy result: %s", pasv_msg);
 		}
 

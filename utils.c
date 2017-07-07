@@ -23,7 +23,8 @@ void s_sleep(unsigned int s, unsigned int u)
 
 // is_valid_ip_address:
 // return 0:ipaddress unlegal
-int is_valid_ip_address(const char *ip_address) {
+int is_valid_ip_address(const char *ip_address) 
+{
     struct sockaddr_in sa;
     int result = inet_pton(AF_INET, ip_address, &(sa.sin_addr));
 	return result;

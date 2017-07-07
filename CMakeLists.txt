@@ -22,6 +22,7 @@ set(src_xfrpc
 	login.c
 	proxy_tcp.c
 	proxy_ftp.c
+	proxy.c
 	)
 	
 set(libs

@@ -28,5 +28,6 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void ftp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
+struct proxy *new_proxy_buf(struct bufferevent *bev);
 
 #endif //_PROXY_H_

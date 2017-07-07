@@ -45,6 +45,7 @@ static struct common_conf 	*c_conf;
 static struct proxy_client 	*p_clients;
 static struct proxy_service *p_services;
 
+static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps);
 
 struct common_conf *get_common_config()
 {
@@ -145,6 +146,8 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 			debug(LOG_ERR, "now ftp proxy only support ip address in [server_addr]");
 			exit(0);
 		}
+
+		new_ftp_data_proxy_service(ps);
 	}
 
 	debug(LOG_DEBUG, 
@@ -193,6 +196,39 @@ static struct proxy_service *new_proxy_service(const char *name)
 	ps->http_pwd			= NULL;
 
 	return ps;
+}
+
+// create a new proxy service with suffix "_ftp_data_proxy"
+static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
+{
+	struct proxy_service *ps = NULL;
+	char *ftp_tail_data_name = "_ftp_data_proxy";
+	char *ftp_data_proxy_name = (char *)calloc(1, 
+								strlen(ftp_ps->proxy_name)+strlen(ftp_tail_data_name)+1);
+	assert(ftp_data_proxy_name);
+	snprintf(ftp_data_proxy_name, 
+		strlen(ftp_ps->proxy_name) + strlen(ftp_tail_data_name) + 1, 
+		"%s%s", 
+		ftp_ps->proxy_name, 
+		ftp_tail_data_name);
+
+	HASH_FIND_STR(p_services, ftp_data_proxy_name, ps);
+	if (!ps) {
+		ps = new_proxy_service(ftp_data_proxy_name);
+		if (! ps) {
+			debug(LOG_ERR, 
+				"cannot create ftp data proxy service, it should not happenned!");
+			exit(0);
+		}
+
+		ps->proxy_type = strdup("tcp");
+		ps->remote_port = ftp_ps->remote_data_port;
+		ps->local_ip = ftp_ps->local_ip;
+
+		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
+	}
+
+	free(ftp_data_proxy_name);
 }
 
 static int 

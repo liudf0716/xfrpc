@@ -63,7 +63,8 @@ static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx);
 static void
 xfrp_read_cb(struct bufferevent *bev, void *ctx)
 {
-	struct bufferevent *partner = ctx;
+	struct proxy *p = (struct proxy *)ctx;
+	struct bufferevent *partner = p?p->bev:NULL;
 	struct evbuffer *src, *dst;
 	size_t len;
 	src = bufferevent_get_input(bev);
@@ -74,13 +75,14 @@ xfrp_read_cb(struct bufferevent *bev, void *ctx)
 	}
 	dst = bufferevent_get_output(partner);
 	evbuffer_add_buffer(dst, src);
+	struct proxy *p_l = new_proxy_buf(bev);
 
 	if (evbuffer_get_length(dst) >= MAX_OUTPUT) {
 		/* We're giving the other side data faster than it can
 		 * pass it on.  Stop reading here until we have drained the
 		 * other side to MAX_OUTPUT/2 bytes. */
 		bufferevent_setcb(partner, xfrp_read_cb, drained_writecb,
-		    xfrp_event_cb, bev);
+		    xfrp_event_cb, p_l);
 		bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2,
 		    MAX_OUTPUT);
 		bufferevent_disable(bev, EV_READ);
@@ -90,11 +92,12 @@ xfrp_read_cb(struct bufferevent *bev, void *ctx)
 static void
 drained_writecb(struct bufferevent *bev, void *ctx)
 {
-	struct bufferevent *partner = ctx;
+	struct proxy *p = (struct proxy *)ctx;
+	struct bufferevent *partner = p?p->bev:NULL;
 
 	/* We were choking the other side until we drained our outbuf a bit.
 	 * Now it seems drained. */
-	bufferevent_setcb(bev, xfrp_read_cb, NULL, xfrp_event_cb, partner);
+	bufferevent_setcb(bev, xfrp_read_cb, NULL, xfrp_event_cb, p);
 	bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
 	if (partner)
 		bufferevent_enable(partner, EV_READ);
@@ -113,13 +116,14 @@ close_on_finished_writecb(struct bufferevent *bev, void *ctx)
 static void
 xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-	struct bufferevent *partner = ctx;
+	struct proxy *p = (struct proxy *)ctx;
+	struct bufferevent *partner = p?p->bev:NULL;
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		debug(LOG_DEBUG, "working connection closed");
 		if (partner) {
 			/* Flush all pending data */
-			xfrp_read_cb(bev, ctx);
+			xfrp_read_cb(bev, p);
 
 			if (evbuffer_get_length(bufferevent_get_output(partner))) {
 				/* We still have to flush data from the other
@@ -134,6 +138,7 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 				/* We have nothing left to say to the other
 				 * side; close it. */
 				bufferevent_free(partner);
+				SAFE_FREE(p);
 			}
 		}
 		bufferevent_free(bev);
@@ -188,18 +193,21 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		proxy_c2s_cb = tcp_proxy_c2s_cb;
 		proxy_s2c_cb = tcp_proxy_s2c_cb;
 	}
+
+	struct proxy *ctl_prox = new_proxy_buf(client->ctl_bev);
+	struct proxy *local_prox = new_proxy_buf(client->local_proxy_bev);
 	
 	bufferevent_setcb(client->ctl_bev, 
 						proxy_s2c_cb, 
 						NULL, 
 						xfrp_event_cb, 
-						client->local_proxy_bev);
+						local_prox);
 
 	bufferevent_setcb(client->local_proxy_bev, 
 						proxy_c2s_cb, 
 						NULL, 
 						xfrp_event_cb, 
-						client->ctl_bev);
+						ctl_prox);
 						
 	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);

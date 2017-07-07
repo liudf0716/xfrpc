@@ -30,7 +30,9 @@ static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p);
 // read from client-working host port
 void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
-	struct proxy_client *pc = (struct proxy_client *)ctx;
+	struct proxy *p = (struct proxy *)ctx;
+	struct bufferevent *partner = p?p->bev:NULL;
+
 	struct evbuffer *src, *dst;
 	size_t len;
 	src = bufferevent_get_input(bev);
@@ -66,7 +68,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		// r_fp->ftp_server_port = 
 	}
 
-	dst = bufferevent_get_output(pc->ctl_bev);
+	dst = bufferevent_get_output(partner);
 	evbuffer_add_buffer(dst, src);
 	return;
 }

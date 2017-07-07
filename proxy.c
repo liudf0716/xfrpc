@@ -19,7 +19,6 @@
 #include "proxy.h"
 #include "config.h"
 
-
 struct proxy *new_proxy_buf(struct bufferevent *bev)
 {
 	struct proxy *p = (struct proxy *)calloc(1, sizeof(struct proxy));

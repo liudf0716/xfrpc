@@ -21,7 +21,8 @@
 // read from client-working host port
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
-	struct bufferevent *partner = (struct bufferevent *)ctx;
+	struct proxy *p = (struct proxy *)ctx;
+	struct bufferevent *partner = p?p->bev:NULL;
 	struct evbuffer *src, *dst;
 	size_t len;
 	src = bufferevent_get_input(bev);
@@ -34,7 +35,8 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 {
-	struct bufferevent *partner = (struct bufferevent *)ctx;
+	struct proxy *p = (struct proxy *)ctx;
+	struct bufferevent *partner = p?p->bev:NULL;
 	struct evbuffer *src, *dst;
 	src = bufferevent_get_input(bev);
 	dst = bufferevent_get_output(partner);

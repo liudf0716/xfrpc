@@ -138,7 +138,7 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 				/* We have nothing left to say to the other
 				 * side; close it. */
 				bufferevent_free(partner);
-				SAFE_FREE(p);
+				free_proxy(p);
 			}
 		}
 		bufferevent_free(bev);
@@ -192,6 +192,7 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		proxy_c2s_cb = ftp_proxy_c2s_cb;
 		proxy_s2c_cb = ftp_proxy_s2c_cb;
 		ctl_prox->remote_data_port = client->ps->remote_data_port;
+		ctl_prox->proxy_name = strdup(ps->proxy_name);
 	} else {
 		proxy_c2s_cb = tcp_proxy_c2s_cb;
 		proxy_s2c_cb = tcp_proxy_s2c_cb;
@@ -211,6 +212,22 @@ void start_xfrp_tunnel(struct proxy_client *client)
 						
 	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
+}
+
+void start_ftp_data_proxy_tunnel(const char *ftp_proxy_name)
+{
+	struct proxy_service *ps = NULL;
+	char *ftp_data_proxy_name = get_ftp_data_proxy_name(ftp_proxy_name);
+	struct proxy_service *p_services = get_all_proxy_services();
+	HASH_FIND_STR(p_services, ftp_data_proxy_name, ps);
+	if (!ps) {
+		debug(LOG_ERR, 
+			"error: ftp data proxy not inserted in proxy-service queue, it should not happend!");
+		free(ftp_data_proxy_name);
+		return;
+	}
+
+	free(ftp_data_proxy_name);
 }
 
 int send_client_data_tail(struct proxy_client *client)

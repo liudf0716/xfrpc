@@ -21,6 +21,7 @@ struct ftp_pasv {
 
 struct proxy {
 	struct bufferevent 	*bev;
+	char 				*proxy_name;
 	int 				remote_data_port;	//used in ftp proxy
 };
 
@@ -29,5 +30,6 @@ void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void ftp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 struct proxy *new_proxy_buf(struct bufferevent *bev);
+void free_proxy(struct proxy *p);
 
 #endif //_PROXY_H_

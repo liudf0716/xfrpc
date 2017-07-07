@@ -122,7 +122,7 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
 		sync_new_work_connection(bev);
-		debug(LOG_INFO, "proxy service connected");
+		debug(LOG_INFO, "proxy service start");
 	}
 }
 

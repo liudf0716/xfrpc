@@ -202,15 +202,7 @@ static struct proxy_service *new_proxy_service(const char *name)
 static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 {
 	struct proxy_service *ps = NULL;
-	char *ftp_tail_data_name = "_ftp_data_proxy";
-	char *ftp_data_proxy_name = (char *)calloc(1, 
-								strlen(ftp_ps->proxy_name)+strlen(ftp_tail_data_name)+1);
-	assert(ftp_data_proxy_name);
-	snprintf(ftp_data_proxy_name, 
-		strlen(ftp_ps->proxy_name) + strlen(ftp_tail_data_name) + 1, 
-		"%s%s", 
-		ftp_ps->proxy_name, 
-		ftp_tail_data_name);
+	char *ftp_data_proxy_name = get_ftp_data_proxy_name((const char *)ftp_ps->proxy_name);
 
 	HASH_FIND_STR(p_services, ftp_data_proxy_name, ps);
 	if (!ps) {
@@ -377,6 +369,23 @@ static void init_common_conf(struct common_conf *config)
 	config->heartbeat_timeout	= 60;
 	config->tcp_mux				= 0;
 	config->user				= NULL;
+}
+
+// it should be free after using
+char *get_ftp_data_proxy_name(const char *ftp_proxy_name)
+{
+	char *ftp_tail_data_name = FTP_DATA_PROXY_SUFFIX;
+	char *ftp_data_proxy_name = (char *)calloc(1, 
+								strlen(ftp_proxy_name)+strlen(ftp_tail_data_name)+1);
+	assert(ftp_data_proxy_name);
+
+	snprintf(ftp_data_proxy_name, 
+		strlen(ftp_proxy_name) + strlen(ftp_tail_data_name) + 1, 
+		"%s%s", 
+		ftp_proxy_name, 
+		ftp_tail_data_name);
+	
+	return ftp_data_proxy_name;
 }
 
 void load_config(const char *confile)

@@ -120,7 +120,7 @@ xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 	struct bufferevent *partner = p?p->bev:NULL;
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		debug(LOG_DEBUG, "working connection closed");
+		debug(LOG_DEBUG, "working connection closed!");
 		if (partner) {
 			/* Flush all pending data */
 			xfrp_read_cb(bev, p);
@@ -159,9 +159,20 @@ int is_ftp_proxy(const struct proxy_service *ps)
 // create frp tunnel for service
 void start_xfrp_tunnel(struct proxy_client *client)
 {
+	if (! client->ctl_bev) {
+		debug(LOG_ERR, "proxy client control bev is invalid!");
+		return;
+	}
+
 	struct event_base *base = client->base;
 	struct common_conf *c_conf = get_common_config();
 	struct proxy_service *ps = client->ps;
+
+	if (! base) {
+		debug(LOG_ERR, "service event base get failed");
+		return;
+	}
+
 	if (! ps) {
 		debug(LOG_ERR, "service tunnel started failed, no proxy service resource.");
 		return;
@@ -181,7 +192,7 @@ void start_xfrp_tunnel(struct proxy_client *client)
 	
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
 		  c_conf->server_addr, 
-		  c_conf->server_port, 
+		  ps->remote_port, 
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
@@ -212,22 +223,6 @@ void start_xfrp_tunnel(struct proxy_client *client)
 						
 	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
-}
-
-void start_ftp_data_proxy_tunnel(const char *ftp_proxy_name)
-{
-	struct proxy_service *ps = NULL;
-	char *ftp_data_proxy_name = get_ftp_data_proxy_name(ftp_proxy_name);
-	struct proxy_service *p_services = get_all_proxy_services();
-	HASH_FIND_STR(p_services, ftp_data_proxy_name, ps);
-	if (!ps) {
-		debug(LOG_ERR, 
-			"error: ftp data proxy not inserted in proxy-service queue, it should not happend!");
-		free(ftp_data_proxy_name);
-		return;
-	}
-
-	free(ftp_data_proxy_name);
 }
 
 int send_client_data_tail(struct proxy_client *client)

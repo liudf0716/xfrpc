@@ -18,6 +18,7 @@
 #include "common.h"
 #include "proxy.h"
 #include "config.h"
+#include "client.h"
 
 #define FTP_PRO_BUF 		256
 #define FTP_PASV_PORT_BLOCK 256
@@ -27,11 +28,39 @@ static void free_ftp_pasv(struct ftp_pasv *fp);
 static struct ftp_pasv * pasv_unpack(char *data);
 static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p);
 
+
+void set_ftp_data_proxy_tunnel(const char *ftp_proxy_name, 
+								struct ftp_pasv *local_fp, 
+								struct ftp_pasv *remote_fp)
+{
+	struct proxy_service *ps = NULL;
+	char *ftp_data_proxy_name = get_ftp_data_proxy_name(ftp_proxy_name);
+
+	struct proxy_service *p_services = get_all_proxy_services();
+	HASH_FIND_STR(p_services, ftp_data_proxy_name, ps);
+	if (!ps) {
+		debug(LOG_ERR, 
+			"error: ftp data proxy not inserted in proxy-service queue, it should not happend!");
+		goto FTP_DATA_PROXY_TUNNEL_END;
+	}
+
+	ps->local_port = local_fp->ftp_server_port;
+	ps->local_ip = strdup(local_fp->ftp_server_ip);
+	assert(ps->local_ip);
+
+	ps->remote_port = remote_fp->ftp_server_port;
+
+
+FTP_DATA_PROXY_TUNNEL_END:
+	free(ftp_data_proxy_name);
+}
+
 // read from client-working host port
 void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
 	struct proxy *p = (struct proxy *)ctx;
-	struct bufferevent *partner = p?p->bev:NULL;
+	assert(p);
+	struct bufferevent *partner = p->bev;
 
 	struct evbuffer *src, *dst;
 	size_t len;
@@ -58,13 +87,14 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	SAFE_FREE(dbg_buf);
 #endif //FTP_P_DEBUG
 
-	struct ftp_pasv *fp = pasv_unpack((char *)buf);
+	struct ftp_pasv *local_fp = pasv_unpack((char *)buf);
 	SAFE_FREE(buf);
 
-	if (fp) {
+	if (local_fp) {
 		struct common_conf *c_conf = get_common_config();
 		struct ftp_pasv *r_fp = new_ftp_pasv();
-		r_fp->code = fp->code;
+		r_fp->code = local_fp->code;
+
 		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
 		r_fp->ftp_server_port = p->remote_data_port;
 		
@@ -73,14 +103,15 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 		char *pasv_msg = NULL;
 		size_t pack_len = pasv_pack(r_fp, &pasv_msg);
-		
 		if (pack_len){
 			debug(LOG_DEBUG, "ftp proxy result: %s", pasv_msg);
 		}
 
+		set_ftp_data_proxy_tunnel(p->proxy_name, local_fp, r_fp);
+
 		dst = bufferevent_get_output(partner);
-		evbuffer_add_buffer(dst, src);
 		evbuffer_add_printf(dst, "%s", pasv_msg);
+		free(pasv_msg);
 	} else {
 		dst = bufferevent_get_output(partner);
 		evbuffer_add_buffer(dst, src);

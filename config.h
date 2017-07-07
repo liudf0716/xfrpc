@@ -29,6 +29,8 @@
 #include "client.h"
 #include "common.h"
 
+#define FTP_DATA_PROXY_SUFFIX	"_ftp_data_proxy"
+
 struct base_conf{
 	char	*name;
 	char	*auth_token;
@@ -68,5 +70,6 @@ void free_base_config(struct base_conf *bconf);
 struct proxy_client *get_all_pc();
 
 void load_config(const char *confile);
+char *get_ftp_data_proxy_name(const char *ftp_proxy_name);
 
 #endif //_CONFIG_H_

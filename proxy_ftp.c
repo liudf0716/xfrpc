@@ -64,6 +64,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	if (fp) {
 		struct common_conf *c_conf = get_common_config();
 		struct ftp_pasv *r_fp = new_ftp_pasv();
+		r_fp->code = fp->code;
 		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
 		r_fp->ftp_server_port = p->remote_data_port;
 		

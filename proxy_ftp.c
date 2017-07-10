@@ -28,7 +28,6 @@ static void free_ftp_pasv(struct ftp_pasv *fp);
 static struct ftp_pasv * pasv_unpack(char *data);
 static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p);
 
-
 void set_ftp_data_proxy_tunnel(const char *ftp_proxy_name, 
 								struct ftp_pasv *local_fp, 
 								struct ftp_pasv *remote_fp)
@@ -86,10 +85,12 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	assert(dbg_buf);
 	unsigned int i = 0;
 	for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
-		snprintf(dbg_buf + 7*i, 8, "%3u[%c] ", (unsigned char)buf[i], (unsigned char)buf[i]);
+		snprintf(dbg_buf + 7*i, 8, "%3u[%c] ", 
+			(unsigned char)buf[i], 
+			(unsigned char)buf[i]);
 	}
-	debug(LOG_DEBUG, "RECV ctl byte:%s", dbg_buf);
-	debug(LOG_DEBUG, "RECV ctl stri:%s", buf);
+	debug(LOG_DEBUG, "FTP Client RECV ctl byte:%s", dbg_buf);
+	debug(LOG_DEBUG, "FTP Client RECV ctl stri:%s", buf);
 	SAFE_FREE(dbg_buf);
 #endif //FTP_P_DEBUG
 
@@ -231,6 +232,7 @@ static size_t pasv_pack(struct ftp_pasv *fp, char **pack_p)
 	return pack_len;
 }
 
+// need be free after using
 static struct ftp_pasv *new_ftp_pasv()
 {
 	struct ftp_pasv *fp = (struct ftp_pasv *)calloc(1, sizeof(struct ftp_pasv));

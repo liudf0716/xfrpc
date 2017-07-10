@@ -372,6 +372,7 @@ static void init_common_conf(struct common_conf *config)
 }
 
 // it should be free after using
+// because of assert it will never return NULL
 char *get_ftp_data_proxy_name(const char *ftp_proxy_name)
 {
 	char *ftp_tail_data_name = FTP_DATA_PROXY_SUFFIX;

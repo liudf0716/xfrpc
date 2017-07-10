@@ -103,7 +103,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
 		r_fp->ftp_server_port = p->remote_data_port;
-		
+
 		if (r_fp->ftp_server_port <= 0) {
 			debug(LOG_ERR, "error: remote ftp data port is not init!");
 			goto FTP_C2S_CB_END;
@@ -112,7 +112,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		char *pasv_msg = NULL;
 		size_t pack_len = pasv_pack(r_fp, &pasv_msg);
 		if ( ! pack_len){
-			debug(LOG_ERROR, "error: ftp proxy replace failed!");
+			debug(LOG_ERR, "error: ftp proxy replace failed!");
 			SAFE_FREE(pasv_msg);
 			goto FTP_C2S_CB_END;
 		}
@@ -126,6 +126,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 FTP_C2S_CB_END:
 	SAFE_FREE(buf);
+	free_ftp_pasv(local_fp);
 	return;
 }
 
@@ -155,7 +156,7 @@ static struct ftp_pasv *pasv_unpack(char *data)
 				if (data[i] == '(') {
 					ip_start = 1;
 					continue;
-				} 
+				}
 				if (! ip_start)
 					continue;
 
@@ -246,12 +247,12 @@ static struct ftp_pasv *new_ftp_pasv()
 	return fp;	 
 }
 
+// can be used to free NULL pointer also
 static void free_ftp_pasv(struct ftp_pasv *fp)
 {
 	if (!fp)
 		return;
-
-	SAFE_FREE(fp->ftp_server_ip);
+	
 	SAFE_FREE(fp);
 	fp = NULL;
 }

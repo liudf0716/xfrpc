@@ -60,7 +60,6 @@
 #include "login.h"
 
 static struct control *main_ctl;
-static char *request_buf;
 static int clients_conn_signel = 0;
 
 static void sync_new_work_connection(struct bufferevent *bev);
@@ -69,13 +68,6 @@ static void recv_cb(struct bufferevent *bev, void *ctx);
 static int is_client_connected()
 {
 	return clients_conn_signel;
-}
-
-static void init_request_buffer()
-{
-	size_t len = (1<<16) + get_header_size();
-	request_buf = calloc(1, len);
-	assert(request_buf);
 }
 
 static int client_connected(int is_connected)
@@ -1034,7 +1026,6 @@ void init_main_control()
 
 	main_ctl->connect_base = base;
 	main_ctl->dnsbase = dnsbase;
-	init_request_buffer();
 
 	if (get_common_config()->tcp_mux) {
 		uint32_t *sid = init_sid_index();
@@ -1064,6 +1055,5 @@ void free_control()
 	if (!main_ctl)
 		return;
 
-	SAFE_FREE(request_buf);
 	SAFE_FREE(main_ctl);
 }

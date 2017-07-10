@@ -79,7 +79,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	size_t read_n = 0;
 	read_n = evbuffer_remove(src, buf, len);
 
-// #define FTP_P_DEBUG 1
+#define FTP_P_DEBUG 1
 #ifdef FTP_P_DEBUG
 	char *dbg_buf = calloc(1, read_n * 7 + 1);
 	assert(dbg_buf);

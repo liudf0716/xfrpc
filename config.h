@@ -46,6 +46,7 @@ struct base_conf{
 // common config
 struct common_conf {
 	char	*server_addr; /* default 0.0.0.0 */
+	char 	*server_ip;
 	int		server_port; /* default 7000 */
 	char	*http_proxy;
 	char	*log_file; /* default consol */
@@ -71,5 +72,6 @@ struct proxy_client *get_all_pc();
 
 void load_config(const char *confile);
 char *get_ftp_data_proxy_name(const char *ftp_proxy_name);
+void set_common_server_ip(const char *ip);
 
 #endif //_CONFIG_H_

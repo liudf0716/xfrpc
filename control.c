@@ -29,10 +29,9 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <errno.h>
-
 #include <json-c/json.h>
 #include <syslog.h>
 
@@ -794,6 +793,31 @@ static void keep_control_alive()
 	set_ticker_ping_timer(main_ctl->ticker_ping);
 }
 
+static void server_dns_cb(int event_code, struct evutil_addrinfo *addr, void *ctx)
+{
+    if (event_code) {
+        set_common_server_ip(evutil_gai_strerror(event_code));
+    } else {
+        struct evutil_addrinfo *ai;
+        if (addr->ai_canonname)
+            debug(LOG_DEBUG, "addr->ai_canonname  [%s]", addr->ai_canonname);
+        for (ai = addr; ai; ai = ai->ai_next) {
+            char buf[128];
+            const char *s = NULL;
+            if (ai->ai_family == AF_INET) {
+                struct sockaddr_in *sin = (struct sockaddr_in *)ai->ai_addr;
+                s = evutil_inet_ntop(AF_INET, &sin->sin_addr, buf, 128);
+            } else if (ai->ai_family == AF_INET6) {
+                struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ai->ai_addr;
+                s = evutil_inet_ntop(AF_INET6, &sin6->sin6_addr, buf, 128);
+            }
+            if (s)
+                set_common_server_ip(s);
+        }
+        evutil_freeaddrinfo(addr);
+    }
+}
+
 void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
@@ -1026,13 +1050,36 @@ void init_main_control()
 
 	main_ctl->connect_base = base;
 	main_ctl->dnsbase = dnsbase;
-
-	if (get_common_config()->tcp_mux) {
+	
+	struct common_conf *c_conf = get_common_config();
+	if (c_conf->tcp_mux) {
 		uint32_t *sid = init_sid_index();
 		assert(sid);
 		main_ctl->session_id = *sid;
 
 		debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
+	}
+
+	if (is_valid_ip_address((const char *)c_conf->server_addr))
+		return;
+	
+	struct evutil_addrinfo hints;
+	struct evdns_getaddrinfo_request *dns_req;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_flags = EVUTIL_AI_CANONNAME;
+	hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+	dns_req = evdns_getaddrinfo(dnsbase, 
+							c_conf->server_addr, 
+							NULL /* no service name given */,
+							&hints, 
+							server_dns_cb, 
+							NULL);
+	if (! dns_req) {
+		debug(LOG_ERR, "error: can not analyse the dns of %s", c_conf->server_addr);
+		exit(0);
 	}
 }
 

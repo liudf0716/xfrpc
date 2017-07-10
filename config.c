@@ -63,7 +63,15 @@ void free_common_config()
 	if (c_conf->log_level) free(c_conf->log_level);
 	if (c_conf->auth_token) free(c_conf->auth_token);
 	if (c_conf->privilege_token) free(c_conf->privilege_token);
+	SAFE_FREE(c_conf->server_ip);
 };
+
+void set_common_server_ip(const char *ip)
+{
+	struct common_conf *c_conf = get_common_config();
+	c_conf->server_ip = strdup(ip);
+	assert(c_conf->server_ip);
+}
 
 void free_base_config(struct base_conf *bconf)
 {
@@ -139,11 +147,6 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 			debug(LOG_ERR, 
 				"Proxy [%s] error: remote_data_port must be exist when type is ftp", 
 				ps->proxy_name);
-			exit(0);
-		}
-
-		if (!is_valid_ip_address((const char *)c_conf->server_addr)){
-			debug(LOG_ERR, "now ftp proxy only support ip address in [server_addr]");
 			exit(0);
 		}
 
@@ -369,6 +372,7 @@ static void init_common_conf(struct common_conf *config)
 	config->heartbeat_timeout	= 60;
 	config->tcp_mux				= 0;
 	config->user				= NULL;
+	config->server_ip			= NULL;
 }
 
 // it should be free after using

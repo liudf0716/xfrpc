@@ -79,7 +79,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	size_t read_n = 0;
 	read_n = evbuffer_remove(src, buf, len);
 
-#define FTP_P_DEBUG 1
+// #define FTP_P_DEBUG 1
 #ifdef FTP_P_DEBUG
 	char *dbg_buf = calloc(1, read_n * 7 + 1);
 	assert(dbg_buf);
@@ -101,7 +101,12 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		struct ftp_pasv *r_fp = new_ftp_pasv();
 		r_fp->code = local_fp->code;
 
-		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
+		if (! c_conf->server_ip) {
+			debug(LOG_ERR, "error: FTP proxy without server ip!");
+			exit(0);
+		}
+
+		strncpy(r_fp->ftp_server_ip, c_conf->server_ip, IP_LEN);
 		r_fp->ftp_server_port = p->remote_data_port;
 
 		if (r_fp->ftp_server_port <= 0) {
@@ -116,6 +121,10 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 			SAFE_FREE(pasv_msg);
 			goto FTP_C2S_CB_END;
 		}
+
+#ifdef FTP_P_DEBUG
+		debug(LOG_DEBUG, "ftp pack result:%s", pasv_msg);
+#endif //FTP_P_DEBUG
 
 		set_ftp_data_proxy_tunnel(p->proxy_name, local_fp, r_fp);
 		evbuffer_add(dst, pasv_msg, pack_len);

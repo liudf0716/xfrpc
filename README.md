@@ -61,7 +61,7 @@ xfrpc -c frpc_mini.ini -d 0
 
 ## FTP support
 
-xfrp support ftp proxy after version [0.07.451](https://github.com/KunTengRom/xfrp/tree/0.07.451). But for 
+xfrp support ftp proxy after version [0.07.451](https://github.com/KunTengRom/xfrp/tree/0.07.451). **Hypothesize you have built [xfrps](https://github.com/KunTengRom/xfrp) succeed!**
 
 Configure ftp in frpc.ini
 

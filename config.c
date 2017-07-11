@@ -120,7 +120,7 @@ static const char *get_valid_type(const char *val)
 
 static void dump_common_conf()
 {
-	if(!c_conf) {
+	if(! c_conf) {
 		debug(LOG_ERR, "Error: c_conf is NULL");
 		return;
 	}

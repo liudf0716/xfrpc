@@ -66,5 +66,7 @@ void set_frame_len(struct frame *f, ushort data_len)
 }
 
 void free_frame(struct frame *f) {
-	SAFE_FREE(f);
+	if(f) {
+		SAFE_FREE(f);
+	}
 }

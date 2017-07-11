@@ -186,21 +186,18 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 		bout = main_ctl->connect_bev;
 	}
 
-	if ( ! bout) {
-		goto REQ_END;
-	}
+	if ( ! bout)
+		return 0;
 
 	struct common_conf *c = get_common_config();
 	if ( ! c)
-		goto REQ_END;
+		return 0;
 
 	write_len = (size_t)f->len;
 	if ( 0 == write_len)
-		goto REQ_END;;
+		return 0;
 
 	bufferevent_write(bout, f->data, write_len);
-
-REQ_END:
 	return write_len;
 }
 
@@ -246,6 +243,7 @@ static void ping(struct bufferevent *bev)
 		struct frame *f = new_frame(cmdNOP, 0); //ping sid is 0
 		assert(f);
 		request(bout, f);
+		free_frame(f);
 	}
 	
 	uint32_t sid = get_main_control()->session_id;
@@ -747,7 +745,9 @@ static void open_connection_session(struct bufferevent *bev)
 {
 	struct frame *f = new_frame(cmdSYN, main_ctl->session_id);
 	assert(f);
+
 	request(bev, f);
+	free_frame(f);
 }
 
 static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
@@ -755,15 +755,16 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	struct common_conf 	*c_conf = get_common_config();
 	static int retry_times = 0;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		if (retry_times >= 10) {
-			debug(LOG_INFO, 
+		if (retry_times >= 10) { // only try 10 times consecutively
+			debug(LOG_ERR, 
 				"have retry connect to xfrp server for %d times, exit!", 
 				retry_times);
 
 			exit(0);
 		}
+
 		retry_times++;
-		debug(LOG_ERR, "connect server [%s:%d] failed", 
+		debug(LOG_ERR, "error: connect server [%s:%d] failed", 
 				c_conf->server_addr, 
 				c_conf->server_port);
 		free_control();
@@ -772,11 +773,14 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		close_main_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
+
 		// recv login-response message before recving othfer fprs messages, 
 		bufferevent_setcb(bev, recv_cb, NULL, connect_event_cb, NULL);
 		bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);
 		
-		open_connection_session(bev);
+		if (get_common_config()->tcp_mux) 
+			open_connection_session(bev);
+
 		login();
 	}
 }
@@ -821,14 +825,12 @@ static void server_dns_cb(int event_code, struct evutil_addrinfo *addr, void *ct
 void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
-	assert(c_conf);
-
 	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
-												c_conf->server_addr, 
-												c_conf->server_port);
+											c_conf->server_addr, 
+											c_conf->server_port);
 	if ( ! main_ctl->connect_bev) {
 		debug(LOG_ERR, 
-			"Connect server [%s:%d] failed", 
+			"error: connect server [%s:%d] failed", 
 			c_conf->server_addr, 
 			c_conf->server_port);
 		exit(0);
@@ -843,6 +845,7 @@ void sync_iv(unsigned char *iv)
 {
 	struct frame *f = new_frame(cmdPSH, main_ctl->session_id);
 	assert(f);
+
 	f->len = (ushort) get_encrypt_block_size();
 	f->data = calloc(f->len, 1);
 	memcpy(f->data, iv, f->len);
@@ -862,14 +865,15 @@ void login()
 	char *lg_msg = NULL;
 	int len = login_request_marshal(&lg_msg); //marshal login request
 	if ( ! lg_msg || ! len) {
-		debug(LOG_ERR, "login_request_marshal failed");
-		assert(lg_msg);
+		debug(LOG_ERR, 
+			"error: login_request_marshal failed, it should never be happenned");
+		exit(0);
 	}
 
-	if (get_common_config()->tcp_mux) {
-		// using sid = 3 is only for matching fprs, it will change after using tcp-mux
+	// using sid = 3 is only for matching fprs, it will change after using tcp-mux
+	if (get_common_config()->tcp_mux)
 		sync_session_id(3); 
-	}
+	
 	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
 	SAFE_FREE(lg_msg);
 }
@@ -896,10 +900,8 @@ void send_msg_frp_server(struct bufferevent *bev,
 	} else {
 		bout = main_ctl->connect_bev;
 	}
+	assert(bout);
 
-	if ( ! bout) {
-		return;
-	}
 	debug(LOG_DEBUG, "send ----> [%c: %s]", type, msg);
 
 	struct message req_msg;
@@ -973,7 +975,8 @@ void send_msg_frp_server(struct bufferevent *bev,
 
 S_M_F_END:
 	SAFE_FREE(req_msg.data_p);
-	SAFE_FREE(f->data);
+	SAFE_FREE(pack_buf);
+	f->data = NULL;
 	free_frame(f);
 }
 

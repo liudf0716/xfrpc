@@ -800,7 +800,7 @@ static void server_dns_cb(int event_code, struct evutil_addrinfo *addr, void *ct
     } else {
         struct evutil_addrinfo *ai;
         if (addr->ai_canonname)
-            debug(LOG_DEBUG, "addr->ai_canonname  [%s]", addr->ai_canonname);
+            debug(LOG_DEBUG, "addr->ai_canonname [%s]", addr->ai_canonname);
         for (ai = addr; ai; ai = ai->ai_next) {
             char buf[128];
             const char *s = NULL;
@@ -1023,20 +1023,26 @@ void send_new_proxy(struct proxy_service *ps)
 
 void init_main_control()
 {
-	if (main_ctl && main_ctl->connect_base)
+	if (main_ctl && main_ctl->connect_base) {
 		event_base_loopbreak(main_ctl->connect_base);
+		free(main_ctl);
+	}
 
 	main_ctl = calloc(sizeof(struct control), 1);
 	assert(main_ctl);
 	struct event_base *base = NULL;
 	struct evdns_base *dnsbase  = NULL; 
 	base = event_base_new();
-	if (!base)
-		return;
+	if (! base) {
+		debug(LOG_ERR, "error: event base init failed!");
+		exit(0);
+	}
 
 	dnsbase = evdns_base_new(base, 1);
-	if (!dnsbase)
-		return;
+	if (! dnsbase) {
+		debug(LOG_ERR, "error: evdns base init failed!");
+		exit(0);
+	}
 
 	evdns_base_set_option(dnsbase, "timeout", "1.0");
 
@@ -1060,9 +1066,11 @@ void init_main_control()
 		debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
 	}
 
+	// if server_addr is ip, done control init.
 	if (is_valid_ip_address((const char *)c_conf->server_addr))
 		return;
 	
+	// if server_addr is domain, analyze it to ip for server_ip
 	struct evutil_addrinfo hints;
 	struct evdns_getaddrinfo_request *dns_req;
 	memset(&hints, 0, sizeof(hints));

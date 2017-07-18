@@ -162,10 +162,11 @@ int get_net_ifname(char *if_buf, int blen)
 				found = 1;
 				break;
 			}
-
-			if (strcmp(ifa->ifa_name, "lo") != 0 ) {
-				strncpy(tmp_if_buf, ifa->ifa_name, 16);
-			}
+		} else if (family == AF_PACKET && 
+			ifa->ifa_data != NULL && 
+			strcmp(ifa->ifa_name, "lo") != 0) {
+			
+			strncpy(tmp_if_buf, ifa->ifa_name, 16);
 		}
 	}
 

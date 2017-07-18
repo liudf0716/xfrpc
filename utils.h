@@ -8,5 +8,6 @@ void s_sleep(unsigned int s, unsigned int u);
 int is_valid_ip_address(const char *ip_address);
 int show_net_ifname();
 int get_net_ifname(char *if_buf, int blen);
+int get_net_mac(char *net_if_name, char *mac, int mac_len);
 
 #endif //_UTILS_H_

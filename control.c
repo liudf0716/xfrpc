@@ -1030,9 +1030,9 @@ void init_main_control()
     // thanks to the following article
     // http://www.wuqiong.info/archives/13/
     evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
-    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");		//BaiduDNS
-    evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
-    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
+    // evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");		//BaiduDNS
+    // evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
+    // evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
     evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
 
 	main_ctl->connect_base = base;

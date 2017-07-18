@@ -71,6 +71,8 @@ void set_common_server_ip(const char *ip)
 	struct common_conf *c_conf = get_common_config();
 	c_conf->server_ip = strdup(ip);
 	assert(c_conf->server_ip);
+
+	debug(LOG_DEBUG, "server IP address: [%s]", c_conf->server_ip);
 }
 
 void free_base_config(struct base_conf *bconf)

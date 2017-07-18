@@ -800,7 +800,7 @@ static void keep_control_alive()
 static void server_dns_cb(int event_code, struct evutil_addrinfo *addr, void *ctx)
 {
     if (event_code) {
-        set_common_server_ip(evutil_gai_strerror(event_code));
+        set_common_server_ip((const char *)evutil_gai_strerror(event_code));
     } else {
         struct evutil_addrinfo *ai;
         if (addr->ai_canonname)
@@ -1031,8 +1031,8 @@ void init_main_control()
     // http://www.wuqiong.info/archives/13/
     evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
     // evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");		//BaiduDNS
+	// evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
     // evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
-	evdns_base_nameserver_ip_add(dnsbase, "127.0.0.1");	
 	// evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
 
 	main_ctl->connect_base = base;
@@ -1053,7 +1053,7 @@ void init_main_control()
 	
 	// if server_addr is domain, analyze it to ip for server_ip
 	debug(LOG_DEBUG, "Get ip address of [%s] from DNServer", c_conf->server_addr);
-	
+
 	struct evutil_addrinfo hints;
 	struct evdns_getaddrinfo_request *dns_req;
 	memset(&hints, 0, sizeof(hints));

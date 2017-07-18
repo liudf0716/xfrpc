@@ -65,6 +65,8 @@ void init_login()
 	c_login->user			= c_conf->user;
 
 	c_login->logged 		= 0;
+
+	/* start to init login->run_id */
 	char ifname[16] = {0};
 	if(get_net_ifname(ifname, 16)){
 		debug(LOG_ERR, "error: get device sign ifname failed!");

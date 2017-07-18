@@ -1,2 +1,0 @@
-/usr/bin/xfrpc
-/usr/bin/xfrp_test_server

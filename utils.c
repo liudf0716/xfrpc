@@ -164,7 +164,7 @@ int get_net_ifname(char *if_buf, int blen)
 			}
 		} else if (family == AF_PACKET && 
 			ifa->ifa_data != NULL && 
-			strcmp(ifa->ifa_name, "lo") != 0) {
+			strcmp(ifa->ifa_name, "lo") != 0) { // skip local loop interface
 			
 			strncpy(tmp_if_buf, ifa->ifa_name, 16);
 		}

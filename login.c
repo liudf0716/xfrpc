@@ -38,12 +38,12 @@ void init_login()
 {
 	if (! c_login) 
 		c_login = calloc(sizeof(struct login), 1);
-		
+
 	assert(c_login);
 
 	struct common_conf *c_conf = get_common_config();
 	assert(c_conf);
-	
+
 	struct utsname uname_buf;
 	if (uname(&uname_buf)) {
 		return;
@@ -65,13 +65,20 @@ void init_login()
 	c_login->user			= c_conf->user;
 
 	c_login->logged 		= 0;
-	show_net_ifname();
 	char ifname[16] = {0};
 	if(get_net_ifname(ifname, 16)){
-		debug(LOG_WARNING, "123456");
-	} else {
-		debug(LOG_DEBUG, "using sign key ifname: [%s]", ifname);
+		debug(LOG_ERR, "error: get device sign ifname failed!");
+		exit(0);
 	}
+
+	char if_mac[64] = {0};
+	if(get_net_mac(ifname, if_mac, sizeof(if_mac))) {
+		debug(LOG_ERR, "error: Hard ware MAC address of [%s] get failed!", ifname);
+		exit(0);
+	}
+
+	c_login->run_id = strdup(if_mac);
+	assert(c_login->run_id);
 }
 
 int login_resp_check(struct login_resp *lr)

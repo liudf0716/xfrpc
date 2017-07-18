@@ -1067,7 +1067,7 @@ void init_main_control()
 							server_dns_cb, 
 							NULL);
 	if (! dns_req) {
-		debug(LOG_ERR, "error: can not analyse the dns of %s", c_conf->server_addr);
+		debug(LOG_ERR, "error: can not analyse the dns of [%s]", c_conf->server_addr);
 		exit(0);
 	}
 }

@@ -15,6 +15,7 @@
 #include "msg.h"
 #include "version.h"
 #include "login.h"
+#include "utils.h"
 
 static struct login 		*c_login;
 
@@ -64,6 +65,13 @@ void init_login()
 	c_login->user			= c_conf->user;
 
 	c_login->logged 		= 0;
+
+	// char ifname[16] = {0};
+	// if(get_net_ifname(ifname, 16)){
+	// 	debug(LOG_WARNING, "123456");
+	// } else {
+	// 	debug(LOG_DEBUG, "using sign key ifname: [%s]", ifname);
+	// }
 }
 
 int login_resp_check(struct login_resp *lr)

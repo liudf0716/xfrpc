@@ -375,6 +375,7 @@ static void init_common_conf(struct common_conf *config)
 	config->tcp_mux				= 0;
 	config->user				= NULL;
 	config->server_ip			= NULL;
+	config->is_router			= 0;
 }
 
 // it should be free after using
@@ -424,4 +425,9 @@ void load_config(const char *confile)
 	ini_parse(confile, proxy_service_handler, NULL);
 	
 	dump_all_ps();
+}
+
+int is_running_in_router()
+{
+	return c_conf->is_router;
 }

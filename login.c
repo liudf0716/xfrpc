@@ -73,6 +73,11 @@ void init_login()
 		exit(0);
 	}
 
+	if (strcmp(ifname, "br-lan") == 0) {
+		c_conf->is_router = 1;
+		debug(LOG_DEBUG, "working in router");
+	}
+
 	char if_mac[64] = {0};
 	if(get_net_mac(ifname, if_mac, sizeof(if_mac))) {
 		debug(LOG_ERR, "error: Hard ware MAC address of [%s] get failed!", ifname);

@@ -317,11 +317,12 @@ static void sync_new_work_connection(struct bufferevent *bev)
 	SAFE_FREE(work_c);
 }
 
-struct bufferevent *connect_server(struct event_base *base, const char *name, const int port)
+struct bufferevent *
+connect_server(struct event_base *base, const char *name, const int port)
 {
 	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev);
-	
+
 	if (bufferevent_socket_connect_hostname(bev, 
 		main_ctl->dnsbase, 
 		AF_INET, 
@@ -815,8 +816,8 @@ static void server_dns_cb(int event_code, struct evutil_addrinfo *addr, void *ct
                 struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ai->ai_addr;
                 s = evutil_inet_ntop(AF_INET6, &sin6->sin6_addr, buf, 128);
             }
-            if (s)
-                set_common_server_ip(s);
+
+            if (s) set_common_server_ip(s);
         }
         if (addr) evutil_freeaddrinfo(addr);
     }
@@ -1022,7 +1023,7 @@ void init_main_control()
 	}
 
 	struct event_base *base = NULL;
-	struct evdns_base *dnsbase  = NULL; 
+	struct evdns_base *dnsbase = NULL; 
 	base = event_base_new();
 	if (! base) {
 		debug(LOG_ERR, "error: event base init failed!");
@@ -1042,10 +1043,10 @@ void init_main_control()
     // thanks to the following article
     // http://www.wuqiong.info/archives/13/
     evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
-    evdns_base_nameserver_ip_add(dnsbase, "180.88.76.99");		//BaiduDNS
-	// evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
-    // evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
-	// evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
+    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");		//BaiduDNS
+	evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
+    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
+	evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
 
 	// if server_addr is ip, done control init.
 	if (is_valid_ip_address((const char *)c_conf->server_addr))

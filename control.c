@@ -818,7 +818,7 @@ static void server_dns_cb(int event_code, struct evutil_addrinfo *addr, void *ct
             if (s)
                 set_common_server_ip(s);
         }
-        evutil_freeaddrinfo(addr);
+        if (addr) evutil_freeaddrinfo(addr);
     }
 }
 
@@ -1011,33 +1011,7 @@ void init_main_control()
 
 	main_ctl = calloc(sizeof(struct control), 1);
 	assert(main_ctl);
-	struct event_base *base = NULL;
-	struct evdns_base *dnsbase  = NULL; 
-	base = event_base_new();
-	if (! base) {
-		debug(LOG_ERR, "error: event base init failed!");
-		exit(0);
-	}
 
-	dnsbase = evdns_base_new(base, 1);
-	if (! dnsbase) {
-		debug(LOG_ERR, "error: evdns base init failed!");
-		exit(0);
-	}
-
-	evdns_base_set_option(dnsbase, "timeout", "1.0");
-
-    // thanks to the following article
-    // http://www.wuqiong.info/archives/13/
-    evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
-    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");		//BaiduDNS
-	evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
-    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
-	evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
-
-	main_ctl->connect_base = base;
-	main_ctl->dnsbase = dnsbase;
-	
 	struct common_conf *c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
 		uint32_t *sid = init_sid_index();
@@ -1046,6 +1020,32 @@ void init_main_control()
 
 		debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
 	}
+
+	struct event_base *base = NULL;
+	struct evdns_base *dnsbase  = NULL; 
+	base = event_base_new();
+	if (! base) {
+		debug(LOG_ERR, "error: event base init failed!");
+		exit(0);
+	}
+	main_ctl->connect_base = base;
+
+	dnsbase = evdns_base_new(base, 1);
+	if (! dnsbase) {
+		debug(LOG_ERR, "error: evdns base init failed!");
+		exit(0);
+	}
+	main_ctl->dnsbase = dnsbase;
+
+	evdns_base_set_option(dnsbase, "timeout", "1.0");
+
+    // thanks to the following article
+    // http://www.wuqiong.info/archives/13/
+    evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
+    evdns_base_nameserver_ip_add(dnsbase, "180.88.76.99");		//BaiduDNS
+	// evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
+    // evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
+	// evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
 
 	// if server_addr is ip, done control init.
 	if (is_valid_ip_address((const char *)c_conf->server_addr))

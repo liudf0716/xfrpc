@@ -185,7 +185,7 @@ parse_commandline(int argc, char **argv)
             		exit(0);
             	}
 
-                fprintf(stdout, "run ID:%s\tremote_port:%d\n", if_mac, 6054);
+                fprintf(stdout, "run ID:%s\n", if_mac);
                 exit(1);
                 break;
             }

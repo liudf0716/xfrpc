@@ -39,6 +39,7 @@
 #include "commandline.h"
 #include "debug.h"
 #include "version.h"
+#include "utils.h"
 
 typedef void signal_func (int);
 
@@ -122,6 +123,7 @@ usage(const char *appname)
     fprintf(stdout, "  -d <level>    Debug level\n");
     fprintf(stdout, "  -h            Print usage\n");
     fprintf(stdout, "  -v            Print version information\n");
+    fprintf(stdout, "  -r            Print run id of client\n");
     fprintf(stdout, "\n");
 }
 
@@ -134,7 +136,7 @@ parse_commandline(int argc, char **argv)
     int c;
 	int flag = 0;
 	
-    while (-1 != (c = getopt(argc, argv, "c:hfd:sw:vx:i:a:"))) {
+    while (-1 != (c = getopt(argc, argv, "c:hfd:sw:vrx:i:a:"))) {
 
 
         switch (c) {
@@ -168,7 +170,25 @@ parse_commandline(int argc, char **argv)
             fprintf(stdout, "version: " VERSION "\n");
             exit(1);
             break;
+        
+        case 'r':
+            {
+                char ifname[16] = {0};
+            	if(get_net_ifname(ifname, 16)){
+            		debug(LOG_ERR, "error: get device sign ifname failed!");
+            		exit(0);
+            	}
 
+            	char if_mac[64] = {0};
+            	if(get_net_mac(ifname, if_mac, sizeof(if_mac))) {
+            		debug(LOG_ERR, "error: Hard ware MAC address of [%s] get failed!", ifname);
+            		exit(0);
+            	}
+
+                fprintf(stdout, "run ID:%s\tremote_port:%d\n", if_mac, 6054);
+                exit(1);
+                break;
+            }
         default:
             usage(argv[0]);
             exit(1);

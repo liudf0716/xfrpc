@@ -1049,30 +1049,30 @@ void init_main_control()
 	evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
 
 	// if server_addr is ip, done control init.
-	if (is_valid_ip_address((const char *)c_conf->server_addr))
-		return;
+	// if (is_valid_ip_address((const char *)c_conf->server_addr))
+	// 	return;
 	
-	// if server_addr is domain, analyze it to ip for server_ip
-	debug(LOG_DEBUG, "Get ip address of [%s] from DNServer", c_conf->server_addr);
+	// // if server_addr is domain, analyze it to ip for server_ip
+	// debug(LOG_DEBUG, "Get ip address of [%s] from DNServer", c_conf->server_addr);
 
-	struct evutil_addrinfo hints;
-	struct evdns_getaddrinfo_request *dns_req;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_flags = EVUTIL_AI_CANONNAME;
-	hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
+	// struct evutil_addrinfo hints;
+	// struct evdns_getaddrinfo_request *dns_req;
+	// memset(&hints, 0, sizeof(hints));
+	// hints.ai_family = AF_UNSPEC;
+	// hints.ai_flags = EVUTIL_AI_CANONNAME;
+	// hints.ai_socktype = SOCK_STREAM;
+    // hints.ai_protocol = IPPROTO_TCP;
 
-	dns_req = evdns_getaddrinfo(dnsbase, 
-							c_conf->server_addr, 
-							NULL /* no service name given */,
-							&hints, 
-							server_dns_cb, 
-							NULL);
-	if (! dns_req) {
-		debug(LOG_ERR, "error: can not analyse the dns of [%s]", c_conf->server_addr);
-		exit(0);
-	}
+	// dns_req = evdns_getaddrinfo(dnsbase, 
+	// 						c_conf->server_addr, 
+	// 						NULL /* no service name given */,
+	// 						&hints, 
+	// 						server_dns_cb, 
+	// 						NULL);
+	// if (! dns_req) {
+	// 	debug(LOG_ERR, "error: can not analyse the dns of [%s]", c_conf->server_addr);
+	// 	exit(0);
+	// }
 }
 
 void close_main_control()

@@ -81,7 +81,14 @@ static void fill_custom_domains(struct json_object *j_ctl_req, const char *custo
 	char *tok = tmp, *end = tmp;
 	while (tok != NULL) {
 		strsep(&end, ",");
-		json_object_array_add(jarray_cdomains, json_object_new_string(tok));
+
+		int dname_len = strlen(tok) + 1;
+		char *dname_buf = (char *)calloc(1, dname_len);
+		assert(dname_buf);
+		dns_unified(tok, dname_buf, dname_len);
+		json_object_array_add(jarray_cdomains, json_object_new_string(dname_buf));
+
+		free(dname_buf);
 		tok = end;
 	}
 	SAFE_FREE(tmp);
@@ -179,12 +186,7 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	}
 
 	if (np_req->custom_domains) {
-		int dname_len = strlen(np_req->custom_domains) + 1;
-		char *dname_buf = (char *)calloc(1, dname_len);
-		assert(dname_buf);
-		dns_unified(np_req->custom_domains, dname_buf, dname_len);
-		fill_custom_domains(j_np_req, dname_buf);
-		free(dname_buf);
+		fill_custom_domains(j_np_req, np_req->custom_domains);
 		json_object_object_add(j_np_req, "remote_port", NULL);
 	} else {
 		json_object_object_add(j_np_req, "custom_domains", NULL);

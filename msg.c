@@ -182,10 +182,11 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 		json_object_object_add(j_np_req, "remote_port", NULL);
 	} else {
 		json_object_object_add(j_np_req, "custom_domains", NULL);
-		if (np_req->remote_port != -1)
+		if (np_req->remote_port != -1) {
 			JSON_MARSHAL_TYPE(j_np_req, "remote_port", int, np_req->remote_port);
-		else
+		} else {
 			json_object_object_add(j_np_req, "remote_port", NULL);
+		}
 	}
 
 	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));

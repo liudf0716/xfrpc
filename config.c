@@ -311,8 +311,13 @@ static int common_handler(void *user, const char *section, const char *name, con
 	#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 	if (MATCH("common", "server_addr")) {
 		SAFE_FREE(config->server_addr);
-		config->server_addr = strdup(value);
+		int addr_len = strlen(value) + 1;
+		config->server_addr = (char *)calloc(1, addr_len);
 		assert(config->server_addr);
+		if(dns_unified(value, config->server_addr, addr_len)) {
+			debug(LOG_ERR, "error: server_addr [%s] is invalid!", value);
+			exit(0);
+		}
 	} else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
 	} else if (MATCH("common", "http_proxy")) {

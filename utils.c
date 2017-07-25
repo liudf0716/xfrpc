@@ -185,7 +185,7 @@ int get_net_ifname(char *if_buf, int blen)
 
 // e.g. wWw.Baidu.com/China will be trans into www.baidu.com/China
 // return: 0:check and trant succeed, 1:failed or domain name is invalid
-int dns_unified(char *dname, char *udname_buf, int udname_buf_len)
+int dns_unified(const char *dname, char *udname_buf, int udname_buf_len)
 {
 	if (! dname || ! udname_buf || udname_buf_len < strlen(dname)+1)
 		return 1;

@@ -172,7 +172,6 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
 	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
 	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
-	JSON_MARSHAL_TYPE(j_np_req, "remote_port", int, np_req->remote_port);
 
 	if (is_ftp_proxy(np_req)) {
 		JSON_MARSHAL_TYPE(j_np_req, "remote_data_port", int, np_req->remote_data_port);
@@ -180,8 +179,13 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 
 	if (np_req->custom_domains) {
 		fill_custom_domains(j_np_req, np_req->custom_domains);
+		json_object_object_add(j_np_req, "remote_port", NULL);
 	} else {
 		json_object_object_add(j_np_req, "custom_domains", NULL);
+		if (np_req->remote_port != -1)
+			JSON_MARSHAL_TYPE(j_np_req, "remote_port", int, np_req->remote_port);
+		else
+			json_object_object_add(j_np_req, "remote_port", NULL);
 	}
 
 	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));

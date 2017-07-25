@@ -42,6 +42,7 @@
 #include "common.h"
 #include "login.h"
 #include "client.h"
+#include "utils.h"
 
 #define JSON_MARSHAL_TYPE(jobj,key,jtype,item)		\
 json_object_object_add(jobj, key, json_object_new_##jtype((item)));
@@ -178,7 +179,12 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	}
 
 	if (np_req->custom_domains) {
-		fill_custom_domains(j_np_req, np_req->custom_domains);
+		int dname_len = strlen(np_req->custom_domains) + 1;
+		char *dname_buf = (char *)calloc(1, dname_len);
+		assert(dname_buf);
+		dns_unified(np_req->custom_domains, dname_buf, dname_len);
+		fill_custom_domains(j_np_req, dname_buf);
+		free(dname_buf);
 		json_object_object_add(j_np_req, "remote_port", NULL);
 	} else {
 		json_object_object_add(j_np_req, "custom_domains", NULL);

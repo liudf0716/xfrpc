@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include <net/if.h>
 #include <sys/ioctl.h>
@@ -180,4 +181,30 @@ int get_net_ifname(char *if_buf, int blen)
 
 	freeifaddrs(ifaddr);
 	return ret;
+}
+
+// e.g. wWw.Baidu.com/China will be trans into www.baidu.com/China
+// return: 0:check and trant succeed, 1:failed or domain name is invalid
+int dns_unified(char *dname, char *udname_buf, int udname_buf_len)
+{
+	if (! dname || ! udname_buf || udname_buf_len < strlen(dname)+1)
+		return 1;
+	
+	int has_dot = 0;
+	int dlen = strlen(dname);
+	int i = 0;
+	for(i=0; i<dlen; i++) {
+		if(dname[i] == '/')
+			break;
+
+		if (dname[i] == '.' && i != dlen-1)
+			has_dot = 1;
+
+		udname_buf[i] = tolower(dname[i]);
+	}
+
+	if (! has_dot)	//domain name should have 1 dot leastly
+		return 1;
+
+	return 0;
 }

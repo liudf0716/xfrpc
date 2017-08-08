@@ -145,13 +145,6 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 		ps->proxy_type = strdup("tcp");
 		assert(ps->proxy_type);
 	} else if (strcmp(ps->proxy_type, "ftp") == 0) {
-		if (ps->remote_data_port <= 0) {
-			debug(LOG_ERR, 
-				"Proxy [%s] error: remote_data_port must be exist when type is ftp", 
-				ps->proxy_name);
-			exit(0);
-		}
-
 		new_ftp_data_proxy_service(ps);
 	}
 

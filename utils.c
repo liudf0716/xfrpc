@@ -16,8 +16,31 @@
 #include <netdb.h>
 #include <ifaddrs.h>
 #include <linux/if_link.h>
+#include <curl/curl.h>
+#include <curl/easy.h>
 
 #include "utils.h"
+
+/* curl define */
+// curl methods 
+#define GET 0
+#define POST 1
+
+#define CURL_DEBUG 0
+
+#define CURL_OK 0x900
+#define CURL_TIMEOUT_SET_ERR 0x901
+#define CURL_FILE_DEL_ERR 0x902
+#define CURL_FILE_OPEN_ERR 0x903
+#define CURL_PERFORM_UNHANDLED_ERR 0x904
+#define CURL_HTTP_200 0x905
+#define CURL_HTTP_404 0x906
+#define CURL_HTTP_OTHER 0x999
+
+struct mycurl_string {
+	char *ptr;
+	size_t len;
+};
 
 // s_sleep using select instead of sleep
 // s: second, u: usec 10^6usec = 1s
@@ -207,4 +230,117 @@ int dns_unified(const char *dname, char *udname_buf, int udname_buf_len)
 		return 1;
 
 	return 0;
+}
+
+static int dl_progress(void *clientp, 
+						double dltotal, 
+						double dlnow, 
+						double ultotal, 
+						double ulnow) {
+	// if there something to show while download or URL get, complate this func
+	// e.g.:
+
+    // if (dlnow && dltotal)
+    //     printf("dl:%3.0f%%\r",100*dlnow/dltotal); //shenzi prog-mon 
+	// //	printf("dl:%3.0f\r",100*dlnow/dltotal); //shenzi prog-mon 
+    // fflush(stdout);
+
+    return 0;
+}
+
+static size_t write_to_mycurl_string(void *buffer, 
+									const size_t size, 
+									const size_t nmemb, 
+									struct mycurl_string *s) {
+	size_t new_len = s->len + size*nmemb;
+	// s->ptr = realloc(s->ptr, new_len + 1); // realloc is NOT recommended
+	size_t buffer_len = new_len + 1;
+	char *tmp_p = calloc(1, buffer_len);
+	if (tmp_p == NULL) {
+		return 0;
+	}
+
+	memcpy(tmp_p, s->ptr, s->len);
+	free(s->ptr);
+	s->ptr = tmp_p;
+	memcpy(s->ptr + s->len, buffer, size*nmemb);
+
+	return size*nmemb;
+}
+
+int net_visit(const char *url, 
+			struct mycurl_string *s,
+			int method,
+			char *post_buf,
+			long timeout, 
+			int *state_code,
+			double *down_size) {
+	CURL *curl;
+	CURLcode curl_retval;
+	long http_response;
+	double dl_size;
+	int ret = 1;
+
+    long dl_lowspeed_bytes = 1000; //1K
+	*state_code = CURL_OK;
+    long dl_lowspeed_time = 60; //sec
+	if (timeout <= 0) {
+		*state_code = CURL_TIMEOUT_SET_ERR;
+		return ret;
+	}
+
+	curl = curl_easy_init();
+	if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        /*callbacks*/
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_mycurl_string);
+        curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, dl_progress);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, dl_lowspeed_bytes); //bytes/sec
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, dl_lowspeed_time); 
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, s);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1); // handle 302 and 301
+
+		if (method == POST) {
+			char *self_post_buf = post_buf == NULL ? "/0":post_buf;
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, self_post_buf);
+		}
+#if CURL_DEBUG
+        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+#endif
+        if(CURLE_OK != (curl_retval = curl_easy_perform(curl))) {
+			switch(curl_retval) {
+				default: 
+					*state_code = curl_retval;
+			};
+
+            curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &dl_size);
+			*down_size = dl_size;
+            curl_retval=curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_response);
+
+            switch(http_response){
+				case 200:
+					*state_code = CURL_HTTP_200;
+					break;
+				case 404:
+					ret = 1;
+					break;
+				case 206:
+				case 416:
+				default:
+					*state_code = CURL_HTTP_OTHER;
+					break;
+            };
+		} else {
+            ret = 0;
+        }
+
+        if (curl){
+			curl_easy_cleanup(curl);
+		}
+	}
+
+	return ret;
 }

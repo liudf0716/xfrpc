@@ -31,7 +31,8 @@ set(libs
 	event
 	z
 	m
-	json-c)
+	json-c
+	curl)
 	
 set(test_libs
 	event

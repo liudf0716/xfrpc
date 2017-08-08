@@ -252,8 +252,8 @@ static size_t write_to_mycurl_string(void *buffer,
 									const size_t size, 
 									const size_t nmemb, 
 									struct mycurl_string *s) {
-	size_t new_len = s->len + size*nmemb;
-	// s->ptr = realloc(s->ptr, new_len + 1); // realloc is NOT recommended
+
+	size_t new_len = s->len + size * nmemb;
 	size_t buffer_len = new_len + 1;
 	char *tmp_p = calloc(1, buffer_len);
 	if (tmp_p == NULL) {
@@ -268,6 +268,7 @@ static size_t write_to_mycurl_string(void *buffer,
 	return size*nmemb;
 }
 
+// net_visit: visit web address of URL by HTTP method, support GET and POST
 int net_visit(const char *url, 
 			struct mycurl_string *s,
 			int method,
@@ -275,6 +276,7 @@ int net_visit(const char *url,
 			long timeout, 
 			int *state_code,
 			double *down_size) {
+
 	CURL *curl;
 	CURLcode curl_retval;
 	long http_response;
@@ -292,6 +294,7 @@ int net_visit(const char *url,
 	curl = curl_easy_init();
 	if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url);
+
         /*callbacks*/
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_mycurl_string);
         curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, dl_progress);

@@ -152,6 +152,8 @@ static int init_ftp_data_port(struct proxy_service *ps)
 	}
 
 	char url[1024] = {0};
+	struct common_conf *c_conf = get_common_config();
+	
 
 	int state_code = 0;
 	double down_size = 0;

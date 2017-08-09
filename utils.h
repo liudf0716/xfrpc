@@ -1,6 +1,11 @@
 #ifndef _UTILS_H_
 #define _UTILS_H_
 
+struct mycurl_string {
+	char 	*ptr;
+	size_t 	len;
+};
+
 void s_sleep(unsigned int s, unsigned int u);
 
 // is_valid_ip_address:

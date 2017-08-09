@@ -23,8 +23,8 @@
 
 /* curl define */
 // curl methods 
-#define GET 0
-#define POST 1
+#define HTTP_GET 0
+#define HTTP_POST 1
 
 #define CURL_DEBUG 0
 
@@ -36,11 +36,6 @@
 #define CURL_HTTP_200 0x905
 #define CURL_HTTP_404 0x906
 #define CURL_HTTP_OTHER 0x999
-
-struct mycurl_string {
-	char *ptr;
-	size_t len;
-};
 
 // s_sleep using select instead of sleep
 // s: second, u: usec 10^6usec = 1s
@@ -268,7 +263,35 @@ static size_t write_to_mycurl_string(void *buffer,
 	return size*nmemb;
 }
 
+/* mycurl_string_init:
+*
+*  the value of struct mycurl_string must be init using this func before use it. 
+*  After  mycurl_string_init succeed, stream->ptr will not be NULL
+*/
+struct mycurl_string *mycurl_string_init(struct mycurl_string *stream) 
+{
+	stream->len = 0;
+	stream->ptr = calloc(1, stream->len+1);
+
+	if (stream->ptr == NULL) {
+		return NULL;
+	}
+
+	stream->ptr[0] = '\0';
+	return stream;
+}
+
+void mycurl_string_free(struct mycurl_string *stream) 
+{
+	if (stream != NULL && stream->ptr != NULL) {
+		free(stream->ptr);
+	}
+}
+
 // net_visit: visit web address of URL by HTTP method, support GET and POST
+// return : 0=succeed
+// 			1-failed/err with some reason that could not download, reason code 
+//				saved in state_code argument.
 int net_visit(const char *url, 
 			struct mycurl_string *s,
 			int method,

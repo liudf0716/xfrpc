@@ -379,13 +379,20 @@ static int proxy_service_resp_raw(struct new_proxy_response *npr)
 		return 1;
 	}
 
-	if (0 == strcmp(ps->proxy_type, "ftp")) {
+	if (ps->ftp_ctl_proxy_name) {
+		struct proxy_service *main_ps = get_proxy_service(ps->ftp_ctl_proxy_name);
+		if (main_ps) {
+			debug(LOG_DEBUG, "find main ftp proxy service name [%s]", main_ps->proxy_name);
+		} else {
+			debug(LOG_ERR, "error: cannot find main ftp proxy service!");
+			return 1;
+		}
+
 		if (npr->remote_port <= 0) {
 			debug(LOG_ERR, "error: ftp remote_data_port [%d] that request from server is invalid!", npr->remote_port);
 			return 1;
 		}
-		ps->remote_data_port = npr->remote_port;
-		debug(LOG_DEBUG, "remote_data_port inited to [%d]", ps->remote_data_port);
+		main_ps->remote_data_port = npr->remote_port;
 	}
 
 	return 0;

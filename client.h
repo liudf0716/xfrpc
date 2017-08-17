@@ -63,6 +63,7 @@ struct proxy_client {
 struct proxy_service {
 	char 	*proxy_name;
 	char 	*proxy_type;
+	char 	*ftp_ctl_proxy_name;
 	int 	use_encryption;
 	int		use_compression;
 
@@ -70,7 +71,7 @@ struct proxy_service {
 	int		remote_port;
 	int 	remote_data_port;
 	int 	local_port;
-	
+
 	// http and https only
 	char 	*custom_domains;
 	char 	*subdomain;

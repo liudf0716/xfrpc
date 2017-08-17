@@ -176,6 +176,7 @@ static struct proxy_service *new_proxy_service(const char *name)
 	assert(c_conf);
 
 	ps->proxy_name 			= strdup(name);
+	ps->ftp_ctl_proxy_name	= NULL;
 	assert(ps->proxy_name);
 
 	ps->proxy_type 			= NULL;
@@ -210,6 +211,9 @@ static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 				"cannot create ftp data proxy service, it should not happenned!");
 			exit(0);
 		}
+		
+		ps->ftp_ctl_proxy_name = strdup(ftp_ps->proxy_name);
+		assert(ps->ftp_ctl_proxy_name);
 		
 		ps->proxy_type = strdup("tcp");
 		ps->remote_port = ftp_ps->remote_data_port;

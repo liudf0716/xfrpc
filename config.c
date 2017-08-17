@@ -311,6 +311,8 @@ static int common_handler(void *user, const char *section, const char *name, con
 			debug(LOG_ERR, "error: server_addr [%s] is invalid!", value);
 			exit(0);
 		}
+		if (is_valid_ip_address(value))
+			set_common_server_ip(value);
 	} else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
 	} else if (MATCH("common", "http_proxy")) {

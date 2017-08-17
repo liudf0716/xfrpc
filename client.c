@@ -143,36 +143,36 @@ static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 }
 
 // return: 0: init succeed; 1: init failed
-static int init_ftp_data_port(struct proxy_service *ps)
-{
-	struct mycurl_string ret_buf;
-	if ( ! mycurl_string_init(&ret_buf)) {
-		debug(LOG_ERR, "error: ftp data port buffer init failed!");
-		return 1;
-	}
+// static int init_ftp_data_port(struct proxy_service *ps)
+// {
+// 	struct mycurl_string ret_buf;
+// 	if ( ! mycurl_string_init(&ret_buf)) {
+// 		debug(LOG_ERR, "error: ftp data port buffer init failed!");
+// 		return 1;
+// 	}
 
-	char url[1024] = {0};
-	struct common_conf *c_conf = get_common_config();
+// 	char url[1024] = {0};
+// 	struct common_conf *c_conf = get_common_config();
 	
 
-	int state_code = 0;
-	double down_size = 0;
-	int ret = net_visit(url, 
-			&ret_buf,
-			HTTP_GET,
-			NULL,
-			60l, 
-			&state_code,
-			&down_size);
+// 	int state_code = 0;
+// 	double down_size = 0;
+// 	int ret = net_visit(url, 
+// 			&ret_buf,
+// 			HTTP_GET,
+// 			NULL,
+// 			60l, 
+// 			&state_code,
+// 			&down_size);
 
-	if (ret) {
-		debug(LOG_ERR, "error: ftp remote data port init failed by HTTP GET");
-		mycurl_string_free(&ret_buf);
-		return 1;
-	}
+// 	if (ret) {
+// 		debug(LOG_ERR, "error: ftp remote data port init failed by HTTP GET");
+// 		mycurl_string_free(&ret_buf);
+// 		return 1;
+// 	}
 
-	return 0;
-}
+// 	return 0;
+// }
 
 int is_ftp_proxy(const struct proxy_service *ps)
 {

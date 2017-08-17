@@ -21,22 +21,6 @@
 
 #include "utils.h"
 
-/* curl define */
-// curl methods 
-#define HTTP_GET 0
-#define HTTP_POST 1
-
-#define CURL_DEBUG 0
-
-#define CURL_OK 0x900
-#define CURL_TIMEOUT_SET_ERR 0x901
-#define CURL_FILE_DEL_ERR 0x902
-#define CURL_FILE_OPEN_ERR 0x903
-#define CURL_PERFORM_UNHANDLED_ERR 0x904
-#define CURL_HTTP_200 0x905
-#define CURL_HTTP_404 0x906
-#define CURL_HTTP_OTHER 0x999
-
 // s_sleep using select instead of sleep
 // s: second, u: usec 10^6usec = 1s
 void s_sleep(unsigned int s, unsigned int u)
@@ -329,7 +313,7 @@ int net_visit(const char *url,
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, s);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1); // handle 302 and 301
 
-		if (method == POST) {
+		if (method == HTTP_POST) {
 			char *self_post_buf = post_buf == NULL ? "/0":post_buf;
 			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, self_post_buf);
 		}

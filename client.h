@@ -70,7 +70,7 @@ struct proxy_service {
 	int		remote_port;
 	int 	remote_data_port;
 	int 	local_port;
-
+	
 	// http and https only
 	char 	*custom_domains;
 	char 	*subdomain;

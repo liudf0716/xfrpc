@@ -354,6 +354,43 @@ static void hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
 }
 
+// return: 0: raw succeed 1: raw failed
+static int proxy_service_resp_raw(struct new_proxy_response *npr)
+{
+	if (npr->error && strlen(npr->error) > 2) {
+		debug(LOG_ERR, "error: new proxy response error_field:%s", npr->error);
+		return 1;
+	}
+	
+	if ((! npr->proxy_name) || (strlen(npr->proxy_name) <= 0)) {
+		debug(LOG_ERR, "error: new proxy response proxy name unmarshal failed!");
+		return 1;
+	}
+
+	struct proxy_service *ps = NULL;
+	ps = get_proxy_service(npr->proxy_name);
+	if (! ps) {
+		debug(LOG_ERR, "error: proxy_name responsed by TypeNewProxyResp not found!");
+		return 1;
+	}
+
+	if (! ps->proxy_type) {
+		debug(LOG_ERR, "error: proxy_type is NULL, it should be never happend!");
+		return 1;
+	}
+
+	if (0 == strcmp(ps->proxy_type, "ftp")) {
+		if (npr->remote_port <= 0) {
+			debug(LOG_ERR, "error: ftp remote_data_port [%d] that request from server is invalid!", npr->remote_port);
+			return 1;
+		}
+		ps->remote_data_port = npr->remote_port;
+		debug(LOG_DEBUG, "remote_data_port inited to [%d]", ps->remote_data_port);
+	}
+
+	return 0;
+}
+
 static void 
 raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *client)
 {
@@ -407,13 +444,21 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 
 		case TypeNewProxyResp:
 			{
+				if (msg->data_p == NULL) {
+					debug(LOG_ERR, 
+						"recved TypeNewProxyResp but no data, it should be never happend!");
+					break;
+				}
+
 				struct new_proxy_response *npr = new_proxy_resp_unmarshal(msg->data_p);
 				if (npr == NULL) {
-					debug(LOG_ERR, "new porxy response buffer unmarshal faild!");
+					debug(LOG_ERR, "new proxy response buffer unmarshal faild!");
 					return;
 				}
 
-				debug(LOG_DEBUG, "===== npr port = %d", npr->remote_port);
+				proxy_service_resp_raw(npr);
+				
+				SAFE_FREE(npr);
 				break;
 			}
 

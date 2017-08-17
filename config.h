@@ -29,7 +29,7 @@
 #include "client.h"
 #include "common.h"
 
-#define FTP_DATA_PROXY_SUFFIX	"_ftp_data_proxy"
+#define FTP_RMT_CTL_PROXY_SUFFIX	"_ftp_remote_ctl_proxy"
 
 struct base_conf{
 	char	*name;

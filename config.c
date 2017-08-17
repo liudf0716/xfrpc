@@ -210,7 +210,7 @@ static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 				"cannot create ftp data proxy service, it should not happenned!");
 			exit(0);
 		}
-
+		
 		ps->proxy_type = strdup("tcp");
 		ps->remote_port = ftp_ps->remote_data_port;
 		ps->local_ip = ftp_ps->local_ip;
@@ -380,7 +380,7 @@ static void init_common_conf(struct common_conf *config)
 // because of assert it will never return NULL
 char *get_ftp_data_proxy_name(const char *ftp_proxy_name)
 {
-	char *ftp_tail_data_name = FTP_DATA_PROXY_SUFFIX;
+	char *ftp_tail_data_name = FTP_RMT_CTL_PROXY_SUFFIX;
 	char *ftp_data_proxy_name = (char *)calloc(1, 
 								strlen(ftp_proxy_name)+strlen(ftp_tail_data_name)+1);
 	assert(ftp_data_proxy_name);

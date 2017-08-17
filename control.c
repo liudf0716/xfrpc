@@ -122,7 +122,7 @@ static void new_client_connect()
 	struct proxy_client *client = new_proxy_client();
 	struct common_conf *c_conf = get_common_config();
 	assert(c_conf);
-	client->base = main_ctl->connect_base;;
+	client->base = main_ctl->connect_base;
 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);

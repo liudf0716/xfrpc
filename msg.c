@@ -258,6 +258,11 @@ struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres)
 	npr->run_id = strdup(json_object_get_string(npr_run_id));
 	assert(npr->run_id);
 
+	struct json_object *npr_proxy_remote_port = NULL;
+	if (! json_object_object_get_ex(j_np_res, "remote_port", &npr_proxy_remote_port))
+		goto END_ERROR;
+	npr->remote_port = json_object_get_int(npr_proxy_remote_port);
+
 	struct json_object *npr_proxy_name = NULL;
 	if (! json_object_object_get_ex(j_np_res, "proxy_name", &npr_proxy_name))
 		goto END_ERROR;

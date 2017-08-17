@@ -98,6 +98,7 @@ size_t pack(struct message *req_msg, unsigned char **ret_buf);
 struct message *unpack(unsigned char *recv_msg, const ushort len);
 
 // tranlate control request to json string
+struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres);
 struct login_resp *login_resp_unmarshal(const char *jres);
 struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg);
 

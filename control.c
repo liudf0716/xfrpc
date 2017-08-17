@@ -406,7 +406,16 @@ raw_message(struct message *msg, struct bufferevent *bev, struct proxy_client *c
 			break;
 
 		case TypeNewProxyResp:
-			break;
+			{
+				struct new_proxy_response *npr = new_proxy_resp_unmarshal(msg->data_p);
+				if (npr == NULL) {
+					debug(LOG_ERR, "new porxy response buffer unmarshal faild!");
+					return;
+				}
+
+				debug(LOG_DEBUG, "===== npr port = %d", npr->remote_port);
+				break;
+			}
 
 		case TypeStartWorkConn:
 			sr = start_work_conn_resp_unmarshal(msg->data_p); 

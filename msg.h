@@ -67,6 +67,13 @@ struct control_response {
 	char	*msg;
 };
 
+struct new_proxy_response {
+	char 	*run_id;
+	char 	*proxy_name;
+	char	*error;
+	int		remote_port;
+};
+
 struct work_conn {
 	char *run_id;
 };

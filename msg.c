@@ -242,6 +242,39 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 	return nret;
 }
 
+// result returned of this func need be free
+struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres)
+{
+	struct json_object *j_np_res = json_tokener_parse(jres);
+	if (is_error(j_np_res))
+		return NULL;
+	
+	struct new_proxy_response *npr = calloc(1, sizeof(struct new_proxy_response));
+	assert(npr);
+
+	struct json_object *npr_run_id = NULL;
+	if (! json_object_object_get_ex(j_np_res, "run_id", &npr_run_id))
+		goto END_ERROR;
+	npr->run_id = strdup(json_object_get_string(npr_run_id));
+	assert(npr->run_id);
+
+	struct json_object *npr_proxy_name = NULL;
+	if (! json_object_object_get_ex(j_np_res, "proxy_name", &npr_proxy_name))
+		goto END_ERROR;
+	npr->proxy_name = strdup(json_object_get_string(npr_proxy_name));
+	assert(npr->proxy_name);
+
+	struct json_object *npr_error = NULL;
+	if(! json_object_object_get_ex(j_np_res, "error", &npr_error))
+		goto END_ERROR;
+	npr->error = strdup(json_object_get_string(npr_error));
+	assert(npr->error);
+
+END_ERROR:
+	json_object_put(j_np_res);
+	return npr;
+}
+
 // login_resp_unmarshal NEED FREE
 struct login_resp *login_resp_unmarshal(const char *jres)
 {

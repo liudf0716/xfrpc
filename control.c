@@ -379,8 +379,8 @@ static int proxy_service_resp_raw(struct new_proxy_response *npr)
 		return 1;
 	}
 
-	if (ps->ftp_ctl_proxy_name) {
-		struct proxy_service *main_ps = get_proxy_service(ps->ftp_ctl_proxy_name);
+	if (ps->ftp_cfg_proxy_name) {
+		struct proxy_service *main_ps = get_proxy_service(ps->ftp_cfg_proxy_name);
 		if (main_ps) {
 			debug(LOG_DEBUG, "find main ftp proxy service name [%s]", main_ps->proxy_name);
 		} else {

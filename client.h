@@ -63,7 +63,7 @@ struct proxy_client {
 struct proxy_service {
 	char 	*proxy_name;
 	char 	*proxy_type;
-	char 	*ftp_ctl_proxy_name;
+	char 	*ftp_cfg_proxy_name;
 	int 	use_encryption;
 	int		use_compression;
 

@@ -149,21 +149,21 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 
 	int outlen = 0, tmplen = 0;
 	struct frp_coder *c = encoder;
-	EVP_CIPHER_CTX ctx;
-	EVP_CIPHER_CTX_init(&ctx);
-	EVP_EncryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
-	if(!EVP_EncryptUpdate(&ctx, outbuf, &outlen, intext, (int)srclen)) {
+	EVP_CIPHER_CTX *ctx;
+	ctx = EVP_CIPHER_CTX_new();
+	EVP_EncryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+	if(!EVP_EncryptUpdate(ctx, outbuf, &outlen, intext, (int)srclen)) {
 		debug(LOG_ERR, "EVP_EncryptUpdate error!");
 		goto E_END;
 	}
 
-	if(!EVP_EncryptFinal_ex(&ctx, outbuf+outlen, &tmplen)) {
+	if(!EVP_EncryptFinal_ex(ctx, outbuf+outlen, &tmplen)) {
 		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
 		goto E_END;
 	}
 
 	outlen += tmplen;
-	EVP_CIPHER_CTX_cleanup(&ctx);
+	EVP_CIPHER_CTX_free(ctx);
 
 #ifdef ENC_DEBUG
 	int j = 0;
@@ -203,10 +203,10 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 
 	int outlen = 0, tmplen = 0;
 	struct frp_coder *c = decoder;
-	EVP_CIPHER_CTX ctx;
-	EVP_CIPHER_CTX_init(&ctx);
-	EVP_DecryptInit_ex(&ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
-	EVP_CIPHER_CTX_set_padding(&ctx, 0);
+	EVP_CIPHER_CTX *ctx;
+	ctx = EVP_CIPHER_CTX_new();
+	EVP_DecryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+	EVP_CIPHER_CTX_set_padding(ctx, 0);
 
 	int loop_times = enc_len / 10;
 	int latest_len = enc_len % 10;
@@ -220,7 +220,7 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 			enc_per_len = 10;
 		}
 
-		if(!EVP_DecryptUpdate(&ctx, outbuf + (i*10), &outlen, inbuf + (i*10), enc_per_len)) {
+		if(!EVP_DecryptUpdate(ctx, outbuf + (i*10), &outlen, inbuf + (i*10), enc_per_len)) {
 			debug(LOG_ERR, "EVP_DecryptUpdate error!");
 			goto D_END;
 		}
@@ -228,14 +228,13 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 	}
 
 
-	if(!EVP_DecryptFinal_ex(&ctx, outbuf+totol_len, &tmplen)) {
+	if(!EVP_DecryptFinal_ex(ctx, outbuf+totol_len, &tmplen)) {
 		debug(LOG_ERR, "EVP_DecryptFinal_ex error");
 		goto D_END;
 	}
 
 	totol_len += tmplen;
-	EVP_CIPHER_CTX_cleanup(&ctx);
-
+	EVP_CIPHER_CTX_free(ctx);
 #ifdef ENC_DEBUG
 	debug(LOG_DEBUG, "DEC_LEN:%lu", enc_len);
 	int j = 0;

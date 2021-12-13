@@ -14,10 +14,17 @@ xfrp need [libevent](https://github.com/libevent/libevent) [openssl-dev](https:/
 
 Before compile xfrp, please install `libevent` `openssl-dev` and `json-c` in your system.
 
+Install json-c in ubuntu 20.04 LTS
+
+```shell
+sudo apt-get install -y libjson-c-dev
+```
+
 ```shell
 git clone https://github.com/liudf0716/xfrpc.git
 cd xfrp
-cmake .
+mkdir build
+cmake ..
 make
 ```
 

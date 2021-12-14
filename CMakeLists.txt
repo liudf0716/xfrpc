@@ -2,6 +2,21 @@ cmake_minimum_required(VERSION 2.6)
 
 project(xfrp C)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+
+find_package(LibEvent)
+if(NOT LibEvent_FOUND)
+  message(FATAL_ERROR "libevent2 not found!")
+endif(NOT LibEvent_FOUND)
+
+find_package(OpenSSL)
+if(NOT OPENSSL_FOUND)
+  message(FATAL_ERROR "OpenSSL not found!")
+endif(NOT OPENSSL_FOUND)
+
+find_package(JSON-C REQUIRED)
+include_directories(${JSON-C_INCLUDE_DIR})
+
 set(src_xfrpc
 	main.c
   	client.c

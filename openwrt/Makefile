@@ -12,7 +12,7 @@ PKG_VERSION:=0.07.496
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_URL:=https://github.com/liudf0716/apfree_wifidog.git
+PKG_SOURCE_URL:=https://github.com/liudf0716/xfrpc.git
 PKG_SOURCE_VERSION:=$(PKG_VERSION)
 PKG_MIRROR_HASH:=0fadb7a0e139bf4a5c6daffdd0f200ee2a4c903aea71e46bc19212b054ca71a7
 

@@ -8,13 +8,14 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xfrpc
-PKG_VERSION:=0.07.496
+#PKG_VERSION:=0.07.496
+PKG_VERSION:=master
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/liudf0716/xfrpc.git
 PKG_SOURCE_VERSION:=$(PKG_VERSION)
-PKG_MIRROR_HASH:=0fadb7a0e139bf4a5c6daffdd0f200ee2a4c903aea71e46bc19212b054ca71a7
+PKG_MIRROR_HASH:=a7141da8a85203d8341fd6d2551f1228396ae54aace6ec0bad2dfeb89e0a377d
 
 PKG_MAINTAINER:=Dengfeng Liu <liudf0716@gmail.com>
 PKG_LICENSE:=GPL-3.0-or-later
@@ -27,7 +28,7 @@ define Package/xfrpc
   SUBMENU:=Web Servers/Proxies
   SECTION:=net
   CATEGORY:=Network
-  DEPENDS:=+libjson-c +libevent2
+  DEPENDS:=+zlib +libjson-c +libevent2 +libevent2-openssl
   TITLE:= C language fast reverse proxy client
   URL:=https://github.com/liudf0716/xfrpc
 endef
@@ -44,12 +45,11 @@ endef
 
 define Package/xfrpc/install
         $(INSTALL_DIR) $(1)/usr/bin
-        $(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/wifidogx $(1)/usr/bin/wifidogx
-        $(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/wdctlx $(1)/usr/bin/wdctlx
+        $(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/xfrpc $(1)/usr/bin/xfrpc
         $(INSTALL_DIR) $(1)/etc/init.d
         $(INSTALL_BIN) ./files/xfrpc.init $(1)/etc/init.d/xfrpc
         $(INSTALL_DIR) $(1)/etc/config
         $(CP) ./files/xfrpc.conf $(1)/etc/config/xfrpc
- endef
+endef
 
-$(eval $(call BuildPackage,xfrpc))                                                                                                                                                                                                                                                         1,1           Top
+$(eval $(call BuildPackage,xfrpc))

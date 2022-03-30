@@ -27,7 +27,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <json-c/json.h>
-#include <json-c/bits.h>
 #include <openssl/md5.h>
 #include <time.h>
 #include <assert.h>
@@ -132,7 +131,7 @@ size_t login_request_marshal(char **msg)
 {
 	size_t nret = 0;
 	struct json_object *j_login_req = json_object_new_object();
-	if (is_error(j_login_req))
+	if (j_login_req == NULL)
 		return 0;
 	
 	struct login *lg = get_common_login_config();
@@ -246,7 +245,7 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres)
 {
 	struct json_object *j_np_res = json_tokener_parse(jres);
-	if (is_error(j_np_res))
+	if (j_np_res == NULL)
 		return NULL;
 	
 	struct new_proxy_response *npr = calloc(1, sizeof(struct new_proxy_response));
@@ -284,7 +283,7 @@ END_ERROR:
 struct login_resp *login_resp_unmarshal(const char *jres)
 {
 	struct json_object *j_lg_res = json_tokener_parse(jres);
-	if (is_error(j_lg_res))
+	if (j_lg_res == NULL)
 		return NULL;
 	
 	struct login_resp *lr = calloc(1, sizeof(struct login_resp));
@@ -316,7 +315,7 @@ END_ERROR:
 struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg)
 {
 	struct json_object *j_start_w_res = json_tokener_parse(resp_msg);
-	if (is_error(j_start_w_res))
+	if (j_start_w_res == NULL)
 		return NULL;
 
 	struct start_work_conn_resp *sr = calloc(1, sizeof(struct start_work_conn_resp));
@@ -337,7 +336,7 @@ START_W_C_R_END:
 struct control_response *control_response_unmarshal(const char *jres)
 {
 	struct json_object *j_ctl_res = json_tokener_parse(jres);
-	if (is_error(j_ctl_res))
+	if (j_ctl_res == NULL)
 		return NULL;
 	struct control_response *ctl_res = calloc(sizeof(struct control_response), 1);
 	assert(ctl_res);

@@ -12,12 +12,13 @@ The motivation to start xfrp project is that we are OpenWRTer, and openwrt usual
 
 xfrp need [libevent](https://github.com/libevent/libevent) [openssl-dev](https://github.com/openssl/openssl) and [json-c](https://github.com/json-c/json-c) support
 
-Before compile xfrp, please install `libevent` `openssl-dev` and `json-c` in your system.
+Before compile xfrp, please install `libevent` and `json-c` in your system.
 
-Install json-c in ubuntu 20.04 LTS
+Install json-c libevent in ubuntu 20.04 LTS
 
 ```shell
 sudo apt-get install -y libjson-c-dev
+sudo apt-get install -y libevent-dev
 ```
 
 ```shell

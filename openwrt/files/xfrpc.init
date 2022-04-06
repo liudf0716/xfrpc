@@ -20,9 +20,9 @@ handle_xfrpc() {
 
 	handle_type() {
 		uci_validate_section xfrpc xfrpc "$name" \
-										'type:or("tcp", "udp", "ftp", "http", "https")' \
-										'local_ip:ipaddr:127.0.0.1' \
-										'local_port:uinteger'
+				'type:or("tcp", "udp", "ftp", "http", "https")' \
+				'local_ip:ipaddr:127.0.0.1' \
+				'local_port:uinteger'
 
 		echo "type = $type" >> "$config"
 		echo "local_ip = $local_ip" >> "$config"
@@ -43,9 +43,9 @@ handle_xfrpc() {
 
 	if [ "$name" = "common" ]; then
 		uci_validate_section xfrpc xfrpc "$name" \
-										'server_addr:ipaddr' \
-										'server_port:uinteger' \
-										'auth_token:string'
+				'server_addr:ipaddr' \
+				'server_port:uinteger' \
+				'auth_token:string'
 
 		[ -z "$auth_token" ] && {
 			echo "no auth_token"
@@ -70,8 +70,8 @@ start_service() {
 	config_load "$NAME"
 
 	uci_validate_section xfrpc xfrpc init \
-									'disabled:bool:1' \
-									'loglevel:uinteger:0'
+			'disabled:bool:1' \
+			'loglevel:uinteger:0'
 
 	if [ $disabled = 1 ]; then
 		echo "xfrpc service disabled"

@@ -9,7 +9,7 @@ START=99
 USE_PROCD=1
 
 NAME=xfrpc
-PROG=/user/bin/$NAME
+PROG=/usr/bin/$NAME
 
 
 handle_xfrpc() {

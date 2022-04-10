@@ -21,7 +21,7 @@
 
 /** @file config.c
     @brief xfrp client config related
-    @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
+    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 #include <stdio.h>
 #include <stdlib.h>

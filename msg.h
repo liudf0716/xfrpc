@@ -21,7 +21,7 @@
 
 /** @file msg.h
     @brief xfrp msg struct
-    @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
+    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 
 #ifndef _MSG_H_

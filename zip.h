@@ -21,7 +21,7 @@
 
 /** @file zip.h
     @brief zlib related function
-    @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
+    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 
 #ifndef _ZIP_H_

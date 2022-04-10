@@ -21,5 +21,5 @@
 
 /** @file agent.c
     @brief agent for router to communicate with frp server
-    @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
+    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */

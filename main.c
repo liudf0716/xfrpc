@@ -21,7 +21,7 @@
 
 /** @file main.c
     @brief xfrp client main
-    @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
+    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 
 #include "xfrpc.h"

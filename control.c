@@ -21,7 +21,7 @@
 
 /** @file control.c
     @brief xfrp control protocol implemented
-    @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
+    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 
 #include <string.h>

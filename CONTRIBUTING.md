@@ -1,7 +1,7 @@
 Contributing
 ================================================================================
 
-If you want to contribute to [xfrp](https://github.com/kuntengrom/xfrp), please follow these simple rules:
+If you want to contribute to [xfrpc](https://github.com/liudf0716/xfrpc), please follow these simple rules:
 
 1. Press the fork button:
 

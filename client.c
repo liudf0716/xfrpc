@@ -21,7 +21,7 @@
 
 /** @file client.c
     @brief client surrogate for local service
-    @author Copyright (C) 2016 Dengfeng Liu <liudengfeng@kunteng.org>
+    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 
 #include <string.h>

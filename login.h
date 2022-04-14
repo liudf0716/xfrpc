@@ -17,6 +17,7 @@ struct login {
 	char 		*privilege_key;
 	long int 	timestamp;
 	char 		*run_id;
+	char		*metas;
 	int 		pool_count;
 
 	/* fields not need json marshal */

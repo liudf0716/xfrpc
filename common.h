@@ -8,8 +8,8 @@
 
 #include "uthash.h"
 
-// #define BIGENDIAN_64BIT 0
-#define BIGENDIAN_32BIT 1
+#define BIGENDIAN_64BIT 1
+//#define BIGENDIAN_32BIT 1
 
 #define SAFE_FREE(m) 	\
 if (m) free(m)

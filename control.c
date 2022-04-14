@@ -60,6 +60,7 @@
 
 static struct control *main_ctl;
 static int clients_conn_signel = 0;
+static int is_login = 0;
 
 static void sync_new_work_connection(struct bufferevent *bev);
 static void recv_cb(struct bufferevent *bev, void *ctx);
@@ -154,7 +155,6 @@ static void start_proxy_services()
 	}
 }
 
-#ifdef USEENCRYPTION
 static void init_msg_writer()
 {
 	if (! is_encoder_inited()) {
@@ -173,9 +173,9 @@ static void init_msg_reader(unsigned char *iv)
 		}
 	}
 }
-#endif // USEENCRYPTION
 
-static size_t request(struct bufferevent *bev, struct frame *f) 
+static size_t 
+request(struct bufferevent *bev, struct frame *f) 
 {
 	size_t write_len = 0;
 	struct bufferevent *bout = NULL;
@@ -187,10 +187,6 @@ static size_t request(struct bufferevent *bev, struct frame *f)
 	}
 
 	if ( ! bout)
-		return 0;
-
-	struct common_conf *c = get_common_config();
-	if ( ! c)
 		return 0;
 
 	write_len = (size_t)f->len;
@@ -515,18 +511,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 	unsigned char *ret_buf = NULL;
 	struct frame *f = NULL;
 
-#ifdef  RECV_DEBUG
-	/* debug showing */
-	unsigned int j = 0;
-	debug(LOG_DEBUG, "RECV from frps:");
-	printf("[");
-	for(j = 0; j<len; j++) {
-		printf("%d ", (unsigned char)buf[j]);
-	}
-	printf("]\n");
-	/* debug show over */
-#endif //  RECV_DEBUG
-
 	int min_buf_len = 0;
 	if (get_common_config()->tcp_mux) {
 		f = raw_frame(buf, len);
@@ -563,36 +547,17 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		goto DATA_H_END;
 	}
 
-	debug(LOG_DEBUG, "message after test1:");
-	for(i=0; i<ret_len3; i++) {
-		printf("%u ", (unsigned char)ret_buf[i]);
-	}
-
-	printf("\n");
-
 	size_t ret_len2 = decrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
-	debug(LOG_DEBUG, "message after test2:");
 	if (ret_len2 <= 0) {
 		debug(LOG_ERR, "message recved decrypt result is 0 bit");
 		goto DATA_H_END;
 	}
-
-	for(i=0; i<ret_len2; i++) {
-		printf("%u ", (unsigned char)ret_buf[i]);
-	}
-	printf("\n");
 
 	size_t ret_len1 = encrypt_data(f->data, (size_t)f->len, get_main_decoder(), &ret_buf);
 	if (ret_len1 <= 0) {
 		debug(LOG_ERR, "message recved decrypt result is 0 bit");
 		goto DATA_H_END;
 	}
-
-	debug(LOG_DEBUG, "message after test3:");
-	for(i=0; i<f->len; i++) {
-		printf("%u ", (unsigned char)ret_buf[i]);
-	}
-	printf("\n encrypto test end \n");
 
 	struct frp_coder *d = get_main_decoder();
 	if (! d) {
@@ -604,12 +569,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		debug(LOG_ERR, "message recved decrypt result is 0 bit");
 		goto DATA_H_END;
 	}
-
-	debug(LOG_DEBUG, "message after decode:");
-	for(i=0; i<f->len; i++) {
-		printf("%u ", (unsigned char)ret_buf[i]);
-	}
-	printf("\n\n");
 #endif // ENCRYPTO
 
 	if (! ret_buf) 
@@ -742,64 +701,79 @@ static unsigned char
 	return unraw_buf_p;
 }
 
+static int
+handle_enc_msg(unsigned char *buf, int len)
+{
+	char *out;
+	decrypt_data(buf, len, get_main_decoder(), &out);
+	
+	debug(LOG_DEBUG, "out is [%s]", out);
+
+	return 1;	
+}
+
+static int
+handle_login_response(unsigned char *buf, int len)
+{
+	struct msg_hdr *mhdr = (struct msg_hdr *)buf;
+	if (mhdr->type != TypeLoginResp) {
+		debug(LOG_ERR, "type incorrect: it should be login response, but %d", mhdr->type);
+		return 0;
+	}	
+	
+	struct login_resp *lres = login_resp_unmarshal(mhdr->data); 
+	if (!lres) {
+		return 0;
+	}
+
+	if (!login_resp_check(lres)) {
+		debug(LOG_ERR, "login failed");	
+		free(lres);
+		return 0;
+	}
+
+	free(lres);
+	is_login = 1;
+	debug(LOG_ERR, "login success!");
+
+	if ( !is_decoder_inited()) {
+		init_msg_reader(buf);
+		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed!");
+	}
+									    
+	return 1;
+}
+
+static void
+handle_control_msg(unsigned char *buf, int len, void *ctx)
+{
+	if (!is_login) {
+		// login response
+		handle_login_response(buf, len);
+	} else if (!ctx) {
+		handle_enc_msg(buf, len);
+	} else {
+	}	
+}
+
 // ctx: if recv_cb was called by common control, ctx == NULL
 //		else ctx == client struct
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
-	if (len < 0) {
+	debug(LOG_DEBUG, "recv msg from frps %d", len);
+	if (len <= 0) {
 		return;
 	}
 
-	unsigned char *buf = calloc(1, len);
+	unsigned char *buf = calloc(1, len+1);
 	assert(buf);
+	evbuffer_remove(input, buf, len);
+	
+	handle_control_msg(buf, len, ctx);
 
-	size_t read_n = 0;
-	size_t ret_len = 0;
-	read_n = evbuffer_remove(input, buf, len);
-
-	struct proxy_client *client = (struct proxy_client *)ctx;
-	if (read_n) {
-		unsigned char *raw_buf_p = buf;
-		for( ; raw_buf_p && read_n ; ) {
-// #define CONN_DEBUG 1
-#ifdef CONN_DEBUG
-			unsigned int i = 0;
-			char *dbg_buf = calloc(1, read_n * 4 + 1);
-			assert(dbg_buf);
-			for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
-				snprintf(dbg_buf + 4*i, 5, "%3u ", (unsigned char)raw_buf_p[i]);
-			}
-			debug(LOG_DEBUG, "[%s]: RECV ctl byte:%s", client?"client":"control", dbg_buf);
-			SAFE_FREE(dbg_buf);
-#endif //CONN_DEBUG
-
-			raw_buf_p = multy_recv_buffer_raw(raw_buf_p, read_n, &ret_len, client);
-			read_n = ret_len;
-
-			if (ctx && 
-				is_client_work_started(client) && 
-				raw_buf_p && 
-				ret_len) {
-
-				debug(LOG_WARNING, "warning: data recved from frps is not split clear");
-				unsigned char *dtail = calloc(1, read_n);
-				assert(dtail);
-				memcpy(dtail, raw_buf_p, read_n);
-				client->data_tail = dtail;
-				client->data_tail_size = ret_len;
-				send_client_data_tail(client);
-				SAFE_FREE(dtail);
-				client->data_tail = NULL;
-				client->data_tail_size = 0;
-			}
-		}
-	} else {
-		debug(LOG_DEBUG, "recved message but evbuffer_remove faild!");
-	}
 	SAFE_FREE(buf);
-
 	return;
 }
 
@@ -969,7 +943,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	struct message req_msg;
 	req_msg.data_p = NULL;
 	req_msg.type = type;
-	req_msg.data_len = htob64((uint64_t)msg_len);
+	req_msg.data_len = msg_len;
 
 	char frame_type = 0;
 	struct frame *f = NULL;
@@ -1122,7 +1096,7 @@ void init_main_control()
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_flags = EVUTIL_AI_CANONNAME;
 	hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
+ 	hints.ai_protocol = IPPROTO_TCP;
 
 	dns_req = evdns_getaddrinfo(dnsbase, 
 							c_conf->server_addr, 

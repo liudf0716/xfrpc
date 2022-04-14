@@ -153,9 +153,9 @@ size_t login_request_marshal(char **msg)
 	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, SAFE_JSON_STRING(lg->privilege_key));
 	JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
 	JSON_MARSHAL_TYPE(j_login_req, "run_id", string, SAFE_JSON_STRING(lg->run_id));
-	JSON_MARSHAL_TYPE(j_login_req, "metas", string, SAFE_JSON_STRING(lg->metas));
 	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
-
+	json_object_object_add(j_login_req, "metas", NULL);
+	
 	const char *tmp = NULL;
 	tmp = json_object_to_json_string(j_login_req);
 	if (tmp && strlen(tmp) > 0) {

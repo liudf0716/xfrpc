@@ -89,7 +89,7 @@ struct work_conn {
 struct message {
 	char 	type;
 	char	*data_p;
-	size_t	data_len;
+	int64	data_len;
 };
 
 struct start_work_conn_resp {

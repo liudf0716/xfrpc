@@ -44,16 +44,24 @@
 
 // msg_type match frp v0.10.0
 enum msg_type {
-	TypeLogin         = 'o',
-	TypeLoginResp     = '1',
-	TypeNewProxy      = 'p',
-	TypeNewProxyResp  = '2',
-	TypeNewWorkConn   = 'w',
-	TypeReqWorkConn   = 'r',
-	TypeStartWorkConn = 's',
-	TypePing          = 'h',
-	TypePong          = '4',
-	TypeUdpPacket     = 'u',
+	TypeLogin                 = 'o'
+	TypeLoginResp             = '1'
+	TypeNewProxy              = 'p'
+	TypeNewProxyResp          = '2'
+	TypeCloseProxy            = 'c'
+	TypeNewWorkConn           = 'w'
+	TypeReqWorkConn           = 'r'
+	TypeStartWorkConn         = 's'
+	TypeNewVisitorConn        = 'v'
+	TypeNewVisitorConnResp    = '3'
+	TypePing                  = 'h'
+	TypePong                  = '4'
+	TypeUDPPacket             = 'u'
+	TypeNatHoleVisitor        = 'i'
+	TypeNatHoleClient         = 'n'
+	TypeNatHoleResp           = 'm'
+	TypeNatHoleClientDetectOK = 'd'
+	TypeNatHoleSid            = '5'
 };
 
 struct general_response {

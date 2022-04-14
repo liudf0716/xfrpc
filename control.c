@@ -969,7 +969,7 @@ void send_msg_frp_server(struct bufferevent *bev,
 	struct message req_msg;
 	req_msg.data_p = NULL;
 	req_msg.type = type;
-	req_msg.data_len = htob64((uint64_t)msg_len);
+	req_msg.data_len = msg_len;
 
 	char frame_type = 0;
 	struct frame *f = NULL;

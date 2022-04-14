@@ -44,34 +44,34 @@
 
 // msg_type match frp v0.10.0
 enum msg_type {
-	TypeLogin                 = 'o'
-	TypeLoginResp             = '1'
-	TypeNewProxy              = 'p'
-	TypeNewProxyResp          = '2'
-	TypeCloseProxy            = 'c'
-	TypeNewWorkConn           = 'w'
-	TypeReqWorkConn           = 'r'
-	TypeStartWorkConn         = 's'
-	TypeNewVisitorConn        = 'v'
-	TypeNewVisitorConnResp    = '3'
-	TypePing                  = 'h'
-	TypePong                  = '4'
-	TypeUDPPacket             = 'u'
-	TypeNatHoleVisitor        = 'i'
-	TypeNatHoleClient         = 'n'
-	TypeNatHoleResp           = 'm'
-	TypeNatHoleClientDetectOK = 'd'
-	TypeNatHoleSid            = '5'
+	TypeLogin                 = 'o',
+	TypeLoginResp             = '1',
+	TypeNewProxy              = 'p',
+	TypeNewProxyResp          = '2',
+	TypeCloseProxy            = 'c',
+	TypeNewWorkConn           = 'w',
+	TypeReqWorkConn           = 'r',
+	TypeStartWorkConn         = 's',
+	TypeNewVisitorConn        = 'v',
+	TypeNewVisitorConnResp    = '3',
+	TypePing                  = 'h',
+	TypePong                  = '4',
+	TypeUDPPacket             = 'u',
+	TypeNatHoleVisitor        = 'i',
+	TypeNatHoleClient         = 'n',
+	TypeNatHoleResp           = 'm',
+	TypeNatHoleClientDetectOK = 'd',
+	TypeNatHoleSid            = '5',
 };
 
 struct general_response {
-	int		code;
+	int	code;
 	char	*msg;
 };
 
 struct control_response {
-	int		type;
-	int		code;
+	int	type;
+	int	code;
 	char	*msg;
 };
 
@@ -79,7 +79,7 @@ struct new_proxy_response {
 	char 	*run_id;
 	char 	*proxy_name;
 	char	*error;
-	int		remote_port;
+	int	remote_port;
 };
 
 struct work_conn {
@@ -87,9 +87,9 @@ struct work_conn {
 };
 
 struct message {
-	char 		type;
-	char		*data_p;
-	uint64_t	data_len;
+	char 	type;
+	char	*data_p;
+	size_t	data_len;
 };
 
 struct start_work_conn_resp {

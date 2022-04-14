@@ -50,7 +50,7 @@ json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 str_target?str_target:"\0"
 
 const char msg_typs[] = {TypeLogin, TypeLoginResp, TypeNewProxy, TypeNewProxyResp, 
-	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUdpPacket};
+	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUDPPacket};
 
 char *calc_md5(const char *data, int datalen)
 {

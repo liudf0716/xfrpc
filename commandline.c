@@ -150,7 +150,6 @@ parse_commandline(int argc, char **argv)
             if (optarg) {
 				confile = strdup(optarg); //never free it
                 assert(confile);
-
 				flag = 1;
             }
             break;

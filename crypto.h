@@ -9,10 +9,10 @@
 
 struct frp_coder {
 	unsigned char 	*key;
-	ushort 			key_len;
-	char 			*salt;
+	ushort 		key_len;
+	char 		*salt;
 	unsigned char 	*iv;
-	char 			*privilege_token;
+	char 		*privilege_token;
 };
 
 size_t get_encrypt_block_size();

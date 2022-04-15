@@ -140,7 +140,7 @@ size_t login_request_marshal(char **msg)
 	
 	SAFE_FREE(lg->privilege_key);
 	struct common_conf *cf = get_common_config();
-	char *auth_key = get_auth_key(cf->privilege_token, &lg->timestamp);
+	char *auth_key = get_auth_key(cf->auth_token, &lg->timestamp);
 	lg->privilege_key = strdup(auth_key);
 	assert(lg->privilege_key);
 	

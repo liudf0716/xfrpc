@@ -59,10 +59,16 @@ void free_control();
 void sync_session_id(uint32_t sid);
 
 void send_msg_frp_server(struct bufferevent *bev, 
-					const enum msg_type type, 
-					const char *msg, 
-					const size_t msg_len, 
-					uint32_t sid);
+			const enum msg_type type, 
+			const char *msg, 
+			const size_t msg_len, 
+			uint32_t sid);
+
+void send_enc_msg_frp_server(struct bufferevent *bev, 
+			const enum msg_type type, 
+			const char *msg, 
+			const size_t msg_len, 
+			uint32_t sid);
 
 void control_process(struct proxy_client *client);
 void send_new_proxy(struct proxy_service *ps);

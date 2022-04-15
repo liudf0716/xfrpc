@@ -345,7 +345,7 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->heartbeat_interval = atoi(value);
 	} else if (MATCH("common", "heartbeat_timeout")) {
 		config->heartbeat_timeout = atoi(value);
-	} else if (MATCH("common", "auth_token")) {
+	} else if (MATCH("common", "token")) {
 		SAFE_FREE(config->auth_token);
 		config->auth_token = strdup(value);
 		assert(config->auth_token);

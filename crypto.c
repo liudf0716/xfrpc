@@ -132,25 +132,36 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 // using aes-128-cfb and nopadding
 size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
-	unsigned char *intext = calloc(srclen, 1);	// free in func
+	uint8_t *intext = src_data;
 	assert(intext);
-	memcpy(intext, src_data, srclen);
-
-	unsigned char *outbuf = calloc(srclen, 1);
-	assert(outbuf);
-	*ret = outbuf;
-
-	int outlen = 0, tmplen = 0;
 	struct frp_coder *c = encoder;
+	int outlen = 0, tmplen = 0;
+	uint8_t *outbuf = NULL;
+	if (!encoder) {
+		debug(LOG_DEBUG, "encoder not initialized");
+		c = init_main_encoder();
+		assert(c);
+		outbuf = calloc(srclen+16, 1);
+		assert(outbuf);
+		*ret = outbuf;
+		memcpy(outbuf, c->iv, 16);
+		outlen += 16;
+		outbuf += 16;
+	} else {
+		outbuf = calloc(srclen, 1);
+		assert(outbuf);
+		*ret = outbuf;
+	}
+
 	EVP_CIPHER_CTX *ctx;
 	ctx = EVP_CIPHER_CTX_new();
 	EVP_EncryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
-	if(!EVP_EncryptUpdate(ctx, outbuf, &outlen, intext, (int)srclen)) {
+	if(!EVP_EncryptUpdate(ctx, outbuf, &tmplen, intext, (int)srclen)) {
 		debug(LOG_ERR, "EVP_EncryptUpdate error!");
 		goto E_END;
 	}
-
-	if(!EVP_EncryptFinal_ex(ctx, outbuf+outlen, &tmplen)) {
+	outlen += tmplen;
+	if(!EVP_EncryptFinal_ex(ctx, outbuf+tmplen, &tmplen)) {
 		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
 		goto E_END;
 	}
@@ -158,44 +169,67 @@ size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_cod
 	outlen += tmplen;
 	EVP_CIPHER_CTX_free(ctx);
 
-#ifdef ENC_DEBUG
-	int j = 0;
-	debug(LOG_DEBUG, "encoder iv=");
-	for (j=0; j<16; j++){
-		printf("%u ", (unsigned char)c->iv[j]) ;
-	}
-	printf("\n");
-
-	debug(LOG_DEBUG, "encoder KEY=");
-	for (j=0; j<16; j++){
-		printf("%u ", (unsigned char)c->key[j]);
-	}
-	printf("\n");
-
-	debug(LOG_DEBUG, "encoder result 10 =");
-	for (j = 0; j<outlen; j++) {
-		printf("%d ", (unsigned char)outbuf[j]);
-	}
-	printf("\n");
-#endif //ENC_DEBUG
-
 E_END:
-	free(intext);
 	return outlen;
 }
 
-size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_coder *decoder, unsigned char **ret)
+size_t 
+decrypt_data(const uint8_t *enc_data, size_t enc_len, struct frp_coder *decoder, uint8_t **ret)
 {
-	unsigned char *inbuf = malloc(enc_len);
+	uint8_t *inbuf = enc_data;
+	uint8_t *outbuf = calloc(enc_len, 1);
+	struct frp_coder *c = decoder;
 	assert(inbuf);
-	memcpy(inbuf, enc_data, enc_len);
-
-	unsigned char *outbuf = malloc(enc_len);
 	assert(outbuf);
 	*ret = outbuf;
+	
+	assert(decoder);
+	
+	int outlen = 0, tmplen = 0;
+	EVP_CIPHER_CTX *ctx= EVP_CIPHER_CTX_new();
+	EVP_DecryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+	EVP_CIPHER_CTX_set_padding(ctx, 0);
+
+	if(!EVP_DecryptUpdate(ctx, outbuf, &tmplen, inbuf, enc_len)) {
+		debug(LOG_ERR, "EVP_DecryptUpdate error!");
+		goto D_END;
+	}
+	outlen += tmplen;
+
+	if(!EVP_DecryptFinal_ex(ctx, outbuf+outlen, &tmplen)) {
+		debug(LOG_ERR, "EVP_DecryptFinal_ex error");
+		goto D_END;
+	}
+	outlen += tmplen;
+	EVP_CIPHER_CTX_free(ctx);
+
+D_END:
+	return outlen;
+}
+
+static size_t 
+deprecated_decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_coder *decoder, unsigned char **ret)
+{
+	uint8_t *inbuf = enc_data;
+	uint8_t *outbuf = calloc(enc_len, 1);
+	struct frp_coder *c = decoder;
+	assert(inbuf);
+	assert(outbuf);
+	*ret = outbuf;
+	
+	assert(decoder);
+	
+	printf("decrypt_data iv is : ");
+	for(int i = 0; i < block_size; i++)
+		printf("%1x", c->iv[i]);
+	printf("\n");
+	
+	printf("decrypt_data key is : ");
+	for(int i = 0; i < block_size; i++)
+		printf("%1x", c->key[i]);
+	printf("\n");
 
 	int outlen = 0, tmplen = 0;
-	struct frp_coder *c = decoder;
 	EVP_CIPHER_CTX *ctx;
 	ctx = EVP_CIPHER_CTX_new();
 	EVP_DecryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
@@ -228,35 +262,6 @@ size_t decrypt_data(const unsigned char *enc_data, size_t enc_len, struct frp_co
 
 	totol_len += tmplen;
 	EVP_CIPHER_CTX_free(ctx);
-#ifdef ENC_DEBUG
-	debug(LOG_DEBUG, "DEC_LEN:%lu", enc_len);
-	int j = 0;
-	debug(LOG_DEBUG, "decoder IV=");
-	for (j=0; j<16; j++){
-		printf("%u ", (unsigned char)c->iv[j] );
-	}
-	printf("\n");
-
-	debug(LOG_DEBUG, "decoder KEY=");
-	for (j=0; j<16; j++){
-		printf("%u ", (unsigned char)c->key[j] );
-	}
-	printf("\n");
-
-	debug(LOG_DEBUG, "decoder source=");
-	for (j=0; j<enc_len; j++){
-		printf("%u ", (unsigned char)inbuf[j]);
-	}
-	printf("\n");
-
-	debug(LOG_DEBUG, "decoder result=");
-	for (j = 0; j<totol_len; j++) {
-		printf("%u ", (unsigned char)(*ret)[j]);
-	}
-	printf("\n");
-
-	debug(LOG_DEBUG, "decode string=%s", outbuf);
-#endif //ENC_DEBUG
 
 D_END:
 	return totol_len;

@@ -137,7 +137,8 @@ static void new_client_connect()
 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
 }
 
-static void start_proxy_services()
+static void 
+start_proxy_services()
 {
 	struct proxy_service *all_ps = get_all_proxy_services();
 	assert(all_ps);
@@ -155,7 +156,8 @@ static void start_proxy_services()
 	}
 }
 
-static void init_msg_writer()
+static void 
+init_msg_writer()
 {
 	if (! is_encoder_inited()) {
 		struct frp_coder * e = init_main_encoder();
@@ -164,7 +166,8 @@ static void init_msg_writer()
 	}
 }
 
-static void init_msg_reader(unsigned char *iv)
+static void 
+init_msg_reader(unsigned char *iv)
 {
 	if (! is_decoder_inited()) {
 		struct frp_coder *d = init_main_decoder(iv);
@@ -269,7 +272,7 @@ static void pong(struct bufferevent *bev, struct frame *f)
 
 	char *pong_msg = "{}";
 
-	send_msg_frp_server(bev, TypePong, pong_msg, strlen(pong_msg), sid);
+	send_enc_msg_frp_server(bev, TypePong, pong_msg, strlen(pong_msg), sid);
 }
 
 static void sync_new_work_connection(struct bufferevent *bev)
@@ -525,14 +528,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		goto DATA_H_END;
 	}
 
-#ifdef USEENCRYPTION
-	if (! is_decoder_inited() && f->len == get_block_size()) {
-		init_msg_reader((unsigned char *)f->data);
-		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed!");
-		goto DATA_H_END;
-	}
-#endif // USEENCRYPTION
-
 	if (len <= min_buf_len) {
 		if (f->cmd == 3) {
 			base_control_ping(bev);
@@ -540,36 +535,6 @@ static size_t data_handler(unsigned char *buf, ushort len, struct proxy_client *
 		goto DATA_H_END;
 	}
 
-#ifdef ENCRYPTO
-	size_t ret_len3 = encrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
-	if (ret_len3 <= 0) {
-		debug(LOG_ERR, "message recved decrypt result is 0 bit");
-		goto DATA_H_END;
-	}
-
-	size_t ret_len2 = decrypt_data(f->data, (size_t)f->len, get_main_encoder(), &ret_buf);
-	if (ret_len2 <= 0) {
-		debug(LOG_ERR, "message recved decrypt result is 0 bit");
-		goto DATA_H_END;
-	}
-
-	size_t ret_len1 = encrypt_data(f->data, (size_t)f->len, get_main_decoder(), &ret_buf);
-	if (ret_len1 <= 0) {
-		debug(LOG_ERR, "message recved decrypt result is 0 bit");
-		goto DATA_H_END;
-	}
-
-	struct frp_coder *d = get_main_decoder();
-	if (! d) {
-		debug(LOG_ERR, "decoder (message reader) is not inited!");
-		goto DATA_H_END;
-	}
-	size_t ret_len = decrypt_data(f->data, (size_t)f->len, d, &ret_buf);
-	if (ret_len <= 0) {
-		debug(LOG_ERR, "message recved decrypt result is 0 bit");
-		goto DATA_H_END;
-	}
-#endif // ENCRYPTO
 
 	if (! ret_buf) 
 		ret_buf = f->data; //test: no crypto
@@ -702,18 +667,76 @@ static unsigned char
 }
 
 static int
-handle_enc_msg(unsigned char *buf, int len)
+handle_enc_msg(uint8_t *enc_msg, int ilen, uint8_t **out)
 {
-	char *out;
-	decrypt_data(buf, len, get_main_decoder(), &out);
-	
-	debug(LOG_DEBUG, "out is [%s]", out);
+	if (ilen <= 0) {
+		debug(LOG_INFO, "enc_msg length should not be %d", ilen);
+		return -1;
+	}
 
-	return 1;	
+	uint8_t *buf = enc_msg;
+	if ( !is_decoder_inited() && get_block_size() <= ilen) {
+		init_main_decoder(buf);
+		buf += get_block_size();
+		ilen -= get_block_size();
+		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed! %d", ilen);
+		if (!ilen) {
+			// recv only iv
+			debug(LOG_DEBUG, "recv eas1238 iv data");
+			return 0;
+		}	
+	}
+	
+	
+
+	size_t len = decrypt_data(buf, ilen, get_main_decoder(), out);
+	debug(LOG_DEBUG, "dec out len %d ", len);
+
+	if (!get_main_decoder() || !get_main_encoder())
+		return len;
+
+	uint8_t *plaintext = "this is a test for crypto test, hhhhhhhhhaaaallllaaaalllaaaa";
+	uint8_t *cryptext = NULL, *dectext = NULL;
+	len = encrypt_data(plaintext, strlen(plaintext), get_main_decoder(), &cryptext);
+	len = decrypt_data(cryptext, len, get_main_decoder(), &dectext);
+	if (memcmp(plaintext, dectext, len) != 0)
+		debug(LOG_DEBUG, "decrypt failed!=============");
+	else
+		debug(LOG_DEBUG, "decrypt passed!=============");
+	return len;	
 }
 
 static int
-handle_login_response(unsigned char *buf, int len)
+handle_control_work(const uint8_t *buf, int len)
+{
+	uint8_t *frps_cmd = NULL;
+	uint8_t cmd_type;
+	uint8_t *enc_msg = buf;
+	int nret = handle_enc_msg(enc_msg, len, &frps_cmd);
+	if (!frps_cmd)
+		return 0;
+
+	cmd_type = frps_cmd[0];
+	switch(cmd_type) {
+	case TypeReqWorkConn: 
+		debug(LOG_DEBUG, "TypeReqWorkConn cmd");
+		start_proxy_services();
+		ping(NULL);
+		//new_client_connect();
+		break;
+	case TypeNewProxyResp:
+		debug(LOG_DEBUG, "TypeNewProxyResp cmd");
+		break;
+	default:
+		debug(LOG_INFO, "command type dont support");
+	}
+
+	free(frps_cmd);
+	return 1;
+}
+
+static int
+handle_login_response(const uint8_t *buf, int len)
 {
 	struct msg_hdr *mhdr = (struct msg_hdr *)buf;
 	if (mhdr->type != TypeLoginResp) {
@@ -731,28 +754,43 @@ handle_login_response(unsigned char *buf, int len)
 		free(lres);
 		return 0;
 	}
-
 	free(lres);
+	
 	is_login = 1;
-	debug(LOG_ERR, "login success!");
 
-	if ( !is_decoder_inited()) {
-		init_msg_reader(buf);
-		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed!");
-	}
-									    
+	int login_len = msg_hton(mhdr->length);
+	debug(LOG_ERR, "login success! %d len %d", login_len, len);
+	if (len-login_len-sizeof(struct msg_hdr) == 0)
+		return 1;
+	
+	// in case, system get 3 packet together 
+	debug(LOG_DEBUG, "TypeReqWorkConn cmd");
+	uint8_t *enc_msg = mhdr->data+login_len;
+	uint8_t *frps_cmd = NULL;
+	int nret = handle_enc_msg(enc_msg, len-login_len-sizeof(struct msg_hdr), &frps_cmd);
+	assert(nret > 0);
+	// start proxy services must first send
+	start_proxy_services();
+	//ping(NULL);
+	assert (frps_cmd[0] == TypeReqWorkConn);
+	new_client_connect();
+
 	return 1;
 }
 
 static void
-handle_control_msg(unsigned char *buf, int len, void *ctx)
+handle_frps_msg(unsigned char *buf, int len, void *ctx)
 {
 	if (!is_login) {
 		// login response
 		handle_login_response(buf, len);
-	} else if (!ctx) {
-		handle_enc_msg(buf, len);
-	} else {
+	}else if (!ctx) {
+		// control msg
+		debug(LOG_DEBUG, "main control message");
+		handle_control_work(buf, len);
+	}else {
+		// client msg
+		debug(LOG_DEBUG, "client message");
 	}	
 }
 
@@ -767,11 +805,11 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	unsigned char *buf = calloc(1, len+1);
+	unsigned char *buf = calloc(len+1, 1);
 	assert(buf);
 	evbuffer_remove(input, buf, len);
 	
-	handle_control_msg(buf, len, ctx);
+	handle_frps_msg(buf, len, ctx);
 
 	SAFE_FREE(buf);
 	return;
@@ -810,22 +848,17 @@ static void connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
 
-		// recv login-response message before recving othfer fprs messages, 
-		bufferevent_setcb(bev, recv_cb, NULL, connect_event_cb, NULL);
-		bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);
-		
-		if (get_common_config()->tcp_mux) 
-			open_connection_session(bev);
-
 		login();
+		// recv login-response message before recving othfer fprs messages, 
+		//bufferevent_setcb(bev, recv_cb, NULL, NULL, NULL);
+		//bufferevent_enable(bev, EV_READ|EV_WRITE|EV_PERSIST);
+
 	}
 }
 
 static void keep_control_alive() 
 {
-	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, 
-									hb_sender_cb, 
-									NULL);
+	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, hb_sender_cb, NULL);
 	if ( ! main_ctl->ticker_ping) {
 		debug(LOG_ERR, "Ping Ticker init failed!");
 		return;
@@ -862,19 +895,16 @@ void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
 	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
-											c_conf->server_addr, 
-											c_conf->server_port);
+						c_conf->server_addr, 
+						c_conf->server_port);
 	if ( ! main_ctl->connect_bev) {
-		debug(LOG_ERR, 
-			"error: connect server [%s:%d] failed", 
-			c_conf->server_addr, 
-			c_conf->server_port);
+		debug(LOG_ERR, "error: connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
 		exit(0);
 	}
 
 	debug(LOG_INFO, "connect server [%s:%d]...", c_conf->server_addr, c_conf->server_port);
 	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
-	bufferevent_setcb(main_ctl->connect_bev, NULL, NULL, connect_event_cb, NULL);
+	bufferevent_setcb(main_ctl->connect_bev, recv_cb, NULL, connect_event_cb, NULL);
 }
 
 void sync_iv(unsigned char *iv)
@@ -900,15 +930,11 @@ void login()
 {
 	char *lg_msg = NULL;
 	int len = login_request_marshal(&lg_msg); //marshal login request
-	if ( ! lg_msg || ! len) {
+	if ( !lg_msg ) {
 		debug(LOG_ERR, 
 			"error: login_request_marshal failed, it should never be happenned");
 		exit(0);
 	}
-
-	// using sid = 3 is only for matching fprs, it will change after using tcp-mux
-	if (get_common_config()->tcp_mux)
-		sync_session_id(3); 
 	
 	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
 	SAFE_FREE(lg_msg);
@@ -925,10 +951,10 @@ void sync_session_id(uint32_t sid)
 }
 
 void send_msg_frp_server(struct bufferevent *bev, 
-					const enum msg_type type, 
-					const char *msg, 
-					const size_t msg_len, 
-					uint32_t sid)
+			 const enum msg_type type, 
+			 const char *msg, 
+			 const size_t msg_len, 
+			 uint32_t sid)
 {
 	struct bufferevent *bout = NULL;
 	if (bev) {
@@ -939,59 +965,51 @@ void send_msg_frp_server(struct bufferevent *bev,
 	assert(bout);
 
 	debug(LOG_DEBUG, "send ----> [%c: %s]", type, msg);
-
-	struct message req_msg;
-	req_msg.data_p = NULL;
-	req_msg.type = type;
-	req_msg.data_len = msg_len;
-
-	char frame_type = 0;
-	struct frame *f = NULL;
-
-	// frame_type not truely matter, it will reset by set_frame_cmd
-	f = new_frame(frame_type, sid); 
-	assert(f);
-
-	if (msg) {
-		req_msg.data_p = strdup(msg);
-		assert(req_msg.data_p);
-	}
-
-	unsigned char *pack_buf = NULL;
-	size_t pack_buf_len = pack(&req_msg, &pack_buf);
-	if ( ! pack_buf_len || ! pack_buf) {
-		debug(LOG_ERR, "error: send buffer pack failed!");
-		goto S_M_F_END;
-	}
-
-	set_frame_len(f, (ushort) pack_buf_len);
-	f->data = pack_buf;
 	
-	if (get_common_config()->tcp_mux) {
-		switch (type)
-		{
-		case TypeLogin:
-		case TypePong:
-		case TypePing:
-		case TypeNewProxy:
-			frame_type = cmdPSH;
-			break;
+	struct msg_hdr *req_msg = calloc(msg_len+sizeof(struct msg_hdr), 1);
+	assert(req_msg);
+	req_msg->type = type;
+	req_msg->length = msg_hton((uint64_t)msg_len);
+	memcpy(req_msg->data, msg, msg_len);
+	
+	bufferevent_write(bout, (uint8_t *)req_msg, msg_len+sizeof(struct msg_hdr));
+	
+	free(req_msg);
+}
 
-		default:
-			break;
-		}
+void send_enc_msg_frp_server(struct bufferevent *bev,
+			 const enum msg_type type, 
+			 const char *msg, 
+			 const size_t msg_len, 
+			 uint32_t sid)
+
+{
+	struct bufferevent *bout = NULL;
+	if (bev) {
+		bout = bev;
 	} else {
-		frame_type = cmdPSH;
+		bout = main_ctl->connect_bev;
 	}
-	
-	set_frame_cmd(f, frame_type);
-	request(bout, f);
+	assert(bout);
 
-S_M_F_END:
-	SAFE_FREE(req_msg.data_p);
-	SAFE_FREE(pack_buf);
-	f->data = NULL;
-	free_frame(f);
+	debug(LOG_DEBUG, "send ----> [%c: %s]", type, msg);
+	
+	struct msg_hdr *req_msg = calloc(msg_len+sizeof(struct msg_hdr), 1);
+	assert(req_msg);
+	req_msg->type = type;
+	req_msg->length = msg_hton((uint64_t)msg_len);
+	memcpy(req_msg->data, msg, msg_len);
+
+
+	uint8_t *enc_msg = NULL;
+	size_t olen = encrypt_data((uint8_t *)req_msg, msg_len+sizeof(struct msg_hdr), get_main_encoder(), &enc_msg);
+	assert(olen > 0);
+	debug(LOG_DEBUG, "encrypt_data length %d", olen);
+
+	bufferevent_write(bout, enc_msg, olen);
+
+	free(enc_msg);	
+	free(req_msg);
 }
 
 struct control *get_main_control() 
@@ -1002,9 +1020,7 @@ struct control *get_main_control()
 void start_login_frp_server(struct event_base *base)
 {
 	struct common_conf *c_conf = get_common_config();
-	struct bufferevent *bev = connect_server(base, 
-											c_conf->server_addr, 
-											c_conf->server_port);
+	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
 		debug(LOG_DEBUG, 
 			"Connect server [%s:%d] failed", 
@@ -1025,7 +1041,6 @@ void send_new_proxy(struct proxy_service *ps)
 		debug(LOG_ERR, "proxy service is invalid!");
 		return;
 	}
-	debug(LOG_DEBUG, "control proxy client: [%s]", ps->proxy_name);
 
 	char *new_proxy_msg = NULL;
 	int len = new_proxy_service_marshal(ps, &new_proxy_msg);
@@ -1034,7 +1049,9 @@ void send_new_proxy(struct proxy_service *ps)
 		return;
 	}
 
-	send_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
+	debug(LOG_DEBUG, "control proxy client: [%d : %s : %d]", TypeNewProxy, ps->proxy_name, len);
+
+	send_enc_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
 	SAFE_FREE(new_proxy_msg);
 }
 
@@ -1075,12 +1092,12 @@ void init_main_control()
 
 	evdns_base_set_option(dnsbase, "timeout", "1.0");
 
-    // thanks to the following article
-    // http://www.wuqiong.info/archives/13/
-    evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
-    evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");		//BaiduDNS
+    	// thanks to the following article
+    	// http://www.wuqiong.info/archives/13/
+    	evdns_base_set_option(dnsbase, "randomize-case:", "0");		//TurnOff DNS-0x20 encoding
+    	evdns_base_nameserver_ip_add(dnsbase, "180.76.76.76");		//BaiduDNS
 	evdns_base_nameserver_ip_add(dnsbase, "223.5.5.5");			//AliDNS
-    evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
+    	evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
 	evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
 
 	// if server_addr is ip, done control init.

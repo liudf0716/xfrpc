@@ -34,11 +34,11 @@
 struct base_conf{
 	char	*name;
 	char	*auth_token;
-	int		use_encryption;
-	int		use_gzip;
-	int		privilege_mode;
+	int	use_encryption;
+	int	use_gzip;
+	int	privilege_mode;
 	char	*privilege_token;
-	int		pool_count;
+	int	pool_count;
 	char	*host_header_rewrite;
 	char	*subdomain;
 };

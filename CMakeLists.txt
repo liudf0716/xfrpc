@@ -22,7 +22,6 @@ set(src_xfrpc
   	client.c
   	config.c
   	control.c
-	frame.c
   	ini.c
   	msg.c
 	xfrpc.c
@@ -43,6 +42,7 @@ set(src_xfrpc
 set(libs
 	ssl
 	crypto
+	mbedcrypto
 	event
 	z
 	m

@@ -19,7 +19,8 @@
 #include "proxy.h"
 #include "config.h"
 
-struct proxy *new_proxy_buf(struct bufferevent *bev)
+struct proxy *
+new_proxy_obj(struct bufferevent *bev)
 {
 	struct proxy *p = (struct proxy *)calloc(1, sizeof(struct proxy));
 	assert(p);
@@ -29,7 +30,8 @@ struct proxy *new_proxy_buf(struct bufferevent *bev)
 	return p;
 }
 
-void free_proxy(struct proxy *p)
+void 
+free_proxy_obj(struct proxy *p)
 {
 	SAFE_FREE(p->proxy_name);
 	SAFE_FREE(p);

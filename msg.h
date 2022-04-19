@@ -89,13 +89,7 @@ struct work_conn {
 struct __attribute__((__packed__)) msg_hdr {
 	char		type;
 	uint64_t	length;
-	unsigned char	data[];
-};
-
-struct message {
-	char 	type;
-	char	*data_p;
-	size_t	data_len;
+	uint8_t		data[];
 };
 
 struct start_work_conn_resp {
@@ -104,12 +98,9 @@ struct start_work_conn_resp {
 
 int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg);
 int msg_type_valid_check(char msg_type);
-struct message *new_message();
 char *calc_md5(const char *data, int datalen);
 char *get_auth_key(const char *token, long int *timestamp);
 size_t login_request_marshal(char **msg);
-size_t pack(struct message *req_msg, unsigned char **ret_buf);
-struct message *unpack(unsigned char *recv_msg, const ushort len);
 
 // tranlate control request to json string
 struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres);

@@ -36,7 +36,6 @@
 #include "msg.h"
 #include "const.h"
 #include "config.h"
-#include "frame.h"
 #include "debug.h"
 #include "common.h"
 #include "login.h"
@@ -49,10 +48,19 @@ json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 #define SAFE_JSON_STRING(str_target) \
 str_target?str_target:"\0"
 
-const char msg_typs[] = {TypeLogin, TypeLoginResp, TypeNewProxy, TypeNewProxyResp, 
-	TypeNewWorkConn, TypeReqWorkConn, TypeStartWorkConn, TypePing, TypePong, TypeUDPPacket};
+const char msg_typs[] = {TypeLogin, 
+						 TypeLoginResp, 
+						 TypeNewProxy, 
+						 TypeNewProxyResp, 
+						 TypeNewWorkConn, 
+						 TypeReqWorkConn, 
+						 TypeStartWorkConn, 
+						 TypePing, 
+						 TypePong, 
+						 TypeUDPPacket};
 
-char *calc_md5(const char *data, int datalen)
+char *
+calc_md5(const char *data, int datalen)
 {
 	unsigned char digest[16] = {0};
 	char *out = (char*)malloc(33);
@@ -71,7 +79,8 @@ char *calc_md5(const char *data, int datalen)
     return out;
 }
 
-static void fill_custom_domains(struct json_object *j_ctl_req, const char *custom_domains)
+static void 
+fill_custom_domains(struct json_object *j_ctl_req, const char *custom_domains)
 {
 	struct json_object *jarray_cdomains = json_object_new_array();
 	assert(jarray_cdomains);
@@ -95,27 +104,18 @@ static void fill_custom_domains(struct json_object *j_ctl_req, const char *custo
 	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
 }
 
-// NEED FREE
-struct message *new_message() {
-	struct message *msg = calloc(1, sizeof(struct message)); //TODO: FREE
-	if (msg)
-	{
-		msg->data_p = NULL;
-		msg->data_len = 0;
-	}
-
-	return msg;
-}
-
-struct work_conn *new_work_conn() {
+struct work_conn *
+new_work_conn() {
 	struct work_conn *work_c = calloc(1, sizeof(struct work_conn));
+	assert(work_c);
 	if (work_c) 
 		work_c->run_id = NULL;
 
 	return work_c;
 }
 
-char *get_auth_key(const char *token, long int *timestamp)
+char *
+get_auth_key(const char *token, long int *timestamp)
 {
 	char seed[128] = {0};
 	*timestamp = time(NULL);
@@ -127,7 +127,8 @@ char *get_auth_key(const char *token, long int *timestamp)
 	return calc_md5(seed, strlen(seed));
 }
 
-size_t login_request_marshal(char **msg)
+size_t 
+login_request_marshal(char **msg)
 {
 	size_t nret = 0;
 	struct json_object *j_login_req = json_object_new_object();
@@ -168,7 +169,8 @@ size_t login_request_marshal(char **msg)
 	return nret;
 }
 
-int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
+int 
+new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 {
 	const char *tmp = NULL;
 	int  nret = 0;
@@ -221,7 +223,8 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	return nret;
 }
 
-int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
+int 
+new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 {
 	const char *tmp = NULL;
 	int nret = 0;
@@ -243,7 +246,8 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 }
 
 // result returned of this func need be free
-struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres)
+struct new_proxy_response *
+new_proxy_resp_unmarshal(const char *jres)
 {
 	struct json_object *j_np_res = json_tokener_parse(jres);
 	if (j_np_res == NULL)
@@ -253,15 +257,19 @@ struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres)
 	assert(npr);
 
 	struct json_object *npr_run_id = NULL;
-	if (! json_object_object_get_ex(j_np_res, "run_id", &npr_run_id))
-		goto END_ERROR;
-	npr->run_id = strdup(json_object_get_string(npr_run_id));
-	assert(npr->run_id);
+	if (json_object_object_get_ex(j_np_res, "run_id", &npr_run_id))
+		npr->run_id = strdup(json_object_get_string(npr_run_id));
 
-	struct json_object *npr_proxy_remote_port = NULL;
-	if (! json_object_object_get_ex(j_np_res, "remote_port", &npr_proxy_remote_port))
+	struct json_object *npr_proxy_remote_addr = NULL;
+	if (! json_object_object_get_ex(j_np_res, "remote_addr", &npr_proxy_remote_addr))
 		goto END_ERROR;
-	npr->remote_port = json_object_get_int(npr_proxy_remote_port);
+	const char *remote_addr = json_object_get_string(npr_proxy_remote_addr);
+	char *port = strrchr(remote_addr, ':');
+	if (port) {
+		port++;
+		npr->remote_port = atoi(port);
+	}else
+		goto END_ERROR;
 
 	struct json_object *npr_proxy_name = NULL;
 	if (! json_object_object_get_ex(j_np_res, "proxy_name", &npr_proxy_name))
@@ -281,7 +289,8 @@ END_ERROR:
 }
 
 // login_resp_unmarshal NEED FREE
-struct login_resp *login_resp_unmarshal(const char *jres)
+struct login_resp *
+login_resp_unmarshal(const char *jres)
 {
 	struct json_object *j_lg_res = json_tokener_parse(jres);
 	if (j_lg_res == NULL)
@@ -313,7 +322,8 @@ END_ERROR:
 	return lr;
 }
 
-struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg)
+struct start_work_conn_resp *
+start_work_conn_resp_unmarshal(const char *resp_msg)
 {
 	struct json_object *j_start_w_res = json_tokener_parse(resp_msg);
 	if (j_start_w_res == NULL)
@@ -334,7 +344,8 @@ START_W_C_R_END:
 	return sr;
 }
 
-struct control_response *control_response_unmarshal(const char *jres)
+struct control_response *
+control_response_unmarshal(const char *jres)
 {
 	struct json_object *j_ctl_res = json_tokener_parse(jres);
 	if (j_ctl_res == NULL)
@@ -363,7 +374,8 @@ END_ERROR:
 	return ctl_res;
 }
 
-void control_response_free(struct control_response *res)
+void 
+control_response_free(struct control_response *res)
 {
 	if (!res)
 		return;
@@ -372,7 +384,8 @@ void control_response_free(struct control_response *res)
 	SAFE_FREE(res);
 }
 
-int msg_type_valid_check(char msg_type)
+int 
+msg_type_valid_check(char msg_type)
 {
 	int i = 0;
 	for(i = 0; i<(sizeof(msg_typs) / sizeof(*msg_typs)); i++) {
@@ -383,49 +396,3 @@ int msg_type_valid_check(char msg_type)
 	return 0;
 }
 
-// only handle recved message with right message type 
-struct message *unpack(unsigned char *recv_msg, const ushort len)
-{
-	struct message *msg = new_message();
-	msg->type = *(recv_msg + MSG_TYPE_I);
-
-	if (! msg_type_valid_check(msg->type) ) {
-		debug(LOG_ERR, "message recved type is invalid!");
-		return NULL;
-	}
-
-	msg_size_t  data_len_bigend;
-	data_len_bigend = *(msg_size_t *)(recv_msg + MSG_LEN_I);
-	msg->data_len = msg_ntoh(data_len_bigend);
-
-	if (msg->data_len > 0) {
-		msg->data_p = calloc(msg->data_len + 1, 1);
-		assert(msg->data_p);
-		
-		memcpy(msg->data_p, recv_msg + MSG_DATA_I, msg->data_len);
-	}
-	
-	return msg;
-}
-
-size_t pack(struct message *req_msg, unsigned char **ret_buf)
-{
-	int endian_check = 1;
-	// little endian if true
-
-	msg_size_t data_len_bigend;
-	if(*(char *)&endian_check == 1)
-		data_len_bigend = msg_hton(req_msg->data_len);
-	else 
-		data_len_bigend = req_msg->data_len;
-
-	size_t buf_len = TYPE_LEN + sizeof(data_len_bigend) + req_msg->data_len;
-	*ret_buf = calloc(1, buf_len);
-	assert(*ret_buf);
-
-	*(*ret_buf + MSG_TYPE_I) = req_msg->type;
-	*(msg_size_t *)(*ret_buf + MSG_LEN_I) = data_len_bigend;
-	memcpy((char *)*ret_buf+TYPE_LEN+sizeof(data_len_bigend), req_msg->data_p, req_msg->data_len);
-
-	return buf_len;
-}

@@ -61,7 +61,8 @@
 static void drained_writecb(struct bufferevent *bev, void *ctx);
 static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx);
 
-static void xfrp_read_cb(struct bufferevent *bev, void *ctx)
+static void 
+xfrp_read_cb(struct bufferevent *bev, void *ctx)
 {
 	struct proxy *p = (struct proxy *)ctx;
 	struct bufferevent *partner = p?p->bev:NULL;
@@ -75,21 +76,22 @@ static void xfrp_read_cb(struct bufferevent *bev, void *ctx)
 	}
 	dst = bufferevent_get_output(partner);
 	evbuffer_add_buffer(dst, src);
-	struct proxy *p_l = new_proxy_buf(bev);
+	struct proxy *p_obj = new_proxy_obj(bev);
 
 	if (evbuffer_get_length(dst) >= MAX_OUTPUT) {
 		/* We're giving the other side data faster than it can
 		 * pass it on.  Stop reading here until we have drained the
 		 * other side to MAX_OUTPUT/2 bytes. */
 		bufferevent_setcb(partner, xfrp_read_cb, drained_writecb,
-		    xfrp_event_cb, p_l);
+		    xfrp_event_cb, p_obj);
 		bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2,
 		    MAX_OUTPUT);
 		bufferevent_disable(bev, EV_READ);
 	}
 }
 
-static void drained_writecb(struct bufferevent *bev, void *ctx)
+static void 
+drained_writecb(struct bufferevent *bev, void *ctx)
 {
 	struct proxy *p = (struct proxy *)ctx;
 	struct bufferevent *partner = p?p->bev:NULL;
@@ -102,7 +104,8 @@ static void drained_writecb(struct bufferevent *bev, void *ctx)
 		bufferevent_enable(partner, EV_READ);
 }
 
-static void close_on_finished_writecb(struct bufferevent *bev, void *ctx)
+static void 
+close_on_finished_writecb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *b = bufferevent_get_output(bev);
 
@@ -111,7 +114,8 @@ static void close_on_finished_writecb(struct bufferevent *bev, void *ctx)
 	}
 }
 
-static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
+static void 
+xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	struct proxy *p = (struct proxy *)ctx;
 	struct bufferevent *partner = p?p->bev:NULL;
@@ -135,46 +139,15 @@ static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
 				/* We have nothing left to say to the other
 				 * side; close it. */
 				bufferevent_free(partner);
-				free_proxy(p);
+				free_proxy_obj(p);
 			}
 		}
 		bufferevent_free(bev);
 	}
 }
 
-// return: 0: init succeed; 1: init failed
-// static int init_ftp_data_port(struct proxy_service *ps)
-// {
-// 	struct mycurl_string ret_buf;
-// 	if ( ! mycurl_string_init(&ret_buf)) {
-// 		debug(LOG_ERR, "error: ftp data port buffer init failed!");
-// 		return 1;
-// 	}
-
-// 	char url[1024] = {0};
-// 	struct common_conf *c_conf = get_common_config();
-	
-
-// 	int state_code = 0;
-// 	double down_size = 0;
-// 	int ret = net_visit(url, 
-// 			&ret_buf,
-// 			HTTP_GET,
-// 			NULL,
-// 			60l, 
-// 			&state_code,
-// 			&down_size);
-
-// 	if (ret) {
-// 		debug(LOG_ERR, "error: ftp remote data port init failed by HTTP GET");
-// 		mycurl_string_free(&ret_buf);
-// 		return 1;
-// 	}
-
-// 	return 0;
-// }
-
-int is_ftp_proxy(const struct proxy_service *ps)
+int 
+is_ftp_proxy(const struct proxy_service *ps)
 {
 	if (! ps || ! ps->proxy_type)
 		return 0;
@@ -186,7 +159,8 @@ int is_ftp_proxy(const struct proxy_service *ps)
 }
 
 // create frp tunnel for service
-void start_xfrp_tunnel(struct proxy_client *client)
+void 
+start_xfrp_tunnel(struct proxy_client *client)
 {
 	if (! client->ctl_bev) {
 		debug(LOG_ERR, "proxy client control bev is invalid!");
@@ -197,23 +171,23 @@ void start_xfrp_tunnel(struct proxy_client *client)
 	struct common_conf *c_conf = get_common_config();
 	struct proxy_service *ps = client->ps;
 
-	if (! base) {
+	if ( !base ) {
 		debug(LOG_ERR, "service event base get failed");
 		return;
 	}
 
-	if (! ps) {
+	if ( !ps ) {
 		debug(LOG_ERR, "service tunnel started failed, no proxy service resource.");
 		return;
 	}
 
-	if (! ps->local_port) {
+	if ( !ps->local_port ) {
 		debug(LOG_ERR, "service tunnel started failed, proxy service resource unvalid.");
 		return;
 	}
 
 	client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
-	if (!client->local_proxy_bev) {
+	if ( !client->local_proxy_bev ) {
 		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
 		bufferevent_free(client->ctl_bev);
 		return;
@@ -225,8 +199,8 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
-	struct proxy *ctl_prox = new_proxy_buf(client->ctl_bev);
-	struct proxy *local_prox = new_proxy_buf(client->local_proxy_bev);
+	struct proxy *ctl_prox = new_proxy_obj(client->ctl_bev);
+	struct proxy *local_prox = new_proxy_obj(client->local_proxy_bev);
 	bufferevent_data_cb proxy_s2c_cb, proxy_c2s_cb;
 	if (is_ftp_proxy(client->ps)) {
 		proxy_c2s_cb = ftp_proxy_c2s_cb;
@@ -254,7 +228,8 @@ void start_xfrp_tunnel(struct proxy_client *client)
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
 }
 
-int send_client_data_tail(struct proxy_client *client)
+int 
+send_client_data_tail(struct proxy_client *client)
 {
 	int send_l = 0;
 	if (client->data_tail && client->data_tail_size && client->local_proxy_bev) {
@@ -264,7 +239,8 @@ int send_client_data_tail(struct proxy_client *client)
 	return send_l;
 }
 
-void free_proxy_client(struct proxy_client *client)
+void 
+free_proxy_client(struct proxy_client *client)
 {
 	if (client->local_ip) free(client->local_ip);
 	
@@ -273,7 +249,8 @@ void free_proxy_client(struct proxy_client *client)
 	evtimer_del(client->ev_timeout);
 }
 
-void del_proxy_client(struct proxy_client *client)
+void 
+del_proxy_client(struct proxy_client *client)
 {
 	struct proxy_client *all_pc = get_all_pc();
 	if (!client || !all_pc ) {
@@ -287,7 +264,8 @@ void del_proxy_client(struct proxy_client *client)
 }
 
 // Return NULL if proxy service not found with proxy_name
-struct proxy_service *get_proxy_service(const char *proxy_name)
+struct proxy_service *
+get_proxy_service(const char *proxy_name)
 {
 	struct proxy_service *ps = NULL;
 	struct proxy_service *all_ps = get_all_proxy_services();
@@ -295,7 +273,8 @@ struct proxy_service *get_proxy_service(const char *proxy_name)
 	return ps;
 }
 
-struct proxy_client *new_proxy_client()
+struct proxy_client *
+new_proxy_client()
 {
 	struct proxy_client *client = calloc(1, sizeof(struct proxy_client));
 	assert(client);

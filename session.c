@@ -8,12 +8,12 @@
 #include "session.h"
 #include "version.h"
 #include "debug.h"
-#include "frame.h"
 
 uint32_t *sid_index = NULL;
 
 // need free
-uint32_t *init_sid_index()
+uint32_t *
+init_sid_index()
 {
 	if (NULL == sid_index) {
 		sid_index = (uint32_t *)calloc(1, sizeof(uint32_t));
@@ -31,7 +31,8 @@ uint32_t *init_sid_index()
 	return sid_index;
 }
 
-uint32_t get_current_sid_index()
+uint32_t 
+get_current_sid_index()
 {
 	if (NULL == sid_index) {
 		return *init_sid_index();
@@ -40,7 +41,8 @@ uint32_t get_current_sid_index()
 	return *sid_index;
 }
 
-uint32_t new_sid()
+uint32_t 
+new_sid()
 {
 	if (NULL == sid_index) {
 		init_sid_index();

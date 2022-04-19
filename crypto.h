@@ -8,10 +8,9 @@
 #include "common.h"
 
 struct frp_coder {
-	unsigned char 	*key;
-	ushort 		key_len;
+	uint8_t 	key[16];
 	char 		*salt;
-	unsigned char 	*iv;
+	uint8_t 	iv[16];
 	char 		*privilege_token;
 };
 
@@ -22,8 +21,8 @@ int is_decoder_inited();
 struct frp_coder *init_main_encoder();
 struct frp_coder *init_main_decoder(unsigned char *iv);
 struct frp_coder *new_coder(const char *privilege_token, const char *salt);
-unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt);
-unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len);
+uint8_t *encrypt_key(const char *token, size_t token_len, const char *salt, uint8_t *key, size_t key_len);
+uint8_t *encrypt_iv(unsigned char *iv_buf, size_t iv_len);
 size_t encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret);
 struct frp_coder *get_main_encoder();
 struct frp_coder *get_main_decoder();

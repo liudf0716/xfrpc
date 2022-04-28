@@ -9,9 +9,28 @@ The motivation to start xfrpc project is that we are OpenWRTer, and openwrt usua
 
 ## Development Status
 
+xfrpc partially compitable with latest frp release feature, It target to fully compatible with latest frp release.
+
+the following table is detail  compatible feature:
+
+| Feature  | xfrpc | frpc |
+| ------------- | ------------- | ---------|
+| tcp  | Yes |	 Yes  |
+| tcpmux  | No |	 Yes  |
+| http  | Yes |	 Yes  |
+| https  | Yes |  Yes  |
+| udp  | No |  Yes  |
+| p2p  | No |  Yes  |
+| xtcp  | No |  Yes  |
+| vistor  | No |  Yes  |
+
 
 
 ## Architecture
+
+![Architecture](https://github.com/fatedier/frp/blob/dev/doc/pic/architecture.png?raw=true)
+
+Architecture quote from [frp](https://github.com/fatedier/frp) project, replace frpc with xfrpc.
 
 ## Sequence Diagram
 
@@ -77,7 +96,34 @@ make
 
 ## Quick start
 
-**before using xfrpc, you should have built the proxy server: [xfrps](https://github.com/liudf0716/xfrps), It's no difference with frp at usage, but support `FTP` and more embedded-client-friendly for linux.**
+**before using xfrpc, you should get frps server: [frps](https://github.com/fatedier/frp/releases)**
+
++ frps 
+
+frps use latest release 0.42.0
+
+```
+# frps.ini
+[common]
+bind_port = 7000
+tcp_mux = false
+token = 12345678
+```
++ xfrpc
+
+```
+#frpc_mini.ini 
+[common]
+server_addr = your_server_ip
+server_port = 7000
+token = 12345678
+
+[ssh]
+type = tcp
+local_ip = 127.0.0.1
+local_port = 22
+remote_port = 6128
+```
 
 Run in debug mode :
 
@@ -90,40 +136,6 @@ Run in release mode :
 ```shell
 xfrpc -c frpc_mini.ini -d 0
 ```
-
-## FTP support
-
-xfrpc support ftp proxy after version [0.07.451](https://github.com/liudf0716/xfrpc/tree/0.07.451). **Hypothesize you have built [xfrps](https://github.com/liudf0716/xfrps) succeed!**
-
-Configure ftp in frpc.ini
-
-```
-[common]
-server_addr = 111.112.113.114
-server_port = 7001
-
-[router_ftp_example]
-type = ftp
-local_port = 21
-remote_port = 30621
-remote_data_port = 30622
-```
-
-`remote_port` is the reporxy port of FTP command tunnel, and `remote_data_port` is FTP-DATA port reporxy. 
-
-Use `-p` (PASV Mode) of `ftp` command to connect to proxy ftp server:
-
-```
-ftp -p 111.112.113.114 30621
-```
-
-----
-
-## Todo list
-
-- support compression
-- support encrypt
-
 
 ## How to contribute our project
 

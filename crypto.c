@@ -5,7 +5,6 @@
 #include <time.h>
 #include <syslog.h>
 #include <openssl/ssl.h>
-#include <mbedtls/aes.h>
 
 #include "fastpbkdf2.h"
 #include "crypto.h"
@@ -141,24 +140,18 @@ print_hex(uint8_t *val, size_t len)
 	printf("\n");
 }
 
-#define _USE_OPENSSL_
-
 // using aes-128-cfb and nopadding
 size_t 
 encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
-#ifdef _USE_OPENSSL_
 	uint8_t *intext = src_data;
 	assert(intext);
 	assert(encoder);
 	struct frp_coder *c = encoder;
 	int outlen = 0, tmplen = 0;
 	uint8_t *outbuf = NULL;
-	if (!encoder) {
-		debug(LOG_DEBUG, "encoder not initialized");
-		c = init_main_encoder();
-		assert(c);
-	}
+	assert(c);
+
 	outbuf = calloc(srclen, 1);
 	assert(outbuf);
 	*ret = outbuf;
@@ -182,39 +175,17 @@ encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *enc
 	outlen += tmplen;
 E_END:
 	return outlen;
-#else
-	assert(encoder);
-	mbedtls_aes_context ctx;
-	mbedtls_aes_init(&ctx);
-	mbedtls_aes_setkey_enc(&ctx, encoder->key, 128);
-
-	size_t iv_off = 0;
-	uint8_t *output = calloc(srclen, 1);
-	assert(output);
-	uint8_t iv[16] = {0};
-	memcpy(iv, encoder->iv, 16);
-	int nret = mbedtls_aes_crypt_cfb128(&ctx, MBEDTLS_AES_ENCRYPT, srclen, &iv_off, encoder->iv, src_data, output);
-	if (nret) {
-		free(output);
-		debug(LOG_ERR, "EVP_EncryptUpdate error!");
-		return nret;
-	}
-	*ret = output;
-	return srclen;
-#endif
 }
 
 size_t 
 decrypt_data(const uint8_t *enc_data, size_t enclen, struct frp_coder *decoder, uint8_t **ret)
 {
-#ifdef	_USE_OPENSSL_
 	uint8_t *inbuf = enc_data;
 	uint8_t *outbuf = calloc(enclen, 1);
 	struct frp_coder *c = decoder;
 	assert(inbuf);
 	assert(outbuf);
 	*ret = outbuf;
-	
 	assert(decoder);
 	
 	int outlen = 0, tmplen = 0;
@@ -238,26 +209,6 @@ decrypt_data(const uint8_t *enc_data, size_t enclen, struct frp_coder *decoder, 
 
 D_END:
 	return outlen;
-#else
-	assert(decoder);
-	mbedtls_aes_context ctx;
-	mbedtls_aes_init(&ctx);
-	mbedtls_aes_setkey_enc(&ctx, decoder->key, 128);
-
-	size_t iv_off = 0;
-	uint8_t *output = calloc(enclen, 1);
-	uint8_t iv[16] = {0};
-	memcpy(iv, decoder->iv, 16);
-	assert(output);
-	int nret = mbedtls_aes_crypt_cfb128(&ctx, MBEDTLS_AES_DECRYPT, enclen, &iv_off, decoder->iv, enc_data, output);
-	if (nret) {
-		free(output);
-		debug(LOG_ERR, "EVP_EncryptUpdate error!");
-		return nret;
-	}
-	*ret = output;
-	return enclen;
-#endif
 }
 
 void 

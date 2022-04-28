@@ -42,7 +42,6 @@ set(src_xfrpc
 set(libs
 	ssl
 	crypto
-	mbedcrypto
 	event
 	z
 	m

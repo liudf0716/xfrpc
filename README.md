@@ -1,12 +1,58 @@
 ![xfrpc](https://github.com/liudf0716/xfrpc/blob/master/logo.png)
 
 
-## What is xfrpc and why start xfrps
+## What is xfrpc 
 
-`xfrpc` is [xfrps](https://github.com/liudf0716/xfrps) client implemented by c for [OpenWRT](https://github.com/openwrt/openwrt) and [LEDE](https://github.com/lede-project/source) system
+`xfrpc` is [frp](https://github.com/fatedier/frp) client implemented by c language for [OpenWRT](https://github.com/openwrt/openwrt) and [LEDE](https://github.com/lede-project/source) system
 
-The motivation to start xfrp project is that we are OpenWRTer, and openwrt usually ran in device which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrp project.
+The motivation to start xfrpc project is that we are OpenWRTer, and openwrt usually ran in device which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrpc project to support frp.
 
+## Development Status
+
+
+
+## Architecture
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+	participant 本地服务
+	participant xfrpc
+  participant frps
+  participant 远程访问用户
+  
+  xfrpc ->> frps  : TypeLogin Message
+  frps ->> xfrpc  : TypeLoginResp Message
+  Note right of frps  : 根据Login信息里面的pool值，决定给xfrpc发送几条TypeReqWorkConn请求信息
+  frps ->> xfrpc  : frps aes-128-cfb iv[16] data
+  frps -->> xfrpc : TypeReqWorkConn Message
+  xfrpc ->> frps   : 创立新的工作连接
+  xfrpc ->> frps  : TypeNewWorkConn Message
+  Note left of xfrpc  : 与服务器创建代理服务工作连接，并请求新的工作连接请求
+  Note right of frps  : 处理xfrpc端发送的TypeNewWorkConn消息，注册该工作连接到连接池中
+  frps ->> xfrpc  : TypeStartWorkConn Message
+  Note left of xfrpc  : 将新创建的工作连接与代理的本地服务连接做绑定
+  xfrpc ->> frps  : xfrpc aes-128-cfb iv[16] data
+  xfrpc -->> frps : TypeNewProxy Message
+  frps -->> xfrpc : NewProxyResp Message
+  
+  loop 心跳包检查
+    xfrpc -->> frps : TypePing Message
+    frps -->> xfrpc : TypePong Message
+  end
+  
+  远程访问用户 ->> frps   : 发起访问
+  frps ->> xfrpc	 : TypeStartWorkconn Message
+  loop  远程访问用户与本地服务之间的交互过程
+    frps ->> xfrpc         : 用户数据
+    xfrpc ->> 本地服务      : 用户数据
+    本地服务 ->> xfrpc      : 本地服务数据
+    xfrpc ->> frps         : 本地服务数据
+    frps  ->> 远程访问用户  : 本地服务数据
+  end
+  
+```
 
 ## Compile
 

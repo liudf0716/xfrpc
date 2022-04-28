@@ -1,12 +1,77 @@
 ![xfrpc](https://github.com/liudf0716/xfrpc/blob/master/logo.png)
 
 
-## What is xfrpc and why start xfrps
+## What is xfrpc 
 
-`xfrpc` is [xfrps](https://github.com/liudf0716/xfrps) client implemented by c for [OpenWRT](https://github.com/openwrt/openwrt) and [LEDE](https://github.com/lede-project/source) system
+`xfrpc` is [frp](https://github.com/fatedier/frp) client implemented by c language for [OpenWRT](https://github.com/openwrt/openwrt) and [LEDE](https://github.com/lede-project/source) system
 
-The motivation to start xfrp project is that we are OpenWRTer, and openwrt usually ran in device which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrp project.
+The motivation to start xfrpc project is that we are OpenWRTer, and openwrt usually ran in device which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrpc project to support frp.
 
+## Development Status
+
+xfrpc partially compitable with latest frp release feature, It target to fully compatible with latest frp release.
+
+the following table is detail  compatible feature:
+
+| Feature  | xfrpc | frpc |
+| ------------- | ------------- | ---------|
+| tcp  | Yes |	 Yes  |
+| tcpmux  | No |	 Yes  |
+| http  | Yes |	 Yes  |
+| https  | Yes |  Yes  |
+| udp  | No |  Yes  |
+| p2p  | No |  Yes  |
+| xtcp  | No |  Yes  |
+| vistor  | No |  Yes  |
+
+
+
+## Architecture
+
+![Architecture](https://github.com/fatedier/frp/blob/dev/doc/pic/architecture.png?raw=true)
+
+Architecture quote from [frp](https://github.com/fatedier/frp) project, replace frpc with xfrpc.
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+	participant 本地服务
+	participant xfrpc
+  participant frps
+  participant 远程访问用户
+  
+  xfrpc ->> frps  : TypeLogin Message
+  frps ->> xfrpc  : TypeLoginResp Message
+  Note right of frps  : 根据Login信息里面的pool值，决定给xfrpc发送几条TypeReqWorkConn请求信息
+  frps ->> xfrpc  : frps aes-128-cfb iv[16] data
+  frps -->> xfrpc : TypeReqWorkConn Message
+  xfrpc ->> frps   : 创立新的工作连接
+  xfrpc ->> frps  : TypeNewWorkConn Message
+  Note left of xfrpc  : 与服务器创建代理服务工作连接，并请求新的工作连接请求
+  Note right of frps  : 处理xfrpc端发送的TypeNewWorkConn消息，注册该工作连接到连接池中
+  frps ->> xfrpc  : TypeStartWorkConn Message
+  Note left of xfrpc  : 将新创建的工作连接与代理的本地服务连接做绑定
+  xfrpc ->> frps  : xfrpc aes-128-cfb iv[16] data
+  xfrpc -->> frps : TypeNewProxy Message
+  frps -->> xfrpc : NewProxyResp Message
+  
+  loop 心跳包检查
+    xfrpc -->> frps : TypePing Message
+    frps -->> xfrpc : TypePong Message
+  end
+  
+  远程访问用户 ->> frps   : 发起访问
+  frps ->> xfrpc	 : TypeStartWorkconn Message
+  loop  远程访问用户与本地服务之间的交互过程
+    frps ->> xfrpc         : 用户数据
+    xfrpc ->> 本地服务      : 用户数据
+    本地服务 ->> xfrpc      : 本地服务数据
+    xfrpc ->> frps         : 本地服务数据
+    frps  ->> 远程访问用户  : 本地服务数据
+  end
+  
+```
 
 ## Compile
 
@@ -31,7 +96,41 @@ make
 
 ## Quick start
 
-**before using xfrpc, you should have built the proxy server: [xfrps](https://github.com/liudf0716/xfrps), It's no difference with frp at usage, but support `FTP` and more embedded-client-friendly for linux.**
+**before using xfrpc, you should get frps server: [frps](https://github.com/fatedier/frp/releases)**
+
++ frps 
+
+frps use latest release 0.42.0
+
+```
+# frps.ini
+[common]
+bind_port = 7000
+tcp_mux = false
+token = 12345678
+```
+
+run frps
+
+```
+./frps -c frps.ini
+```
+
++ xfrpc
+
+```
+#frpc_mini.ini 
+[common]
+server_addr = your_server_ip
+server_port = 7000
+token = 12345678
+
+[ssh]
+type = tcp
+local_ip = 127.0.0.1
+local_port = 22
+remote_port = 6128
+```
 
 Run in debug mode :
 
@@ -44,40 +143,6 @@ Run in release mode :
 ```shell
 xfrpc -c frpc_mini.ini -d 0
 ```
-
-## FTP support
-
-xfrpc support ftp proxy after version [0.07.451](https://github.com/liudf0716/xfrpc/tree/0.07.451). **Hypothesize you have built [xfrps](https://github.com/liudf0716/xfrps) succeed!**
-
-Configure ftp in frpc.ini
-
-```
-[common]
-server_addr = 111.112.113.114
-server_port = 7001
-
-[router_ftp_example]
-type = ftp
-local_port = 21
-remote_port = 30621
-remote_data_port = 30622
-```
-
-`remote_port` is the reporxy port of FTP command tunnel, and `remote_data_port` is FTP-DATA port reporxy. 
-
-Use `-p` (PASV Mode) of `ftp` command to connect to proxy ftp server:
-
-```
-ftp -p 111.112.113.114 30621
-```
-
-----
-
-## Todo list
-
-- support compression
-- support encrypt
-
 
 ## How to contribute our project
 

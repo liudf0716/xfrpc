@@ -109,6 +109,13 @@ bind_port = 7000
 tcp_mux = false
 token = 12345678
 ```
+
+run frps
+
+```
+./frps -c frps.ini
+```
+
 + xfrpc
 
 ```

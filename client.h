@@ -40,23 +40,18 @@ struct proxy_service;
 
 struct proxy_client {
 	struct event_base 	*base;
-	struct bufferevent	*ctl_bev;
-	struct bufferevent 	*local_proxy_bev;
+	struct bufferevent	*ctl_bev; // xfrpc proxy <---> frps
+	struct bufferevent 	*local_proxy_bev; // xfrpc proxy <---> local service
 	struct event		*ev_timeout;
 
 	struct base_conf	*bconf;
-	char	*local_ip;
-	int		local_port;
-	int		remote_port;
 	
-	char	*host_header_rewrite;
-	
-	//provate arguments
+	//private arguments
 	UT_hash_handle hh;
 	int						connected;
 	int 					work_started;
 	struct 	proxy_service 	*ps;
-	unsigned char			*data_tail; // storage untrated data
+	unsigned char			*data_tail; // storage untreated data
 	size_t					data_tail_size;
 };
 

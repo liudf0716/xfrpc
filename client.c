@@ -56,94 +56,32 @@
 #include "proxy.h"
 #include "utils.h"
 
-#define MAX_OUTPUT (512*1024)
-
-static void drained_writecb(struct bufferevent *bev, void *ctx);
-static void xfrp_event_cb(struct bufferevent *bev, short what, void *ctx);
-
-static void 
-xfrp_read_cb(struct bufferevent *bev, void *ctx)
+static void
+xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-	struct proxy *p = (struct proxy *)ctx;
-	struct bufferevent *partner = p?p->bev:NULL;
-	struct evbuffer *src, *dst;
-	size_t len;
-	src = bufferevent_get_input(bev);
-	len = evbuffer_get_length(src);
-	if (!partner) {
-		evbuffer_drain(src, len);
-		return;
-	}
-	dst = bufferevent_get_output(partner);
-	evbuffer_add_buffer(dst, src);
-	struct proxy *p_obj = new_proxy_obj(bev);
-
-	if (evbuffer_get_length(dst) >= MAX_OUTPUT) {
-		/* We're giving the other side data faster than it can
-		 * pass it on.  Stop reading here until we have drained the
-		 * other side to MAX_OUTPUT/2 bytes. */
-		bufferevent_setcb(partner, xfrp_read_cb, drained_writecb,
-		    xfrp_event_cb, p_obj);
-		bufferevent_setwatermark(partner, EV_WRITE, MAX_OUTPUT/2,
-		    MAX_OUTPUT);
-		bufferevent_disable(bev, EV_READ);
-	}
-}
-
-static void 
-drained_writecb(struct bufferevent *bev, void *ctx)
-{
-	struct proxy *p = (struct proxy *)ctx;
-	struct bufferevent *partner = p?p->bev:NULL;
-
-	/* We were choking the other side until we drained our outbuf a bit.
-	 * Now it seems drained. */
-	bufferevent_setcb(bev, xfrp_read_cb, NULL, xfrp_event_cb, p);
-	bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
-	if (partner)
-		bufferevent_enable(partner, EV_READ);
-}
-
-static void 
-close_on_finished_writecb(struct bufferevent *bev, void *ctx)
-{
-	struct evbuffer *b = bufferevent_get_output(bev);
-
-	if (evbuffer_get_length(b) == 0) {
-		bufferevent_free(bev);
-	}
-}
-
-static void 
-xfrp_event_cb(struct bufferevent *bev, short what, void *ctx)
-{
-	struct proxy *p = (struct proxy *)ctx;
-	struct bufferevent *partner = p?p->bev:NULL;
-
+	struct proxy_client *client = (struct proxy_client *)ctx;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		debug(LOG_DEBUG, "working connection closed!");
-		if (partner) {
-			/* Flush all pending data */
-			xfrp_read_cb(bev, p);
-
-			if (evbuffer_get_length(bufferevent_get_output(partner))) {
-				/* We still have to flush data from the other
-				 * side, but when that's done, close the other
-				 * side. */
-				bufferevent_setcb(partner,
-				    NULL, close_on_finished_writecb,
-				    xfrp_event_cb, NULL);
-
-				bufferevent_disable(partner, EV_READ);
-			} else {
-				/* We have nothing left to say to the other
-				 * side; close it. */
-				bufferevent_free(partner);
-				free_proxy_obj(p);
-			}
-		}
 		bufferevent_free(bev);
+		free_proxy_client(client);
 	}
+}
+
+static void 
+xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+	struct proxy_client *client = ctx;
+	assert(client);
+
+	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] : %s", client->ps->local_ip, client->ps->local_port, strerror(errno));
+		bufferevent_free(bev);
+	  } else if (what & BEV_EVENT_CONNECTED) {
+		if (client->data_tail_size > 0) {
+			debug(LOG_DEBUG, "send client data ...");
+			send_client_data_tail(client);		
+		}
+	  }
 }
 
 int 
@@ -199,30 +137,28 @@ start_xfrp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
-	struct proxy *ctl_prox = new_proxy_obj(client->ctl_bev);
-	struct proxy *local_prox = new_proxy_obj(client->local_proxy_bev);
 	bufferevent_data_cb proxy_s2c_cb, proxy_c2s_cb;
 	if (is_ftp_proxy(client->ps)) {
 		proxy_c2s_cb = ftp_proxy_c2s_cb;
 		proxy_s2c_cb = ftp_proxy_s2c_cb;
-		ctl_prox->remote_data_port = client->ps->remote_data_port;
-		ctl_prox->proxy_name = strdup(ps->proxy_name);
+		//ctl_prox->remote_data_port = client->ps->remote_data_port;
+		//ctl_prox->proxy_name = strdup(ps->proxy_name);
 	} else {
-		proxy_c2s_cb = tcp_proxy_c2s_cb;
-		proxy_s2c_cb = tcp_proxy_s2c_cb;
+		proxy_c2s_cb = tcp_proxy_c2s_cb; // local service <---> xfrpc
+		proxy_s2c_cb = tcp_proxy_s2c_cb; // frps <---> xfrpc
 	}
 
 	bufferevent_setcb(client->ctl_bev, 
 						proxy_s2c_cb, 
 						NULL, 
-						xfrp_event_cb, 
-						local_prox);
+						xfrp_worker_event_cb, 
+						client);
 
 	bufferevent_setcb(client->local_proxy_bev, 
 						proxy_c2s_cb, 
 						NULL, 
-						xfrp_event_cb, 
-						ctl_prox);
+						xfrp_proxy_event_cb, 
+						client);
 						
 	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
@@ -234,6 +170,8 @@ send_client_data_tail(struct proxy_client *client)
 	int send_l = 0;
 	if (client->data_tail && client->data_tail_size && client->local_proxy_bev) {
 		send_l = bufferevent_write(client->local_proxy_bev, client->data_tail, client->data_tail_size);
+		client->data_tail = NULL;
+		client->data_tail_size = 0;
 	}
 
 	return send_l;
@@ -242,11 +180,8 @@ send_client_data_tail(struct proxy_client *client)
 void 
 free_proxy_client(struct proxy_client *client)
 {
-	if (client->local_ip) free(client->local_ip);
-	
-	free_base_config(client->bconf);
-	
-	evtimer_del(client->ev_timeout);
+	if (client->ev_timeout) evtimer_del(client->ev_timeout);
+	free(client);
 }
 
 void 

@@ -18,11 +18,13 @@
 #include "common.h"
 #include "proxy.h"
 
-// read from client-working host port
+// read data from local service
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
-	struct proxy *p = (struct proxy *)ctx;
-	struct bufferevent *partner = p?p->bev:NULL;
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	assert(client);
+	struct bufferevent *partner = client->ctl_bev;
+	assert(partner);
 	struct evbuffer *src, *dst;
 	size_t len;
 	src = bufferevent_get_input(bev);
@@ -33,10 +35,13 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	}
 }
 
+// read data from frps
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 {
-	struct proxy *p = (struct proxy *)ctx;
-	struct bufferevent *partner = p?p->bev:NULL;
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	assert(client);
+	struct bufferevent *partner = client->local_proxy_bev;
+	assert(partner);
 	struct evbuffer *src, *dst;
 	src = bufferevent_get_input(bev);
 	dst = bufferevent_get_output(partner);

@@ -400,12 +400,18 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		assert(ctx);
 		struct proxy_client *client = ctx;
 		client->ps = ps;
-		debug(LOG_INFO, 
-			"proxy service [%s] [%s:%d] start work connection.", 
+		int r_len = len - sizeof(struct msg_hdr) - msg_hton(msg->length); 
+		debug(LOG_DEBUG, 
+			"proxy service [%s] [%s:%d] start work connection. remain data length %d", 
 			sr->proxy_name, 
 			ps->local_ip, 
-			ps->local_port);
-
+			ps->local_port,
+			r_len);
+		if (r_len > 0) {
+			client->data_tail_size = r_len;
+			client->data_tail = msg->data + msg_hton(msg->length);
+			debug(LOG_DEBUG, "data_tail is %s", client->data_tail); 
+		}
 		start_xfrp_tunnel(client);
 		set_client_work_start(client, 1);
 

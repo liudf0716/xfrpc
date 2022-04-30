@@ -181,7 +181,7 @@ size_t
 decrypt_data(const uint8_t *enc_data, size_t enclen, struct frp_coder *decoder, uint8_t **ret)
 {
 	uint8_t *inbuf = enc_data;
-	uint8_t *outbuf = calloc(enclen, 1);
+	uint8_t *outbuf = calloc(enclen+1, 1);
 	struct frp_coder *c = decoder;
 	assert(inbuf);
 	assert(outbuf);

@@ -107,7 +107,6 @@ frps use latest release 0.42.0
 [common]
 bind_port = 7000
 tcp_mux = false
-token = 12345678
 ```
 
 run frps
@@ -116,14 +115,13 @@ run frps
 ./frps -c frps.ini
 ```
 
-+ xfrpc
++ xfrpc tcp
 
 ```
-#frpc_mini.ini 
+#xfrpc_mini.ini 
 [common]
 server_addr = your_server_ip
 server_port = 7000
-token = 12345678
 
 [ssh]
 type = tcp
@@ -132,13 +130,27 @@ local_port = 22
 remote_port = 6128
 ```
 
-Run in debug mode :
++ xfrpc http
+
+```
+# xfrpc_mini.ini 
+[common]
+server_addr = x.x.x.x
+server_port = 7000
+
+[web]
+type = http
+local_port = 80
+custom_domains = www.example.com
+```
+
++ Run in debug mode 
 
 ```shell
 xfrpc -c frpc_mini.ini -f -d 7 
 ```
 
-Run in release mode :
++ Run in release mode :
 
 ```shell
 xfrpc -c frpc_mini.ini -d 0

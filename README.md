@@ -36,6 +36,7 @@ Architecture quote from [frp](https://github.com/fatedier/frp) project, replace 
 
 ```mermaid
 sequenceDiagram
+	title:	xfrpc与frps通信交互时序图
 	participant 本地服务
 	participant xfrpc
   participant frps
@@ -46,16 +47,19 @@ sequenceDiagram
   Note right of frps  : 根据Login信息里面的pool值，决定给xfrpc发送几条TypeReqWorkConn请求信息
   frps ->> xfrpc  : frps aes-128-cfb iv[16] data
   frps -->> xfrpc : TypeReqWorkConn Message
-  xfrpc ->> frps   : 创立新的工作连接
-  xfrpc ->> frps  : TypeNewWorkConn Message
-  Note left of xfrpc  : 与服务器创建代理服务工作连接，并请求新的工作连接请求
-  Note right of frps  : 处理xfrpc端发送的TypeNewWorkConn消息，注册该工作连接到连接池中
-  frps ->> xfrpc  : TypeStartWorkConn Message
-  Note left of xfrpc  : 将新创建的工作连接与代理的本地服务连接做绑定
+	loop 根据Login中的PoolCount创建工作连接数
+  	xfrpc -->> frps  : TypeNewWorkConn Message
+  	Note left of xfrpc  : 与服务器创建代理服务工作连接，并请求新的工作连接请求
+  	Note right of frps  : 处理xfrpc端发送的TypeNewWorkConn消息，注册该工作连接到连接池中
+  	frps ->> xfrpc  : TypeStartWorkConn Message
+  	Note left of xfrpc  : 将新创建的工作连接与代理的本地服务连接做绑定
+	end
   xfrpc ->> frps  : xfrpc aes-128-cfb iv[16] data
-  xfrpc -->> frps : TypeNewProxy Message
-  frps -->> xfrpc : NewProxyResp Message
-  
+  loop 用户配置的代理服务数
+  	xfrpc -->> frps : TypeNewProxy Message
+  	frps -->> xfrpc : NewProxyResp Message
+  end
+	
   loop 心跳包检查
     xfrpc -->> frps : TypePing Message
     frps -->> xfrpc : TypePong Message

@@ -8,7 +8,6 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xfrpc
-#PKG_VERSION:=0.07.496
 PKG_VERSION:=master
 PKG_RELEASE:=1
 

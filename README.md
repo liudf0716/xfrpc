@@ -113,6 +113,8 @@ bind_port = 7000
 tcp_mux = false
 ```
 
+**attention! cause xfrpc does not support tcp_mux yet, please disable tcp_mux otherwise xfrpc can not connect frps**
+
 run frps
 
 ```

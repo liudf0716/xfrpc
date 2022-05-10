@@ -67,7 +67,7 @@ init_main_encoder()
 }
 
 struct frp_coder *
-init_main_decoder(unsigned char *iv)
+init_main_decoder(const uint8_t *iv)
 {
 	struct common_conf *c_conf = get_common_config();
 	main_decoder = new_coder(c_conf->auth_token, default_salt);
@@ -132,19 +132,11 @@ encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 	return iv_buf;
 }
 
-static void
-print_hex(uint8_t *val, size_t len)
-{
-	for(int i = 0; i < len; i++)
-		printf("%1x", val[i]);
-	printf("\n");
-}
-
 // using aes-128-cfb and nopadding
 size_t 
-encrypt_data(const unsigned char *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
+encrypt_data(const uint8_t *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
 {
-	uint8_t *intext = src_data;
+	uint8_t *intext = (uint8_t *)src_data;
 	assert(intext);
 	assert(encoder);
 	struct frp_coder *c = encoder;
@@ -180,7 +172,7 @@ E_END:
 size_t 
 decrypt_data(const uint8_t *enc_data, size_t enclen, struct frp_coder *decoder, uint8_t **ret)
 {
-	uint8_t *inbuf = enc_data;
+	uint8_t *inbuf = (uint8_t *)enc_data;
 	uint8_t *outbuf = calloc(enclen+1, 1);
 	struct frp_coder *c = decoder;
 	assert(inbuf);

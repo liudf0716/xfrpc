@@ -286,29 +286,15 @@ proxy_service_resp_raw(struct new_proxy_response *npr)
 	return 0;
 }
 
-static void
-dump_all_unknown_encypt(uint8_t *enc_msg, int ilen)
-{
-	uint8_t *iv 	= get_main_decoder()->iv;
-	uint8_t *key 	= get_main_decoder()->key;
-	FILE *fout = fopen("unkown.encrypt", "w");
-	assert(fout);
-	fwrite(iv, 16, 1, fout);	
-	fwrite(key, 16, 1, fout);
-	fwrite((uint8_t *)&ilen, sizeof(int), 1, fout);
-	fwrite(enc_msg, ilen, 1, fout);
-	fclose(fout);
-}
-
 static int
-handle_enc_msg(uint8_t *enc_msg, int ilen, uint8_t **out)
+handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 {
 	if (ilen <= 0) {
 		debug(LOG_INFO, "enc_msg length should not be %d", ilen);
 		return -1;
 	}
 
-	uint8_t *buf = enc_msg;
+	const uint8_t *buf = enc_msg;
 	if ( !is_decoder_inited() && get_block_size() <= ilen) {
 		init_main_decoder(buf);
 		buf += get_block_size();
@@ -330,28 +316,16 @@ handle_enc_msg(uint8_t *enc_msg, int ilen, uint8_t **out)
 }
 
 static void
-print_enc_msg(uint8_t *enc_msg, int len)
-{
-	printf("enc_msg is [%d]:\n", len);
-	for (int i = 0; i < len; i++) {
-		if (i%16 == 0)
-			printf("\n");
-		printf("%1x ", enc_msg[i]);
-	}
-	printf("\n");
-}
-
-static void
 handle_control_work(const uint8_t *buf, int len, void *ctx)
 {
 	uint8_t *frps_cmd = NULL;
 	uint8_t cmd_type;
-	uint8_t *enc_msg = buf;
+	const uint8_t *enc_msg = buf;
 
 	if (!ctx)	
 		handle_enc_msg(enc_msg, len, &frps_cmd);
 	else
-		frps_cmd = buf;
+		frps_cmd = (uint8_t *)buf;
 
 	if (!frps_cmd)	
 		return; // only recv iv
@@ -371,7 +345,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		break;
 	case TypeNewProxyResp:
 		debug(LOG_DEBUG, "TypeNewProxyResp cmd");
-		struct new_proxy_response *npr = new_proxy_resp_unmarshal(msg->data);
+		struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
 		if (npr == NULL) {
 			debug(LOG_ERR, "new proxy response buffer unmarshal faild!");
 			return;
@@ -382,7 +356,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		break;
 	case TypeStartWorkConn:
 		debug(LOG_DEBUG, "TypeStartWorkConn cmd");
-		struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal(msg->data); 
+		struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data); 
 		if (! sr) {
 			debug(LOG_ERR, 
 				"TypeStartWorkConn unmarshal failed, it should never be happend!");
@@ -420,8 +394,6 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		break;
 	default:
 		debug(LOG_INFO, "command type dont support: ctx is %d", ctx?1:0);
-		print_enc_msg(enc_msg, len);
-		dump_all_unknown_encypt(enc_msg, len);
 	}
 	
 	if (!ctx)
@@ -437,7 +409,7 @@ handle_login_response(const uint8_t *buf, int len)
 		return 0;
 	}	
 	
-	struct login_resp *lres = login_resp_unmarshal(mhdr->data); 
+	struct login_resp *lres = login_resp_unmarshal((const char *)mhdr->data); 
 	if (!lres) {
 		return 0;
 	}

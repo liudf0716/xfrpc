@@ -34,15 +34,5 @@ enum server_status {
 	Closed
 };
 
-// msg type
-// enum msg_type {
-// 	NewCtlConn = 0,
-// 	NewWorkConn,
-// 	NoticeUserConn,
-// 	NewCtlConnRes,
-// 	HeartbeatReq,
-// 	HeartbeatRes,
-// 	NewWorkConnUdp
-// };
 
 #endif

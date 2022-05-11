@@ -42,17 +42,19 @@ struct proxy_client {
 	struct event_base 	*base;
 	struct bufferevent	*ctl_bev; // xfrpc proxy <---> frps
 	struct bufferevent 	*local_proxy_bev; // xfrpc proxy <---> local service
-	struct event		*ev_timeout;
-
 	struct base_conf	*bconf;
-	
-	//private arguments
-	UT_hash_handle hh;
+
+	struct event			*tcp_mux_ping_event;
+	uint32_t				tcp_mux_ping_id;
+	uint32_t				stream_id;
 	int						connected;
 	int 					work_started;
 	struct 	proxy_service 	*ps;
 	unsigned char			*data_tail; // storage untreated data
 	size_t					data_tail_size;
+	
+	// private arguments
+	UT_hash_handle hh;
 };
 
 struct proxy_service {
@@ -75,7 +77,7 @@ struct proxy_service {
 	char	*http_user;
 	char	*http_pwd;
 
-	//provate arguments
+	// private arguments
 	UT_hash_handle hh;
 };
 
@@ -88,13 +90,12 @@ void start_xfrp_tunnel(struct proxy_client *client);
 
 void del_proxy_client(struct proxy_client *client);
 
-void free_proxy_client(struct proxy_client *client);
-
-struct proxy_service *get_proxy_service(const char *proxy_name);
+struct proxy_client	*get_proxy_client(uint32_t sid);
 
 int send_client_data_tail(struct proxy_client *client);
 
 int is_ftp_proxy(const struct proxy_service *ps);
+
 struct proxy_client *new_proxy_client();
 
 #endif //_CLIENT_H_

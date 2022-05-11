@@ -114,4 +114,6 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg);
 
 void control_response_free(struct control_response *res);
 
+char *get_msg_type(uint8_t type);
+
 #endif //_MSG_H_

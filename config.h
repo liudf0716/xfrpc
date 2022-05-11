@@ -34,11 +34,11 @@
 struct base_conf{
 	char	*name;
 	char	*auth_token;
-	int	use_encryption;
-	int	use_gzip;
-	int	privilege_mode;
+	int		use_encryption;
+	int		use_gzip;
+	int		privilege_mode;
 	char	*privilege_token;
-	int	pool_count;
+	int		pool_count;
 	char	*host_header_rewrite;
 	char	*subdomain;
 };
@@ -65,17 +65,21 @@ struct common_conf {
 };
 
 struct common_conf *get_common_config();
-struct proxy_service *get_all_proxy_services();
 
 void free_common_config();
 
 void free_base_config(struct base_conf *bconf);
 
-struct proxy_client *get_all_pc();
-
 void load_config(const char *confile);
+
 char *get_ftp_data_proxy_name(const char *ftp_proxy_name);
+
 void set_common_server_ip(const char *ip);
+
 int is_running_in_router();
+
+struct proxy_service *get_proxy_service(const char *proxy_name);
+
+struct proxy_service *get_all_proxy_services();
 
 #endif //_CONFIG_H_

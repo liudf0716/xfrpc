@@ -31,12 +31,12 @@ set(src_xfrpc
 	crypto.c
 	fastpbkdf2.c
 	utils.c
-	session.c
 	common.c
 	login.c
 	proxy_tcp.c
 	proxy_ftp.c
 	proxy.c
+	tcpmux.c
 	)
 	
 set(libs

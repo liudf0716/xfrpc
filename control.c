@@ -35,14 +35,6 @@
 #include <json-c/json.h>
 #include <syslog.h>
 
-#include <event2/bufferevent.h>
-#include <event2/buffer.h>
-#include <event2/listener.h>
-#include <event2/util.h>
-#include <event2/event.h>
-#include <event2/dns.h>
-#include <event2/event_struct.h>
-
 #include "debug.h"
 #include "client.h"
 #include "uthash.h"
@@ -53,15 +45,15 @@
 #include "uthash.h"
 #include "crypto.h"
 #include "utils.h"
-#include "session.h"
 #include "common.h"
 #include "login.h"
+#include "tcpmux.h"
 
 static struct control *main_ctl;
 static int clients_conn_signel = 0;
 static int is_login = 0;
 
-static void sync_new_work_connection(struct bufferevent *bev);
+static void sync_new_work_connection(struct bufferevent *bev, uint32_t sid);
 static void recv_cb(struct bufferevent *bev, void *ctx);
 
 static int 
@@ -108,11 +100,11 @@ client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
 		}
 		debug(LOG_ERR, "Proxy connect server [%s:%d] error: %s", c_conf->server_addr, c_conf->server_port, strerror(errno));
 		bufferevent_free(bev);
-		free_proxy_client(client);
+		del_proxy_client(client);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
-		sync_new_work_connection(bev);
+		sync_new_work_connection(bev, 0);
 		client_connected(1);
 		debug(LOG_INFO, "proxy service start");
 	}
@@ -125,6 +117,14 @@ new_client_connect()
 	struct common_conf *c_conf = get_common_config();
 	assert(c_conf);
 	client->base = main_ctl->connect_base;
+	
+	if (c_conf->tcp_mux) {
+		debug(LOG_DEBUG, "new client through tcp mux: %d", client->stream_id);
+		client->ctl_bev 	= main_ctl->connect_bev;
+		sync_new_work_connection(client->ctl_bev, client->stream_id);
+		return;
+	}
+
 	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
 		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
@@ -142,10 +142,13 @@ static void
 start_proxy_services()
 {
 	struct proxy_service *all_ps = get_all_proxy_services();
-	assert(all_ps);
-
 	struct proxy_service *ps = NULL, *tmp = NULL;
 	
+	if (!all_ps) {
+		debug(LOG_INFO, "no proxy service configure by user");
+		return;
+	}
+
 	debug(LOG_INFO, "Start xfrp proxy services ...");
 	
 	HASH_ITER(hh, all_ps, ps, tmp) {
@@ -158,27 +161,21 @@ start_proxy_services()
 }
 
 static void 
-ping(struct bufferevent *bev)
+ping()
 {
-	struct bufferevent *bout = NULL;
-	if (bev) {
-		bout = bev;
-	} else {
-		bout = main_ctl->connect_bev;
-	}
+	struct bufferevent *bout = main_ctl->connect_bev;
 
 	if ( ! bout) {
 		debug(LOG_ERR, "bufferevent is not legal!");
 		return;
 	}
 	
-	uint32_t sid = get_main_control()->session_id;
 	char *ping_msg = "{}";
-	send_enc_msg_frp_server(bev, TypePing, ping_msg, strlen(ping_msg), sid);
+	send_enc_msg_frp_server(bout, TypePing, ping_msg, strlen(ping_msg), main_ctl->stream_id);
 }
 
 static void 
-sync_new_work_connection(struct bufferevent *bev)
+sync_new_work_connection(struct bufferevent *bev, uint32_t sid)
 {
 	struct bufferevent *bout = bev;
 	assert(bout);
@@ -197,8 +194,10 @@ sync_new_work_connection(struct bufferevent *bev)
 		debug(LOG_ERR, "new work connection request run_id marshal failed!");
 		return;
 	}
+	
+	tcp_mux_send_win_update_syn(bev, sid);
 
-	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, 0);
+	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, sid);
 
 	SAFE_FREE(new_work_conn_request_message);
 	SAFE_FREE(work_c);
@@ -229,6 +228,15 @@ set_ticker_ping_timer(struct event *timeout)
 	event_add(timeout, &tv);
 }
 
+static void
+set_tcp_mux_ping_timer(struct event *timeout)
+{
+	struct timeval tv;
+	evutil_timerclear(&tv);
+	tv.tv_sec = 60;
+	event_add(timeout, &tv);
+}
+
 static void 
 hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
@@ -239,6 +247,13 @@ hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	}
 
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
+}
+
+static void
+tcp_mux_hb_sender_cb(evutil_socket_t fd, short event, void *arg)
+{
+	tcp_mux_send_ping(main_ctl->connect_bev, main_ctl->tcp_mux_ping_id++);
+	set_tcp_mux_ping_timer(main_ctl->tcp_mux_ping_event);
 }
 
 // return: 0: raw succeed 1: raw failed
@@ -322,10 +337,13 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 	uint8_t cmd_type;
 	const uint8_t *enc_msg = buf;
 
-	if (!ctx)	
+	if (!ctx) {	
+		debug(LOG_DEBUG, "main control message");
 		handle_enc_msg(enc_msg, len, &frps_cmd);
-	else
+	} else {
+		debug(LOG_DEBUG, "worker message");
 		frps_cmd = (uint8_t *)buf;
+	}
 
 	if (!frps_cmd)	
 		return; // only recv iv
@@ -333,7 +351,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 	struct msg_hdr *msg = (struct msg_hdr *)frps_cmd;
 
 	cmd_type = msg->type;
-	debug(LOG_DEBUG, "cmd_type is %d data is %s", cmd_type, msg->data);
+	debug(LOG_DEBUG, "cmd_type is %c data is %s", cmd_type, msg->data);
 	switch(cmd_type) {
 	case TypeReqWorkConn: 
 		debug(LOG_DEBUG, "TypeReqWorkConn cmd");
@@ -424,14 +442,18 @@ handle_login_response(const uint8_t *buf, int len)
 	is_login = 1;
 
 	int login_len = msg_hton(mhdr->length);
-	debug(LOG_ERR, "login success! %d len %d", login_len, len);
-	if (len-login_len-sizeof(struct msg_hdr) == 0)
+	int ilen = len - login_len - sizeof(struct msg_hdr);
+	debug(LOG_ERR, "login success! login_len %d len %d ilen %d", login_len, len, ilen);
+	assert(ilen >= 0);
+	if (ilen <= 0)
 		return 1;
 	
-	// in case, system get 3 packet together 
-	uint8_t *enc_msg = mhdr->data+login_len;
+	// in case, libevent reveive continue packet together
+	struct common_conf 	*c_conf = get_common_config();
+	assert(c_conf->tcp_mux == 0);
+	uint8_t *enc_msg = mhdr->data + login_len; 
 	uint8_t *frps_cmd = NULL;
-	int nret = handle_enc_msg(enc_msg, len-login_len-sizeof(struct msg_hdr), &frps_cmd);
+	int nret = handle_enc_msg(enc_msg, ilen, &frps_cmd);
 	assert(nret > 0);
 	// start proxy services must first send
 	start_proxy_services();
@@ -444,18 +466,12 @@ handle_login_response(const uint8_t *buf, int len)
 }
 
 static void
-handle_frps_msg(unsigned char *buf, int len, void *ctx)
+handle_frps_msg(uint8_t *buf, int len, void *ctx)
 {
 	if (!is_login) {
 		// login response
 		handle_login_response(buf, len);
-	}else if (!ctx) {
-		// control msg
-		debug(LOG_DEBUG, "main control message");
-		handle_control_work(buf, len, NULL);
 	}else {
-		// client msg
-		debug(LOG_DEBUG, "client message");
 		handle_control_work(buf, len, ctx);
 	}	
 }
@@ -471,12 +487,17 @@ recv_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	unsigned char *buf = calloc(len+1, 1);
+	uint8_t *buf = calloc(len+1, 1);
 	assert(buf);
 	evbuffer_remove(input, buf, len);
-	debug(LOG_DEBUG, "recv msg from frps %d ", len);
+
+	struct common_conf 	*c_conf = get_common_config();
 	
-	handle_frps_msg(buf, len, ctx);
+	if (c_conf->tcp_mux) {
+		handle_tcp_mux_frps_msg(buf, len, handle_frps_msg);
+	} else {
+		handle_frps_msg(buf, len, ctx);
+	}
 
 	SAFE_FREE(buf);
 	return;
@@ -497,15 +518,18 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		}
 
 		retry_times++;
-		debug(LOG_ERR, "error: connect server [%s:%d] failed", 
+		debug(LOG_ERR, "error: connect server [%s:%d] failed %s", 
 				c_conf->server_addr, 
-				c_conf->server_port);
+				c_conf->server_port,
+				strerror(errno));
 		free_control();
 		init_main_control();
 		start_base_connect();
 		close_main_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
+
+		tcp_mux_send_win_update_syn(bev, main_ctl->stream_id);	
 		login();
 	}
 }
@@ -519,6 +543,17 @@ keep_control_alive()
 		return;
 	}
 	set_ticker_ping_timer(main_ctl->ticker_ping);
+}
+
+static void
+keep_control_tcp_mux_alive()
+{
+	struct common_conf *c_conf = get_common_config();
+	if (!c_conf->tcp_mux) return;
+
+	main_ctl->tcp_mux_ping_event = evtimer_new(main_ctl->connect_base, tcp_mux_hb_sender_cb, NULL);
+	assert(main_ctl->tcp_mux_ping_event);
+	set_tcp_mux_ping_timer(main_ctl->tcp_mux_ping_event);
 }
 
 static void 
@@ -575,7 +610,7 @@ login()
 		exit(0);
 	}
 	
-	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, main_ctl->session_id);
+	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, 1);
 	SAFE_FREE(lg_msg);
 }
 
@@ -594,15 +629,20 @@ send_msg_frp_server(struct bufferevent *bev,
 	}
 	assert(bout);
 
+	
+
 	debug(LOG_DEBUG, "send plain msg ----> [%c: %s]", type, msg);
 	
-	struct msg_hdr *req_msg = calloc(msg_len+sizeof(struct msg_hdr), 1);
+	size_t len = msg_len + sizeof(struct msg_hdr);
+	struct msg_hdr *req_msg = calloc(len, 1);
 	assert(req_msg);
 	req_msg->type = type;
 	req_msg->length = msg_hton((uint64_t)msg_len);
 	memcpy(req_msg->data, msg, msg_len);
 	
-	bufferevent_write(bout, (uint8_t *)req_msg, msg_len+sizeof(struct msg_hdr));
+	tcp_mux_send_data(bout, sid, len);
+
+	bufferevent_write(bout, (uint8_t *)req_msg, len);
 	
 	free(req_msg);
 }
@@ -632,6 +672,9 @@ send_enc_msg_frp_server(struct bufferevent *bev,
 
 	if (get_main_encoder() == NULL) {
 		debug(LOG_DEBUG, "init_main_encoder .......");
+		
+		tcp_mux_send_data(bout, sid, 16);
+
 		struct frp_coder *coder = init_main_encoder();
 		bufferevent_write(bout, coder->iv, 16);
 	}
@@ -640,6 +683,8 @@ send_enc_msg_frp_server(struct bufferevent *bev,
 	size_t olen = encrypt_data((uint8_t *)req_msg, msg_len+sizeof(struct msg_hdr), get_main_encoder(), &enc_msg);
 	assert(olen > 0);
 	debug(LOG_DEBUG, "encrypt_data length %d", olen);
+
+	tcp_mux_send_data(bout, sid, olen);
 
 	bufferevent_write(bout, enc_msg, olen);
 
@@ -689,7 +734,7 @@ send_new_proxy(struct proxy_service *ps)
 
 	debug(LOG_DEBUG, "control proxy client: [Type %d : proxy_name %s : msg_len %d]", TypeNewProxy, ps->proxy_name, len);
 
-	send_enc_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->session_id);
+	send_enc_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->stream_id);
 	SAFE_FREE(new_proxy_msg);
 }
 
@@ -705,14 +750,6 @@ init_main_control()
 	assert(main_ctl);
 
 	struct common_conf *c_conf = get_common_config();
-	if (c_conf->tcp_mux) {
-		uint32_t *sid = init_sid_index();
-		assert(sid);
-		main_ctl->session_id = *sid;
-
-		debug(LOG_DEBUG, "Connect Frps with control session ID: %d", main_ctl->session_id);
-	}
-
 	struct event_base *base = NULL;
 	struct evdns_base *dnsbase = NULL; 
 	base = event_base_new();
@@ -721,6 +758,13 @@ init_main_control()
 		exit(0);
 	}
 	main_ctl->connect_base = base;
+	
+	if (c_conf->tcp_mux)
+		main_ctl->stream_id = get_next_session_id();
+	
+	// if server_addr is ip, done control init.
+	if (is_valid_ip_address((const char *)c_conf->server_addr))
+		return;
 
 	dnsbase = evdns_base_new(base, 1);
 	if (! dnsbase) {
@@ -739,10 +783,7 @@ init_main_control()
     evdns_base_nameserver_ip_add(dnsbase, "223.6.6.6");			//AliDNS
 	evdns_base_nameserver_ip_add(dnsbase, "114.114.114.114");	//114DNS
 
-	// if server_addr is ip, done control init.
-	if (is_valid_ip_address((const char *)c_conf->server_addr))
-		return;
-	
+		
 	// if server_addr is domain, analyze it to ip for server_ip
 	debug(LOG_DEBUG, "Get ip address of [%s] from DNServer", c_conf->server_addr);
 
@@ -780,6 +821,7 @@ run_control()
 {
 	start_base_connect();
 	keep_control_alive();
+	keep_control_tcp_mux_alive();
 }
 
 void 

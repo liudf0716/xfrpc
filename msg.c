@@ -48,7 +48,7 @@ json_object_object_add(jobj, key, json_object_new_##jtype((item)));
 #define SAFE_JSON_STRING(str_target) \
 str_target?str_target:"\0"
 
-const char msg_typs[] = {TypeLogin, 
+const char msg_types[] = {TypeLogin, 
 						 TypeLoginResp, 
 						 TypeNewProxy, 
 						 TypeNewProxyResp, 
@@ -388,11 +388,17 @@ int
 msg_type_valid_check(char msg_type)
 {
 	int i = 0;
-	for(i = 0; i<(sizeof(msg_typs) / sizeof(*msg_typs)); i++) {
-		if (msg_typs[i] == msg_type)
+	for(i = 0; i<(sizeof(msg_types) / sizeof(*msg_types)); i++) {
+		if (msg_types[i] == msg_type)
 			return 1;
 	}
 
 	return 0;
+}
+
+char *
+get_msg_type(uint8_t type) 
+{
+	return NULL;
 }
 

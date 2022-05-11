@@ -29,20 +29,12 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
-
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
-
 #include <syslog.h>
-
 #include <zlib.h>
 
-#include <event2/bufferevent.h>
-#include <event2/buffer.h>
-#include <event2/listener.h>
-#include <event2/util.h>
-#include <event2/event.h>
 
 #include "debug.h"
 #include "client.h"
@@ -55,15 +47,16 @@
 #include "common.h"
 #include "proxy.h"
 #include "utils.h"
+#include "tcpmux.h"
+
+static struct proxy_client 	*all_pc = NULL;
 
 static void
 xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-	struct proxy_client *client = (struct proxy_client *)ctx;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		debug(LOG_DEBUG, "working connection closed!");
 		bufferevent_free(bev);
-		free_proxy_client(client);
 	}
 }
 
@@ -74,8 +67,10 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 	assert(client);
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] : %s", client->ps->local_ip, client->ps->local_port, strerror(errno));
-		bufferevent_free(bev);
+		debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] stream_id %d: %s", 
+						client->ps->local_ip, client->ps->local_port, 
+						client->stream_id, strerror(errno));
+		tcp_mux_send_win_update_rst(client->ctl_bev, client->stream_id);
 	  } else if (what & BEV_EVENT_CONNECTED) {
 		if (client->data_tail_size > 0) {
 			debug(LOG_DEBUG, "send client data ...");
@@ -137,30 +132,30 @@ start_xfrp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"::1",
 		  ps->local_port);
 
-	bufferevent_data_cb proxy_s2c_cb, proxy_c2s_cb;
+	bufferevent_data_cb proxy_s2c_recv, proxy_c2s_recv;
 	if (is_ftp_proxy(client->ps)) {
-		proxy_c2s_cb = ftp_proxy_c2s_cb;
-		proxy_s2c_cb = ftp_proxy_s2c_cb;
-		//ctl_prox->remote_data_port = client->ps->remote_data_port;
-		//ctl_prox->proxy_name = strdup(ps->proxy_name);
+		proxy_c2s_recv = ftp_proxy_c2s_cb;
+		proxy_s2c_recv = ftp_proxy_s2c_cb;
 	} else {
-		proxy_c2s_cb = tcp_proxy_c2s_cb; // local service <---> xfrpc
-		proxy_s2c_cb = tcp_proxy_s2c_cb; // frps <---> xfrpc
+		proxy_c2s_recv = tcp_proxy_c2s_cb; // local service ---> xfrpc
+		proxy_s2c_recv = tcp_proxy_s2c_cb; // frps ---> xfrpc
 	}
-
-	bufferevent_setcb(client->ctl_bev, 
-						proxy_s2c_cb, 
+	
+	if (!c_conf->tcp_mux) {
+		bufferevent_setcb(client->ctl_bev, 
+						proxy_s2c_recv, 
 						NULL, 
 						xfrp_worker_event_cb, 
 						client);
+		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
+	}
 
 	bufferevent_setcb(client->local_proxy_bev, 
-						proxy_c2s_cb, 
+						proxy_c2s_recv, 
 						NULL, 
 						xfrp_proxy_event_cb, 
 						client);
 						
-	bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
 }
 
@@ -177,17 +172,17 @@ send_client_data_tail(struct proxy_client *client)
 	return send_l;
 }
 
-void 
+static void 
 free_proxy_client(struct proxy_client *client)
 {
-	if (client->ev_timeout) evtimer_del(client->ev_timeout);
+	if (client->tcp_mux_ping_event) evtimer_del(client->tcp_mux_ping_event);
+	if (client->local_proxy_bev) bufferevent_free(client->local_proxy_bev);
 	free(client);
 }
 
 void 
 del_proxy_client(struct proxy_client *client)
 {
-	struct proxy_client *all_pc = get_all_pc();
 	if (!client || !all_pc ) {
 		debug(LOG_INFO, "Error: all_pc or client is NULL");
 		return;
@@ -198,14 +193,12 @@ del_proxy_client(struct proxy_client *client)
 	free_proxy_client(client);
 }
 
-// Return NULL if proxy service not found with proxy_name
-struct proxy_service *
-get_proxy_service(const char *proxy_name)
+struct proxy_client *
+get_proxy_client(uint32_t sid)
 {
-	struct proxy_service *ps = NULL;
-	struct proxy_service *all_ps = get_all_proxy_services();
-	HASH_FIND_STR(all_ps, proxy_name, ps);
-	return ps;
+	struct proxy_client *pc = NULL;
+	HASH_FIND_INT(all_pc, &sid, pc);
+	return pc;
 }
 
 struct proxy_client *
@@ -213,5 +206,9 @@ new_proxy_client()
 {
 	struct proxy_client *client = calloc(1, sizeof(struct proxy_client));
 	assert(client);
+	client->stream_id   = get_next_session_id();
+	client->tcp_mux_ping_id = 0;
+	HASH_ADD_INT(all_pc, stream_id, client);
+	
 	return client;
 }

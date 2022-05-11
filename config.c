@@ -42,8 +42,7 @@
 #include "version.h"
 
 static struct common_conf 	*c_conf;
-static struct proxy_client 	*p_clients;
-static struct proxy_service *p_services;
+static struct proxy_service *all_ps;
 
 static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps);
 
@@ -84,16 +83,6 @@ void free_base_config(struct base_conf *bconf)
 	if (bconf->subdomain) free(bconf->subdomain);
 }
 
-struct proxy_client *get_all_pc()
-{
-	return p_clients;
-}
-
-struct proxy_service *get_all_proxy_services()
-{
-	return p_services;
-}
-
 static int is_true(const char *val)
 {
 	if (val && (strcmp(val, "true") == 0 || strcmp(val, "1") == 0))
@@ -110,9 +99,7 @@ static const char *get_valid_type(const char *val)
 	#define MATCH_VALUE(s) strcmp(val, s) == 0
 	if (MATCH_VALUE("tcp") || 
 		MATCH_VALUE("http") || 
-		MATCH_VALUE("https") || 
-		MATCH_VALUE("udp") || 
-		MATCH_VALUE("ftp")) { 
+		MATCH_VALUE("https")) { 
 
 		return val;
 	}
@@ -161,7 +148,7 @@ static void dump_all_ps()
 	struct proxy_service *ps = NULL, *tmp = NULL;
 	
 	int index = 0;
-	HASH_ITER(hh, p_services, ps, tmp) {
+	HASH_ITER(hh, all_ps, ps, tmp) {
 		dump_proxy_service(index++, ps);
 	}
 }
@@ -203,7 +190,7 @@ static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 	struct proxy_service *ps = NULL;
 	char *ftp_data_proxy_name = get_ftp_data_proxy_name((const char *)ftp_ps->proxy_name);
 
-	HASH_FIND_STR(p_services, ftp_data_proxy_name, ps);
+	HASH_FIND_STR(all_ps, ftp_data_proxy_name, ps);
 	if (!ps) {
 		ps = new_proxy_service(ftp_data_proxy_name);
 		if (! ps) {
@@ -220,7 +207,7 @@ static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 		ps->local_ip = ftp_ps->local_ip;
 		ps->local_port = 0; //will be init in working tunnel connectting
 
-		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
+		HASH_ADD_KEYPTR(hh, all_ps, ps->proxy_name, strlen(ps->proxy_name), ps);
 	}
 
 	free(ftp_data_proxy_name);
@@ -240,7 +227,7 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		return 0;
 	}
 
-	HASH_FIND_STR(p_services, section, ps);
+	HASH_FIND_STR(all_ps, section, ps);
 	if (!ps) {
 		ps = new_proxy_service(section);
 		if (! ps) {
@@ -248,7 +235,7 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 			exit(0);
 		}
 
-		HASH_ADD_KEYPTR(hh, p_services, ps->proxy_name, strlen(ps->proxy_name), ps);
+		HASH_ADD_KEYPTR(hh, all_ps, ps->proxy_name, strlen(ps->proxy_name), ps);
 	} 
 	
 	#define MATCH_NAME(s) strcmp(nm, s) == 0
@@ -354,7 +341,8 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->user = strdup(value);
 		assert(config->user);
 	} else if (MATCH("common", "tcp_mux")) {
-		config->tcp_mux = 0;	// set tcp_mux to default: false
+		config->tcp_mux = atoi(value);
+		config->tcp_mux = !!config->tcp_mux;
 	}
 	return 1;
 }
@@ -434,4 +422,18 @@ void load_config(const char *confile)
 int is_running_in_router()
 {
 	return c_conf->is_router;
+}
+
+struct proxy_service *
+get_proxy_service(const char *proxy_name)
+{
+	struct proxy_service *ps = NULL;
+	HASH_FIND_STR(all_ps, proxy_name, ps);
+	return ps;
+}
+
+struct proxy_service *
+get_all_proxy_services()
+{
+	return all_ps;
 }

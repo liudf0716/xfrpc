@@ -28,6 +28,7 @@
 #define _WIFIDOG_DEBUG_H_
 
 #include <string.h>
+#include <syslog.h>
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 

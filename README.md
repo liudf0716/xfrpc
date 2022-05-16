@@ -175,6 +175,16 @@ QQ群 ： [331230369](https://jq.qq.com/?_wv=1027&k=47QGEhL)
 
 [![Star History Chart](https://api.star-history.com/svg?repos=liudf0716/xfrpc&type=Date)](https://star-history.com/#liudf0716/xfrpc&Date)
 
+## 打赏
+
+支付宝打赏
+
+![支付宝打赏](https://user-images.githubusercontent.com/1182593/168528342-a02a6d33-6849-4afe-a028-1eeb29cf0115.png)
+
+微信打赏
+
+![微信打赏](https://user-images.githubusercontent.com/1182593/168528439-716d12cf-07bc-46b7-bb33-854cbec3ff27.png)
+
 ## 广告
 
 想学习OpenWrt开发，但是摸不着门道？自学没毅力？基础太差？怕太难学不会？跟着佐大学OpenWrt开发入门培训班助你能学有所成

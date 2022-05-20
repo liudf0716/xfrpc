@@ -364,7 +364,7 @@ static void init_common_conf(struct common_conf *config)
 	config->log_max_days		= 3;
 	config->heartbeat_interval 	= 30;
 	config->heartbeat_timeout	= 60;
-	config->tcp_mux				= 0;
+	config->tcp_mux				= 1;
 	config->user				= NULL;
 	config->server_ip			= NULL;
 	config->is_router			= 0;

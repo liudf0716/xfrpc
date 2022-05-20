@@ -20,7 +20,7 @@
 #include "config.h"
 #include "tcpmux.h"
 
-#define	BUF_LEN	4098
+#define	BUF_LEN	4096
 
 // read data from local service
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)

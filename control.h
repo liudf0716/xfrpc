@@ -48,15 +48,22 @@ struct control {
 };
 
 void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
+
 void start_base_connect();
+
 void init_main_control();
+
 void run_control();
+
 struct control *get_main_control();
+
 void close_main_control();
+
 void start_login_frp_server(struct event_base *base);
+
 void send_login_frp_server(struct bufferevent *bev);
+
 void login();
-void free_control();
 
 void send_msg_frp_server(struct bufferevent *bev, 
 			const enum msg_type type, 
@@ -71,9 +78,9 @@ void send_enc_msg_frp_server(struct bufferevent *bev,
 			uint32_t sid);
 
 void control_process(struct proxy_client *client);
+
 void send_new_proxy(struct proxy_service *ps);
 
-struct bufferevent 
-*connect_server(struct event_base *base, const char *name, const int port);
+struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
 
 #endif //_CONTROL_H_

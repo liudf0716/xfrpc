@@ -50,6 +50,8 @@ struct __attribute__((__packed__)) tcp_mux_header {
 
 void tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id);
 
+void tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id, uint32_t delta);
+
 void tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id);
 
 void tcp_mux_send_data(struct bufferevent *bout, uint32_t stream_id, uint32_t length);

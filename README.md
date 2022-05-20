@@ -16,7 +16,7 @@ the following table is detail  compatible feature:
 | Feature  | xfrpc | frpc |
 | ------------- | ------------- | ---------|
 | tcp  | Yes |	 Yes  |
-| tcpmux  | No |	 Yes  |
+| tcpmux  | Yes |	 Yes  |
 | http  | Yes |	 Yes  |
 | https  | Yes |  Yes  |
 | udp  | No |  Yes  |
@@ -110,10 +110,7 @@ frps use latest release 0.42.0
 # frps.ini
 [common]
 bind_port = 7000
-tcp_mux = false
 ```
-
-**attention! cause xfrpc does not support tcp_mux yet, please disable tcp_mux otherwise xfrpc can not connect frps**
 
 run frps
 
@@ -179,11 +176,14 @@ QQ群 ： [331230369](https://jq.qq.com/?_wv=1027&k=47QGEhL)
 
 支付宝打赏
 
-![支付宝打赏](https://user-images.githubusercontent.com/1182593/168528342-a02a6d33-6849-4afe-a028-1eeb29cf0115.png)
+![支付宝打赏](https://user-images.githubusercontent.com/1182593/169465135-d4522479-4068-4714-ab58-987d7d7eb338.png)
+
 
 微信打赏
 
-![微信打赏](https://user-images.githubusercontent.com/1182593/168528439-716d12cf-07bc-46b7-bb33-854cbec3ff27.png)
+
+![微信打赏](https://user-images.githubusercontent.com/1182593/169465249-db1b495e-078e-4cab-91fc-96dab3320b06.png)
+
 
 ## 广告
 

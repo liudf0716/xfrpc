@@ -44,8 +44,6 @@ struct proxy_client {
 	struct bufferevent 	*local_proxy_bev; // xfrpc proxy <---> local service
 	struct base_conf	*bconf;
 
-	struct event			*tcp_mux_ping_event;
-	uint32_t				tcp_mux_ping_id;
 	uint32_t				stream_id;
 	int						connected;
 	int 					work_started;
@@ -97,5 +95,7 @@ int send_client_data_tail(struct proxy_client *client);
 int is_ftp_proxy(const struct proxy_service *ps);
 
 struct proxy_client *new_proxy_client();
+
+void clear_all_proxy_client();
 
 #endif //_CLIENT_H_

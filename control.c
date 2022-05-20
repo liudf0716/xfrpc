@@ -522,10 +522,10 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 				c_conf->server_addr, 
 				c_conf->server_port,
 				strerror(errno));
-		free_control();
-		init_main_control();
-		start_base_connect();
+		exit(0);
 		close_main_control();
+		init_main_control();
+		run_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
 
@@ -538,7 +538,7 @@ static void
 keep_control_alive() 
 {
 	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, hb_sender_cb, NULL);
-	if ( ! main_ctl->ticker_ping) {
+	if ( !main_ctl->ticker_ping) {
 		debug(LOG_ERR, "Ping Ticker init failed!");
 		return;
 	}
@@ -801,19 +801,34 @@ init_main_control()
 							&hints, 
 							server_dns_cb, 
 							NULL);
-	if (! dns_req) {
+	if (!dns_req) {
 		debug(LOG_ERR, "error: can not analyse the dns of [%s]", c_conf->server_addr);
 		exit(0);
 	}
+}
+
+static void 
+free_main_control()
+{
+	SAFE_FREE(main_ctl);
+	main_ctl = NULL;
 }
 
 void 
 close_main_control()
 {
 	assert(main_ctl);
+	
+	if (main_ctl->ticker_ping) evtimer_del(main_ctl->ticker_ping);
+	if (main_ctl->tcp_mux_ping_event) evtimer_del(main_ctl->tcp_mux_ping_event);
+	
+	clear_all_proxy_client();
+
 	event_base_dispatch(main_ctl->connect_base);
 	event_base_free(main_ctl->connect_base);
 	evdns_base_free(main_ctl->dnsbase, 0);
+
+	free_main_control();
 }
 
 void 
@@ -824,11 +839,4 @@ run_control()
 	keep_control_tcp_mux_alive();
 }
 
-void 
-free_control()
-{
-	if (!main_ctl)
-		return;
 
-	SAFE_FREE(main_ctl);
-}

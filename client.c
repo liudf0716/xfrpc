@@ -175,7 +175,6 @@ send_client_data_tail(struct proxy_client *client)
 static void 
 free_proxy_client(struct proxy_client *client)
 {
-	if (client->tcp_mux_ping_event) evtimer_del(client->tcp_mux_ping_event);
 	if (client->local_proxy_bev) bufferevent_free(client->local_proxy_bev);
 	free(client);
 }
@@ -207,8 +206,19 @@ new_proxy_client()
 	struct proxy_client *client = calloc(1, sizeof(struct proxy_client));
 	assert(client);
 	client->stream_id   = get_next_session_id();
-	client->tcp_mux_ping_id = 0;
 	HASH_ADD_INT(all_pc, stream_id, client);
 	
 	return client;
+}
+
+void
+clear_all_proxy_client()
+{
+	if (!all_pc) return;
+	
+	struct proxy_client *client, *tmp;
+	HASH_ITER(hh, all_pc, client, tmp) {
+		HASH_DEL(all_pc, client);
+		free_proxy_client(client);
+	}
 }

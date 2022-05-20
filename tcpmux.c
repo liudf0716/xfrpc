@@ -91,6 +91,18 @@ tcp_mux_flag()
 	return c_conf->tcp_mux;
 }
 
+static void
+dump_tcp_mux_header(uint8_t *data, int len)
+{
+	if (len != 12)
+		return;
+
+	printf("tcp mux header is : \n");
+	for (int i = 0; i < len; i++)
+		printf("%2x", data[i]);
+	printf("\n");
+}
+
 static uint32_t
 parse_tcp_mux_proto(uint8_t *data, int len, uint32_t *flag, uint32_t *type, uint32_t *stream_id, uint32_t *dlen)
 {
@@ -105,10 +117,11 @@ parse_tcp_mux_proto(uint8_t *data, int len, uint32_t *flag, uint32_t *type, uint
 	if(hdr->version == proto_version && 
 	   valid_tcp_mux_type(hdr->type) && 
 	   valid_tcp_mux_flag(htons(hdr->flags))) {
-		if (hdr->type != PING && !valid_tcp_mux_sid(htonl(hdr->stream_id))) { // ??? go_away need confirm
-			debug(LOG_INFO, "!!!!!!!can't find client : type [%s] flag [%s] stream_id[%d]", 
+		if (hdr->type == DATA && !valid_tcp_mux_sid(htonl(hdr->stream_id))) {
+			debug(LOG_INFO, "!!!!!type is DATA but cant find stream_id : type [%s] flag [%s] stream_id[%d]", 
 				type_2_desc(hdr->type), flag_2_desc(htons(hdr->flags)), htonl(hdr->stream_id));
-			return 0;
+			dump_tcp_mux_header(data, len);
+			exit(-1);
 		}
 		*type = hdr->type;
 		*flag = htons(hdr->flags);
@@ -118,34 +131,6 @@ parse_tcp_mux_proto(uint8_t *data, int len, uint32_t *flag, uint32_t *type, uint
 	}
 
 	return 0;
-}
-
-static uint32_t
-parse_tcp_mux_header(uint8_t *data, int len, struct tcp_mux_header *tmux_hdr)
-{
-	assert(tmux_hdr);
-	struct common_conf *c_conf = get_common_config();
-	if (!c_conf->tcp_mux)
-		return 0;	
-
-	if (len < sizeof(struct tcp_mux_header))
-		return 0;
-
-	struct tcp_mux_header *hdr = (struct tcp_mux_header *)data;
-	if(hdr->version == proto_version && 
-	   valid_tcp_mux_type(hdr->type) && 
-	   valid_tcp_mux_flag(htons(hdr->flags))) {
-		if (hdr->type != PING && !valid_tcp_mux_sid(htonl(hdr->stream_id))) // ??? go_away need confirm
-			return 0;
-		tmux_hdr->type = hdr->type;
-		tmux_hdr->flags = htons(hdr->flags);
-		tmux_hdr->stream_id = htonl(hdr->stream_id);
-		tmux_hdr->length = htonl(hdr->length);
-		return 1;
-	}
-
-	return 0;
-
 }
 
 uint32_t 
@@ -165,6 +150,18 @@ tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id)
 	memset(&tmux_hdr, 0, sizeof(tmux_hdr));
 	tcp_mux_encode(WINDOW_UPDATE, SYN, stream_id, 0, &tmux_hdr);
 	debug(LOG_DEBUG, "tcp mux [%d] send wind update syn", stream_id);
+	bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
+}
+
+void
+tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id, uint32_t delta)
+{
+	if (!tcp_mux_flag()) return;
+
+	struct tcp_mux_header tmux_hdr;
+	memset(&tmux_hdr, 0, sizeof(tmux_hdr));
+	tcp_mux_encode(WINDOW_UPDATE, ACK, stream_id, delta, &tmux_hdr);
+	debug(LOG_DEBUG, "tcp mux [%d] send wind update ACK [%d]", stream_id, delta);
 	bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
 }
 
@@ -200,7 +197,7 @@ tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id)
 	struct tcp_mux_header tmux_hdr;
 	memset(&tmux_hdr, 0, sizeof(tmux_hdr));
 	tcp_mux_encode(PING, SYN, 0, ping_id, &tmux_hdr);
-	debug(LOG_DEBUG, "tcp mux send ping syn : %d", ping_id);
+	//debug(LOG_DEBUG, "tcp mux send ping syn : %d", ping_id);
 	bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
 }
 
@@ -212,7 +209,7 @@ tcp_mux_handle_ping(struct bufferevent *bout, uint32_t ping_id)
 	struct tcp_mux_header tmux_hdr;
 	memset(&tmux_hdr, 0, sizeof(tmux_hdr));
 	tcp_mux_encode(PING, ACK, 0, ping_id, &tmux_hdr);
-	debug(LOG_DEBUG, "tcp mux send ping ack : %d", ping_id);
+	//debug(LOG_DEBUG, "tcp mux send ping ack : %d", ping_id);
 	bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
 }
 

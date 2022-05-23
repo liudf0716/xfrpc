@@ -45,15 +45,15 @@ handle_xfrpc() {
 		uci_validate_section xfrpc xfrpc "$name" \
 				'server_addr:ipaddr' \
 				'server_port:uinteger' \
-				'auth_token:string'
+				'token:string'
 
-		[ -z "$auth_token" ] && {
-			echo "no auth_token"
+		[ -z "$token" ] && {
+			echo "no token"
 			exit
 		}
 		echo "server_addr = $server_addr" >> "$config"
 		echo "server_port = $server_port" >> "$config"
-		echo "auth_token = $auth_token" >> "$config"
+		echo "token = $token" >> "$config"
 	else
 		handle_type
 	fi

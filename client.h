@@ -20,7 +20,7 @@
 \********************************************************************/
 
 /** @file client.h
-    @brief xfrp client proxy client related
+    @brief xfrpc proxy client related
     @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 

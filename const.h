@@ -20,7 +20,7 @@
 \********************************************************************/
 
 /** @file const.h
-    @brief xfrp constant parameter define
+    @brief xfrpc constant parameter define
     @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 

@@ -20,7 +20,7 @@
 \********************************************************************/
 
 /** @file msg.h
-    @brief xfrp msg struct
+    @brief xfrpc msg struct
     @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 

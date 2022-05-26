@@ -20,7 +20,7 @@
 \********************************************************************/
 
 /** @file config.h
-    @brief xfrp client config related
+    @brief xfrpc client config related
     @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 #ifndef _CONFIG_H_

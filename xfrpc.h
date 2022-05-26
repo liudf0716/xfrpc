@@ -20,7 +20,7 @@
 \********************************************************************/
 
 /** @file xfrpc.h
-    @brief xfrp client header file
+    @brief xfrpc client header file
     @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 

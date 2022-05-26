@@ -160,8 +160,8 @@ tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id, uint32
 
 	struct tcp_mux_header tmux_hdr;
 	memset(&tmux_hdr, 0, sizeof(tmux_hdr));
-	tcp_mux_encode(WINDOW_UPDATE, ACK, stream_id, delta, &tmux_hdr);
-	debug(LOG_DEBUG, "tcp mux [%d] send wind update ACK [%d]", stream_id, delta);
+	tcp_mux_encode(WINDOW_UPDATE, ZERO, stream_id, delta, &tmux_hdr);
+	debug(LOG_DEBUG, "tcp mux [%d] send wind update ZERO [%d]", stream_id, delta);
 	bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
 }
 
@@ -297,6 +297,12 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 			if (flag == RST) {
 				debug(LOG_DEBUG, "receive tcp mux window_update flag %s ", flag_2_desc(flag));
 				del_proxy_client(pc);	
+			} else if (pc){
+				if (dlen > 0) {
+					debug(LOG_DEBUG, "receive tcp mux window_update flag %s increase send_window %d", flag_2_desc(flag), dlen);
+					pc->send_window += dlen;
+					bufferevent_enable(pc->local_proxy_bev, EV_READ|EV_WRITE);
+				}
 			}
 		} else {
 			debug(LOG_INFO, "no need unhandle tcp mux msg : type %s flag %s stream_id %d dlen %d ilen %d", 

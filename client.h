@@ -45,6 +45,7 @@ struct proxy_client {
 	struct base_conf	*bconf;
 
 	uint32_t				stream_id;
+	uint32_t				send_window;
 	int						connected;
 	int 					work_started;
 	struct 	proxy_service 	*ps;

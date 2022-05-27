@@ -508,24 +508,23 @@ static void
 connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 {
 	struct common_conf 	*c_conf = get_common_config();
-	static int retry_times = 0;
+	static int retry_times = 1;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		if (retry_times >= 10) { // only try 10 times consecutively
+		if (retry_times >= 100) {
 			debug(LOG_ERR, 
 				"have retry connect to xfrp server for %d times, exit!", 
 				retry_times);
 
 			exit(0);
 		}
-
+		sleep(retry_times);
 		retry_times++;
 		debug(LOG_ERR, "error: connect server [%s:%d] failed %s", 
 				c_conf->server_addr, 
 				c_conf->server_port,
 				strerror(errno));
-		close_main_control();
-		init_main_control();
-		run_control();
+		clear_all_proxy_client();
+		start_base_connect();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
 
@@ -586,16 +585,16 @@ void
 start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
-	int sleep_time = 1;
-start_connect:
+	if (main_ctl->connect_bev)
+		bufferevent_free(main_ctl->connect_bev);
+
 	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
 						c_conf->server_addr, 
 						c_conf->server_port);
 	if ( ! main_ctl->connect_bev) {
 		debug(LOG_ERR, "error: connect server [%s:%d] failed: [%d: %s]", 
 						c_conf->server_addr, c_conf->server_port, errno, strerror(errno));
-		sleep(sleep_time++);
-		goto start_connect;
+		exit(0);
 	}
 
 	debug(LOG_INFO, "connect server [%s:%d]...", c_conf->server_addr, c_conf->server_port);
@@ -828,8 +827,9 @@ close_main_control()
 	
 	clear_all_proxy_client();
 
-	event_base_loopbreak(main_ctl->connect_base);
+	event_base_dispatch(main_ctl->connect_base);
 	evdns_base_free(main_ctl->dnsbase, 0);
+	event_base_free(main_ctl->connect_base);
 
 	free_main_control();
 }

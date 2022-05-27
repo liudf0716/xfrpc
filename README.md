@@ -3,13 +3,12 @@
 
 ## What is xfrpc 
 
-`xfrpc` is [frp](https://github.com/fatedier/frp) client implemented by c language for [OpenWRT](https://github.com/openwrt/openwrt) and [LEDE](https://github.com/lede-project/source) system
-
-The motivation to start xfrpc project is that we are OpenWRTer, and openwrt usually ran in device which has little ROM and RAM space, however golang always need more space and memory; therefore we start xfrpc project to support frp.
+`xfrpc` is [frp](https://github.com/fatedier/frp) client implemented by c language for [OpenWRT](https://github.com/openwrt/openwrt)
+The motivation to start xfrpc project is that we are OpenWRTer, and openwrt usually run in devices which have limit ROM and RAM space, however frpc always need more space and memory; therefore we launched xfrpc project.
 
 ## Development Status
 
-xfrpc partially compitable with latest frp release feature, It target to fully compatible with latest frp release.
+xfrpc partially compitable with latest frp release feature, It targets to fully compatible with latest frp release.
 
 the following table is detail  compatible feature:
 

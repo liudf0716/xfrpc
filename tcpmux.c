@@ -210,7 +210,7 @@ tcp_mux_send_data(struct bufferevent *bout, uint32_t stream_id, uint32_t length)
 	struct tcp_mux_header tmux_hdr;
 	memset(&tmux_hdr, 0, sizeof(tmux_hdr));
 	tcp_mux_encode(DATA, ZERO, stream_id, length, &tmux_hdr);
-	debug(LOG_DEBUG, "tcp mux [%d] send data len : %d", stream_id, length);
+	//debug(LOG_DEBUG, "tcp mux [%d] send data len : %d", stream_id, length);
 	bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
 }
 
@@ -249,28 +249,23 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 	while (ilen > 0) {
 		uint32_t type = 0, stream_id = 0, dlen = 0, flag = 0;
 		uint32_t is_tmux = parse_tcp_mux_proto(data, ilen, &flag, &type, &stream_id, &dlen); 
-		if (is_tmux) {
-			debug(LOG_DEBUG, "receive tcp mux type [%s] flag [%s] stream_id [%d] dlen [%d] ilen [%d]", 
-							type_2_desc(type), flag_2_desc(flag), stream_id, dlen, ilen);
-			data += sizeof(struct tcp_mux_header);
-			ilen -= sizeof(struct tcp_mux_header);
-			assert(ilen >= 0);
-			l_stream_id = stream_id;
-			l_type = type;
-			l_flag = flag;
-			l_dlen = dlen;
-		} else {
+		if (!is_tmux) {
 			struct proxy_client *pc = get_proxy_client(l_stream_id);
 			debug(LOG_DEBUG, "receive only %s data : l_stream_id %d l_type %s l_flag %s l_dlen %d ilen %d", 
 							!pc?"main control ":"worker ", 
 							l_stream_id, type_2_desc(l_type), 
 							flag_2_desc(l_flag), l_dlen, ilen);
 			assert(ilen);
+			if (ilen == 12)
+				dump_tcp_mux_header(data, ilen);
+
 			if (!pc || (pc && !pc->local_proxy_bev)) {
 				assert(ilen >= l_dlen);
+				assert(l_dlen > 0);
 				fn(data, l_dlen, pc);
 				data += l_dlen;
 				ilen -= l_dlen;
+				l_dlen = 0;
 			} else if ( ilen >= l_dlen) {
 				assert(pc->local_proxy_bev);
 				bufferevent_write(pc->local_proxy_bev, data, l_dlen);
@@ -278,6 +273,7 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 				ilen -= l_dlen;
 				l_dlen = 0;
 			} else {
+				assert(pc->local_proxy_bev);
 				bufferevent_write(pc->local_proxy_bev, data, ilen);
 				l_dlen -= ilen;
 				ilen 	= 0;
@@ -285,51 +281,65 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 
 			continue;
 		}
-
+		
 		struct proxy_client *pc = get_proxy_client(stream_id);
-		if (type == DATA) {
-			debug(LOG_DEBUG, 
-				"receive data frps dlen %d ilen %d stream_id %d", 
-				dlen, ilen, stream_id);
-			if (ilen == 0) {
-				continue;
-			}
+		debug(LOG_DEBUG, "[%s] receive tcp mux type [%s] flag [%s] stream_id [%d] dlen [%d] ilen [%d]", 
+						pc?"worker":"main control",
+						type_2_desc(type), flag_2_desc(flag), stream_id, dlen, ilen);
+		data += sizeof(struct tcp_mux_header);
+		ilen -= sizeof(struct tcp_mux_header);
+		l_stream_id = stream_id;
+		l_type = type;
+		l_flag = flag;
+		l_dlen = type==PING?0:dlen;
+		assert(ilen >= 0);
+
+		switch(type) {
+		case DATA:
+		{
+			if (ilen == 0)
+				break;
 
 			if (!pc || (pc && !pc->local_proxy_bev)) {
-				debug(LOG_DEBUG, "receive control msg");
 				assert(ilen >= dlen);
 				fn(data, dlen, pc);
 				data += dlen;
 				ilen -= dlen;
+				l_dlen = 0;
 			} else if ( ilen >= dlen){
-				debug(LOG_DEBUG, "receive proxy worker data and forword: ilen %d dlen %d", ilen, dlen);
 				bufferevent_write(pc->local_proxy_bev, data, dlen);
 				data += dlen;
 				ilen -= dlen;
 				l_dlen = 0;
 			} else {
-				debug(LOG_DEBUG, "receive proxy worker data partially : ilen %d dlen %d", ilen, dlen);
 				bufferevent_write(pc->local_proxy_bev, data, ilen);
 				l_dlen -= ilen;
 				ilen 	= 0;
 			}
-		} else if (type == PING) {
+			break;
+		} 
+		case PING:
+		{
 			struct bufferevent *bout = get_main_control()->connect_bev;
+			uint32_t seq = dlen;
 			assert(bout);
 			if (flag == SYN)
-				tcp_mux_handle_ping(bout, dlen);
-		} else if (type == WINDOW_UPDATE ) {
+				tcp_mux_handle_ping(bout, seq);
+			break;
+		} 
+		case WINDOW_UPDATE:
+		{
 			if (flag == RST) {
-				debug(LOG_DEBUG, "receive tcp mux window_update flag %s ", flag_2_desc(flag));
 				del_proxy_client(pc);	
-			} else if (pc){
-				if (dlen > 0) {
-					debug(LOG_DEBUG, "receive tcp mux window_update flag %s increase send_window %d", flag_2_desc(flag), dlen);
-					pc->send_window += dlen;
-					bufferevent_enable(pc->local_proxy_bev, EV_READ|EV_WRITE);
-				}
+			} else if (pc && dlen > 0){
+				pc->send_window += dlen;
+				bufferevent_enable(pc->local_proxy_bev, EV_READ|EV_WRITE);
+			} else {
+				debug(LOG_INFO, "window update no need process : flag %s dlen %d", flag_2_desc(flag), dlen);
 			}
-		} else {
+			break;
+		} 
+		default:
 			debug(LOG_INFO, "no need unhandle tcp mux msg : type %s flag %s stream_id %d dlen %d ilen %d", 
 							type_2_desc(type), flag_2_desc(flag),  stream_id, dlen, ilen);
 		}

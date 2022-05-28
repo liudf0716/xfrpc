@@ -110,7 +110,7 @@ get_daemon_status()
 /** @internal
  * @brief Print usage
  *
- * Prints usage, called when wifidog is run with -h or with an unknown option
+ * Prints usage, called when xfrpc is run with -h or with an unknown option
  */
 static void
 usage(const char *appname)

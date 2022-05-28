@@ -34,6 +34,8 @@
 
 #include "debug.h"
 
+#define	PROGNAME	"xfrpc"
+
 debugconf_t debugconf = {
     .debuglevel = LOG_INFO,
     .log_stderr = 1,
@@ -46,7 +48,7 @@ Do not use directly, use the debug macro */
 void
 _debug(const char *filename, int line, int level, const char *format, ...)
 {
-    char buf[28];
+    char buf[32] = {0};
     va_list vlist;
     time_t ts;
     sigset_t block_chld;
@@ -75,7 +77,7 @@ _debug(const char *filename, int line, int level, const char *format, ...)
         }
 
         if (debugconf.log_syslog) {
-            openlog("wifidog", LOG_PID, debugconf.syslog_facility);
+            openlog(PROGNAME, LOG_PID, debugconf.syslog_facility);
             va_start(vlist, format);
             vsyslog(level, format, vlist);
             va_end(vlist);

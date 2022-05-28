@@ -56,6 +56,7 @@ static int is_login = 0;
 
 static void sync_new_work_connection(struct bufferevent *bev, uint32_t sid);
 static void recv_cb(struct bufferevent *bev, void *ctx);
+static void clear_main_control();
 
 static int 
 is_client_connected()
@@ -523,8 +524,9 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 				c_conf->server_addr, 
 				c_conf->server_port,
 				strerror(errno));
-		clear_all_proxy_client();
+		clear_main_control();
 		start_base_connect();
+		exit(0);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
 
@@ -817,15 +819,19 @@ free_main_control()
 	main_ctl = NULL;
 }
 
+static void
+clear_main_control()
+{
+	assert(main_ctl);
+	if (main_ctl->ticker_ping) evtimer_del(main_ctl->ticker_ping);
+	if (main_ctl->tcp_mux_ping_event) evtimer_del(main_ctl->tcp_mux_ping_event);
+	clear_all_proxy_client();
+}
+
 void 
 close_main_control()
 {
-	assert(main_ctl);
-	
-	if (main_ctl->ticker_ping) evtimer_del(main_ctl->ticker_ping);
-	if (main_ctl->tcp_mux_ping_event) evtimer_del(main_ctl->tcp_mux_ping_event);
-	
-	clear_all_proxy_client();
+	clear_main_control();
 
 	event_base_dispatch(main_ctl->connect_base);
 	evdns_base_free(main_ctl->dnsbase, 0);

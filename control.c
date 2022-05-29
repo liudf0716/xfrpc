@@ -526,7 +526,6 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 				strerror(errno));
 		clear_main_control();
 		start_base_connect();
-		exit(0);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
 

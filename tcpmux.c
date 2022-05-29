@@ -66,23 +66,14 @@ flag_2_desc(enum tcp_mux_flag flag)
 		if (flag == flag_desc[i].flag)
 			return flag_desc[i].desc;
 	}
-
-	return "unknown_flag";
+	
+	return "unkown_flag";
 }
 
 static int
 valid_tcp_mux_type(uint8_t type)
 {
 	if (type >= DATA && type <= GO_AWAY)
-		return 1;
-
-	return 0;
-}
-
-static int
-valid_tcp_mux_flag(uint16_t flag)
-{
-	if (flag >= ZERO && flag <= RST)
 		return 1;
 
 	return 0;
@@ -140,8 +131,7 @@ parse_tcp_mux_proto(uint8_t *data, int len, uint32_t *flag, uint32_t *type, uint
 
 	struct tcp_mux_header *hdr = (struct tcp_mux_header *)data;
 	if(hdr->version == proto_version && 
-	   valid_tcp_mux_type(hdr->type) && 
-	   valid_tcp_mux_flag(htons(hdr->flags))) {
+	   valid_tcp_mux_type(hdr->type)) {
 		if (hdr->type == DATA && !valid_tcp_mux_sid(htonl(hdr->stream_id))) {
 			debug(LOG_INFO, "!!!!!type is DATA but cant find stream_id : type [%s] flag [%s] stream_id[%d]", 
 				type_2_desc(hdr->type), flag_2_desc(htons(hdr->flags)), htonl(hdr->stream_id));
@@ -191,14 +181,14 @@ tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id, uint32
 }
 
 void
-tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id)
+tcp_mux_send_win_update_fin(struct bufferevent *bout, uint32_t stream_id)
 {
 	if (!tcp_mux_flag()) return;
 
 	struct tcp_mux_header tmux_hdr;
 	memset(&tmux_hdr, 0, sizeof(tmux_hdr));
-	tcp_mux_encode(WINDOW_UPDATE, RST, stream_id, 0, &tmux_hdr);
-	debug(LOG_DEBUG, "tcp mux [%d] send wind update RST", stream_id);
+	tcp_mux_encode(WINDOW_UPDATE, FIN, stream_id, 0, &tmux_hdr);
+	debug(LOG_DEBUG, "tcp mux [%d] send wind update FIN", stream_id);
 	bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
 }
 
@@ -266,7 +256,15 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 				data += l_dlen;
 				ilen -= l_dlen;
 				l_dlen = 0;
-			} else if ( ilen >= l_dlen) {
+				continue;
+			}
+			
+			if (pc->stream_state != ESTABLISHED) {
+				debug(LOG_INFO, "client [%d] state is [%d]", pc->stream_id, pc->stream_state);
+				break;
+			}
+
+			if ( ilen >= l_dlen) {
 				assert(pc->local_proxy_bev);
 				bufferevent_write(pc->local_proxy_bev, data, l_dlen);
 				data += l_dlen;
@@ -306,12 +304,22 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 				data += dlen;
 				ilen -= dlen;
 				l_dlen = 0;
-			} else if ( ilen >= dlen){
+				continue;
+			}
+			
+			if (pc->stream_state != ESTABLISHED) {
+				debug(LOG_INFO, "client [%d] state is [%d]", pc->stream_id, pc->stream_state);
+				break;
+			}
+			
+			if (ilen >= dlen){
+				assert(pc->local_proxy_bev);
 				bufferevent_write(pc->local_proxy_bev, data, dlen);
 				data += dlen;
 				ilen -= dlen;
 				l_dlen = 0;
 			} else {
+				assert(pc->local_proxy_bev);
 				bufferevent_write(pc->local_proxy_bev, data, ilen);
 				l_dlen -= ilen;
 				ilen 	= 0;
@@ -329,14 +337,27 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 		} 
 		case WINDOW_UPDATE:
 		{
-			if (flag == RST) {
-				del_proxy_client(pc);	
-			} else if (pc && dlen > 0){
-				pc->send_window += dlen;
-				bufferevent_enable(pc->local_proxy_bev, EV_READ|EV_WRITE);
-			} else {
-				debug(LOG_INFO, "window update no need process : flag %s dlen %d", flag_2_desc(flag), dlen);
+			switch(flag) {
+			case RST:
+			case FIN:
+				del_proxy_client(pc);
+				break;
+			case ZERO:
+			case ACK:	
+				if (!pc)
+					break;
+
+				if (dlen > 0) {
+					pc->send_window += dlen;
+					bufferevent_enable(pc->local_proxy_bev, EV_READ|EV_WRITE);
+				}
+				pc->stream_state = ESTABLISHED;
+				break;
+			default:
+				debug(LOG_INFO, "window update no need process : flag %2x %s dlen %d stream_id %d", 
+								flag, flag_2_desc(flag), dlen, stream_id);
 			}
+			
 			break;
 		} 
 		default:

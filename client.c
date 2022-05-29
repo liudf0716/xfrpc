@@ -70,8 +70,11 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] stream_id %d: %s", 
 						client->ps->local_ip, client->ps->local_port, 
 						client->stream_id, strerror(errno));
-		tcp_mux_send_win_update_rst(client->ctl_bev, client->stream_id);
-	  } else if (what & BEV_EVENT_CONNECTED) {
+		tcp_mux_send_win_update_fin(client->ctl_bev, client->stream_id);
+		client->stream_state = LOCAL_CLOSE;
+	} else if (what & BEV_EVENT_CONNECTED) {
+		debug(LOG_DEBUG, "client [%d] connected", client->stream_id);
+		//client->stream_state = ESTABLISHED;
 		if (client->data_tail_size > 0) {
 			debug(LOG_DEBUG, "send client data ...");
 			send_client_data_tail(client);		
@@ -122,7 +125,7 @@ start_xfrp_tunnel(struct proxy_client *client)
 	client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
 	if ( !client->local_proxy_bev ) {
 		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
-		bufferevent_free(client->ctl_bev);
+		del_proxy_client(client);
 		return;
 	}
 	
@@ -183,7 +186,7 @@ void
 del_proxy_client(struct proxy_client *client)
 {
 	if (!client || !all_pc ) {
-		debug(LOG_INFO, "Error: all_pc or client is NULL");
+		debug(LOG_INFO, "all_pc or client is NULL");
 		return;
 	}
 	
@@ -207,6 +210,7 @@ new_proxy_client()
 	assert(client);
 	client->stream_id   = get_next_session_id();
 	client->send_window	= 128*1024;
+	client->stream_state = INIT;
 	HASH_ADD_INT(all_pc, stream_id, client);
 	
 	return client;

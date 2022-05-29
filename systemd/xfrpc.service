@@ -1,0 +1,16 @@
+# 1. put xfrpc and xfrpc.ini under /usr/local/xfrpc/
+# 2. put this file (xfrpc.service) at /etc/systemd/system
+# 3. run `sudo systemctl daemon-reload && sudo systemctl enable xfrpc && sudo systemctl start xfrpc`
+# Then we can manage xfrpc with `sudo service xfrpc {start|stop|restart|status}`
+
+
+[Unit]
+Description=frp c language client
+Wants=network-online.target
+After=network.target network-online.target
+
+[Service]
+ExecStart=/usr/local/xfrpc/xfrpc -c /usr/local/xfrpc/xfrpc.ini -f -d 0
+
+[Install]
+WantedBy=multi-user.target

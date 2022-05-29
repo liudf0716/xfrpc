@@ -31,6 +31,7 @@
 
 #include "uthash.h"
 #include "common.h"
+#include "tcpmux.h"
 
 struct event_base;
 struct base_conf;
@@ -46,6 +47,7 @@ struct proxy_client {
 
 	uint32_t				stream_id;
 	uint32_t				send_window;
+	enum tcp_mux_state		stream_state;
 	int						connected;
 	int 					work_started;
 	struct 	proxy_service 	*ps;

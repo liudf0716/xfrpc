@@ -44,9 +44,17 @@ struct tcp_mux_type_desc {
 enum tcp_mux_flag {
 	ZERO,
 	SYN,
-	ACK,
-	FIN,
-	RST,
+	ACK = 1<<1,
+	FIN = 1<<2,
+	RST = 1<<3,
+};
+
+struct __attribute__((__packed__)) tcp_mux_header {
+	uint8_t		version;
+	uint8_t		type;
+	uint16_t	flags;
+	uint32_t	stream_id;
+	uint32_t	length;
 };
 
 struct tcp_mux_flag_desc {
@@ -65,20 +73,11 @@ enum tcp_mux_state {
 	RESET
 };
 
-
-struct __attribute__((__packed__)) tcp_mux_header {
-	uint8_t		version;
-	uint8_t		type;
-	uint16_t	flags;
-	uint32_t	stream_id;
-	uint32_t	length;
-};
-
 void tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id);
 
 void tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id, uint32_t delta);
 
-void tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id);
+void tcp_mux_send_win_update_fin(struct bufferevent *bout, uint32_t stream_id);
 
 void tcp_mux_send_data(struct bufferevent *bout, uint32_t stream_id, uint32_t length);
 

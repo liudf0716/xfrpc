@@ -76,7 +76,7 @@ sequenceDiagram
   
 ```
 
-## Compile
+## Compile on Ubuntu 20.04.3 LTS
 
 xfrp need [libevent](https://github.com/libevent/libevent) [openssl-dev](https://github.com/openssl/openssl) and [json-c](https://github.com/json-c/json-c) support
 
@@ -96,6 +96,14 @@ mkdir build
 cmake ..
 make
 ```
+
+## Compile on OpenWrt
+
+xfrpc was recruited by openwrt community since version 1.04.515
+
+anyway I highly recommend you to use latest version 
+
+in order to compile xfrpc in openwrt sdk environment, you should firstly `make menuconfig`, then select `Network --> Web Servers/Proxies  ---> xfrpc`
 
 ## Quick start
 

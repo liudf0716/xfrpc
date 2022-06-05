@@ -209,7 +209,7 @@ new_proxy_client()
 	struct proxy_client *client = calloc(1, sizeof(struct proxy_client));
 	assert(client);
 	client->stream_id   = get_next_session_id();
-	client->send_window	= 128*1024;
+	client->send_window	= 200*1024;
 	client->stream_state = INIT;
 	HASH_ADD_INT(all_pc, stream_id, client);
 	

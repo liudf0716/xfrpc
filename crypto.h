@@ -55,5 +55,6 @@ struct frp_coder *get_main_encoder();
 struct frp_coder *get_main_decoder();
 size_t get_block_size();
 void free_encoder(struct frp_coder *encoder);
+void free_evp_cipher_ctx();
 
 #endif // _CRYPTO_H_

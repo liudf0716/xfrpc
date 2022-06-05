@@ -43,6 +43,46 @@ static const char *default_salt = "frp";
 static const size_t block_size = 16;
 static struct frp_coder *main_encoder = NULL;
 static struct frp_coder *main_decoder = NULL;
+static EVP_CIPHER_CTX *enc_ctx = NULL;
+static EVP_CIPHER_CTX *dec_ctx = NULL;
+
+static void
+free_frp_coder(struct frp_coder *coder)
+{
+	free(coder->salt);
+	free(coder->privilege_token);
+	free(coder);
+}
+
+static void
+free_all_frp_coder()
+{
+	if (main_encoder) {
+		free_frp_coder(main_encoder);
+		main_encoder = NULL;
+	}
+
+	if (main_decoder) {
+		free_frp_coder(main_decoder);
+		main_decoder = NULL;
+	}
+}
+
+void 
+free_evp_cipher_ctx() 
+{
+	free_all_frp_coder();
+
+	if (enc_ctx) {
+		EVP_CIPHER_CTX_free(enc_ctx);
+		enc_ctx = NULL;
+	}
+
+	if (dec_ctx) {
+		EVP_CIPHER_CTX_free(dec_ctx);
+		dec_ctx = NULL;
+	}
+}
 
 size_t 
 get_block_size()
@@ -56,7 +96,7 @@ new_coder(const char *privilege_token, const char *salt)
 	struct frp_coder *enc = calloc(sizeof(struct frp_coder), 1);
 	assert(enc);
 
-	enc->privilege_token = privilege_token ? strdup(privilege_token):"\0";
+	enc->privilege_token = privilege_token ? strdup(privilege_token):strdup("\0");
 	enc->salt = strdup(salt);
 	encrypt_key(enc->privilege_token, strlen(enc->privilege_token), enc->salt, enc->key, block_size);
 	encrypt_iv(enc->iv, block_size);
@@ -175,11 +215,11 @@ encrypt_data(const uint8_t *src_data, size_t srclen, struct frp_coder *encoder, 
 	assert(outbuf);
 	*ret = outbuf;
 
-	static EVP_CIPHER_CTX *ctx = NULL;
-	if (!ctx) {
-		ctx = EVP_CIPHER_CTX_new();
-		EVP_EncryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+	if (!enc_ctx) {
+		enc_ctx = EVP_CIPHER_CTX_new();
+		EVP_EncryptInit_ex(enc_ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
 	}
+	EVP_CIPHER_CTX *ctx = enc_ctx;
 
 	if(!EVP_EncryptUpdate(ctx, outbuf, &tmplen, intext, (int)srclen)) {
 		debug(LOG_ERR, "EVP_EncryptUpdate error!");
@@ -208,12 +248,12 @@ decrypt_data(const uint8_t *enc_data, size_t enclen, struct frp_coder *decoder, 
 	assert(decoder);
 	
 	int outlen = 0, tmplen = 0;
-	static EVP_CIPHER_CTX *ctx= NULL;
-	if (!ctx) {
-		ctx= EVP_CIPHER_CTX_new();
-		EVP_DecryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+	if (!dec_ctx) {
+		dec_ctx= EVP_CIPHER_CTX_new();
+		EVP_DecryptInit_ex(dec_ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
 	}
 
+	EVP_CIPHER_CTX *ctx = dec_ctx;
 	if(!EVP_DecryptUpdate(ctx, outbuf, &tmplen, inbuf, enclen)) {
 		debug(LOG_ERR, "EVP_DecryptUpdate error!");
 		goto D_END;

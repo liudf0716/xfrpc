@@ -179,8 +179,7 @@ ping()
 static void 
 sync_new_work_connection(struct bufferevent *bev, uint32_t sid)
 {
-	struct bufferevent *bout = bev;
-	assert(bout);
+	assert(bev);
 	
 	/* send new work session regist request to frps*/
 	struct work_conn *work_c = new_work_conn();
@@ -825,6 +824,8 @@ clear_main_control()
 	if (main_ctl->ticker_ping) evtimer_del(main_ctl->ticker_ping);
 	if (main_ctl->tcp_mux_ping_event) evtimer_del(main_ctl->tcp_mux_ping_event);
 	clear_all_proxy_client();
+	free_evp_cipher_ctx();
+	is_login = 0;
 }
 
 void 

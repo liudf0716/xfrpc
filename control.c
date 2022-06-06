@@ -826,6 +826,7 @@ clear_main_control()
 	clear_all_proxy_client();
 	free_evp_cipher_ctx();
 	is_login = 0;
+	client_connected(0);
 }
 
 void 

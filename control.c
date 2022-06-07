@@ -35,6 +35,7 @@
 #include <json-c/json.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "debug.h"
 #include "client.h"
@@ -53,6 +54,7 @@
 static struct control *main_ctl;
 static int clients_conn_signel = 0;
 static int is_login = 0;
+static time_t pong_time = 0;
 
 static void sync_new_work_connection(struct bufferevent *bev, uint32_t sid);
 static void recv_cb(struct bufferevent *bev, void *ctx);
@@ -242,7 +244,16 @@ set_tcp_mux_ping_timer(struct event *timeout)
 static void 
 hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
-	debug(LOG_DEBUG, "hb_sender_cb");
+	struct common_conf 	*c_conf = get_common_config();
+	time_t current_time = time(NULL);
+	int interval = current_time - pong_time;
+	if (interval > c_conf->heartbeat_timeout) {
+		debug(LOG_INFO, " interval [%d] greater than heartbeat_timeout [%d]", interval, c_conf->heartbeat_timeout);
+		if (main_ctl->connect_bev)
+			bufferevent_free(main_ctl->connect_bev);
+		return;
+	}
+
 	if (is_client_connected()) {
 		debug(LOG_DEBUG, "ping frps");
 		ping(NULL);
@@ -412,6 +423,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		break;
 	case TypePong:
 		debug(LOG_DEBUG, "receive pong from frps");
+		pong_time = time(NULL);
 		break;
 	default:
 		debug(LOG_INFO, "command type dont support: ctx is %d", ctx?1:0);

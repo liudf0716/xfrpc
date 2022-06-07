@@ -511,13 +511,11 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	static int retry_times = 1;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		if (retry_times >= 100) {
-			debug(LOG_ERR, 
-				"have retry connect to xfrp server for %d times, exit!", 
+			debug(LOG_INFO, 
+				"have retry connect to xfrp server for %d times, exit?", 
 				retry_times);
-
-			exit(0);
 		}
-		sleep(retry_times);
+		sleep(2);
 		retry_times++;
 		debug(LOG_ERR, "error: connect server [%s:%d] failed %s", 
 				c_conf->server_addr, 

@@ -57,6 +57,7 @@ static int is_login = 0;
 static void sync_new_work_connection(struct bufferevent *bev, uint32_t sid);
 static void recv_cb(struct bufferevent *bev, void *ctx);
 static void clear_main_control();
+static void start_base_connect();
 
 static int 
 is_client_connected()
@@ -363,7 +364,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		new_client_connect();
 		break;
 	case TypeNewProxyResp:
-		debug(LOG_DEBUG, "TypeNewProxyResp cmd");
+		debug(LOG_DEBUG, "TypeNewProxyResp cmd : %s", msg->data);
 		struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
 		if (npr == NULL) {
 			debug(LOG_ERR, "new proxy response buffer unmarshal faild!");
@@ -410,6 +411,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 
 		break;
 	case TypePong:
+		debug(LOG_DEBUG, "receive pong from frps");
 		break;
 	default:
 		debug(LOG_INFO, "command type dont support: ctx is %d", ctx?1:0);
@@ -522,7 +524,7 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 				c_conf->server_port,
 				strerror(errno));
 		clear_main_control();
-		start_base_connect();
+		run_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
 
@@ -579,7 +581,7 @@ server_dns_cb(int event_code, struct evutil_addrinfo *addr, void *ctx)
     }
 }
 
-void 
+static void 
 start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();

@@ -49,8 +49,6 @@ struct control {
 
 void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
 
-void start_base_connect();
-
 void init_main_control();
 
 void run_control();

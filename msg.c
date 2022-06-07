@@ -268,8 +268,7 @@ new_proxy_resp_unmarshal(const char *jres)
 	if (port) {
 		port++;
 		npr->remote_port = atoi(port);
-	}else
-		goto END_ERROR;
+	}
 
 	struct json_object *npr_proxy_name = NULL;
 	if (! json_object_object_get_ex(j_np_res, "proxy_name", &npr_proxy_name))

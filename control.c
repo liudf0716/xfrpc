@@ -60,6 +60,7 @@ static void sync_new_work_connection(struct bufferevent *bev, uint32_t sid);
 static void recv_cb(struct bufferevent *bev, void *ctx);
 static void clear_main_control();
 static void start_base_connect();
+static void keep_control_alive();
 
 static int 
 is_client_connected()
@@ -232,41 +233,25 @@ set_ticker_ping_timer(struct event *timeout)
 	event_add(timeout, &tv);
 }
 
-static void
-set_tcp_mux_ping_timer(struct event *timeout)
-{
-	struct timeval tv;
-	evutil_timerclear(&tv);
-	tv.tv_sec = 60;
-	event_add(timeout, &tv);
-}
-
 static void 
 hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
-	struct common_conf 	*c_conf = get_common_config();
-	time_t current_time = time(NULL);
-	int interval = current_time - pong_time;
-	if (interval > c_conf->heartbeat_timeout) {
-		debug(LOG_INFO, " interval [%d] greater than heartbeat_timeout [%d]", interval, c_conf->heartbeat_timeout);
-		if (main_ctl->connect_bev)
-			bufferevent_free(main_ctl->connect_bev);
-		return;
-	}
-
 	if (is_client_connected()) {
 		debug(LOG_DEBUG, "ping frps");
 		ping(NULL);
 	}
 
 	set_ticker_ping_timer(main_ctl->ticker_ping);	
-}
-
-static void
-tcp_mux_hb_sender_cb(evutil_socket_t fd, short event, void *arg)
-{
-	tcp_mux_send_ping(main_ctl->connect_bev, main_ctl->tcp_mux_ping_id++);
-	set_tcp_mux_ping_timer(main_ctl->tcp_mux_ping_event);
+	
+	struct common_conf 	*c_conf = get_common_config();
+	time_t current_time = time(NULL);
+	int interval = current_time - pong_time;
+	if (pong_time && interval > c_conf->heartbeat_timeout) {
+		debug(LOG_INFO, " interval [%d] greater than heartbeat_timeout [%d]", interval, c_conf->heartbeat_timeout);
+		clear_main_control();
+		run_control();
+		return;
+	}
 }
 
 // return: 0: raw succeed 1: raw failed
@@ -338,7 +323,7 @@ handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 	uint8_t *dec_msg = NULL;
 	size_t len = decrypt_data(buf, ilen, get_main_decoder(), &dec_msg);
 	*out = dec_msg;
-	debug(LOG_DEBUG, "dec out len %d ", len);
+	//debug(LOG_DEBUG, "dec out len %d ", len);
 
 	return len;	
 }
@@ -367,7 +352,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 	debug(LOG_DEBUG, "cmd_type is %c data is %s", cmd_type, msg->data);
 	switch(cmd_type) {
 	case TypeReqWorkConn: 
-		debug(LOG_DEBUG, "TypeReqWorkConn cmd");
+		//debug(LOG_DEBUG, "TypeReqWorkConn cmd");
 		if (! is_client_connected()) {
 			start_proxy_services();
 			client_connected(1);
@@ -375,7 +360,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		new_client_connect();
 		break;
 	case TypeNewProxyResp:
-		debug(LOG_DEBUG, "TypeNewProxyResp cmd : %s", msg->data);
+		debug(LOG_DEBUG, "TypeNewProxyResp cmd ");
 		struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
 		if (npr == NULL) {
 			debug(LOG_ERR, "new proxy response buffer unmarshal faild!");
@@ -422,7 +407,7 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 
 		break;
 	case TypePong:
-		debug(LOG_DEBUG, "receive pong from frps");
+		//debug(LOG_DEBUG, "receive pong from frps");
 		pong_time = time(NULL);
 		break;
 	default:
@@ -539,32 +524,24 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		run_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
-
 		tcp_mux_send_win_update_syn(bev, main_ctl->stream_id);	
 		login();
+		
+		keep_control_alive();
 	}
 }
 
 static void 
 keep_control_alive() 
 {
+	debug(LOG_DEBUG, "start keep_control_alive");
 	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, hb_sender_cb, NULL);
 	if ( !main_ctl->ticker_ping) {
 		debug(LOG_ERR, "Ping Ticker init failed!");
 		return;
 	}
+	pong_time = time(NULL);
 	set_ticker_ping_timer(main_ctl->ticker_ping);
-}
-
-static void
-keep_control_tcp_mux_alive()
-{
-	struct common_conf *c_conf = get_common_config();
-	if (!c_conf->tcp_mux) return;
-
-	main_ctl->tcp_mux_ping_event = evtimer_new(main_ctl->connect_base, tcp_mux_hb_sender_cb, NULL);
-	assert(main_ctl->tcp_mux_ping_event);
-	set_tcp_mux_ping_timer(main_ctl->tcp_mux_ping_event);
 }
 
 static void 
@@ -697,7 +674,7 @@ send_enc_msg_frp_server(struct bufferevent *bev,
 	uint8_t *enc_msg = NULL;
 	size_t olen = encrypt_data((uint8_t *)req_msg, msg_len+sizeof(struct msg_hdr), get_main_encoder(), &enc_msg);
 	assert(olen > 0);
-	debug(LOG_DEBUG, "encrypt_data length %d", olen);
+	//debug(LOG_DEBUG, "encrypt_data length %d", olen);
 
 	tcp_mux_send_data(bout, sid, olen);
 
@@ -837,8 +814,9 @@ clear_main_control()
 	if (main_ctl->tcp_mux_ping_event) evtimer_del(main_ctl->tcp_mux_ping_event);
 	clear_all_proxy_client();
 	free_evp_cipher_ctx();
-	is_login = 0;
 	client_connected(0);
+	pong_time = 0;	
+	is_login = 0;
 }
 
 void 
@@ -857,8 +835,6 @@ void
 run_control() 
 {
 	start_base_connect();
-	keep_control_alive();
-	keep_control_tcp_mux_alive();
 }
 
 

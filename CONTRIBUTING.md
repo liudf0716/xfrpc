@@ -27,7 +27,7 @@ If you want to contribute to [xfrpc](https://github.com/liudf0716/xfrpc), please
 6. Commit and push your changes, then make a pull request from Github.
 
     git commit --signoff  
-    git push -f
+    git push 
     
 7. Awaiting review, if accepted, merged!
 

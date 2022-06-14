@@ -143,7 +143,17 @@ local_port = 22
 remote_port = 6128
 ```
 
-+ xfrpc http
++ xfrpc http&https
+
+ compare with supporting tcp, supporting http&https need to add vhost_http_port&vhost_https_port in frps.ini as the following
+ 
+```
+# frps.ini
+[common]
+bind_port = 7000
+vhost_http_port = 80
+vhost_https_port = 443
+```
 
 ```
 # xfrpc_mini.ini 
@@ -151,9 +161,14 @@ remote_port = 6128
 server_addr = x.x.x.x
 server_port = 7000
 
-[web]
+[http]
 type = http
 local_port = 80
+custom_domains = www.example.com
+
+[https]
+type = https
+local_port = 443
 custom_domains = www.example.com
 ```
 

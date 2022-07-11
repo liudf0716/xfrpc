@@ -71,6 +71,16 @@ flag_2_desc(enum tcp_mux_flag flag)
 }
 
 static int
+valid_tcp_mux_flag(uint16_t flag)
+{
+	for(int i = 0; i < sizeof(flag_desc)/sizeof(struct tcp_mux_flag_desc); i++){
+		if (flag == flag_desc[i].flag)
+			return 1;
+	}
+	return 0;
+}
+
+static int
 valid_tcp_mux_type(uint8_t type)
 {
 	if (type >= DATA && type <= GO_AWAY)
@@ -131,7 +141,8 @@ parse_tcp_mux_proto(uint8_t *data, int len, uint32_t *flag, uint32_t *type, uint
 
 	struct tcp_mux_header *hdr = (struct tcp_mux_header *)data;
 	if(hdr->version == proto_version && 
-	   valid_tcp_mux_type(hdr->type)) {
+	   valid_tcp_mux_type(hdr->type) &&
+	   valid_tcp_mux_flag(htons(hdr->flags))) {
 		if (hdr->type == DATA && !valid_tcp_mux_sid(htonl(hdr->stream_id))) {
 			debug(LOG_INFO, "!!!!!type is DATA but cant find stream_id : type [%s] flag [%s] stream_id[%d]", 
 				type_2_desc(hdr->type), flag_2_desc(htons(hdr->flags)), htonl(hdr->stream_id));
@@ -235,10 +246,17 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 	static uint32_t l_dlen = 0;
 	static uint32_t l_type = 0;
 	static uint32_t l_flag = 0;
+	static int8_t only_data = 0;
 	uint8_t *data = buf;
 	while (ilen > 0) {
 		uint32_t type = 0, stream_id = 0, dlen = 0, flag = 0;
-		uint32_t is_tmux = parse_tcp_mux_proto(data, ilen, &flag, &type, &stream_id, &dlen); 
+		uint32_t is_tmux;
+		if (only_data) {
+			is_tmux = 0;
+			only_data = 0;
+		} else {
+			is_tmux = parse_tcp_mux_proto(data, ilen, &flag, &type, &stream_id, &dlen);
+		}	
 		if (!is_tmux) {
 			struct proxy_client *pc = get_proxy_client(l_stream_id);
 			debug(LOG_DEBUG, "receive only %s data : l_stream_id %d l_type %s l_flag %s l_dlen %d ilen %d", 
@@ -295,8 +313,10 @@ handle_tcp_mux_frps_msg(uint8_t *buf, int ilen, void (*fn)(uint8_t *, int, void 
 		switch(type) {
 		case DATA:
 		{
-			if (ilen == 0)
+			if (ilen == 0) {
+				only_data = 1;
 				break;
+			}
 
 			if (!pc || (pc && !pc->local_proxy_bev)) {
 				assert(ilen >= dlen);

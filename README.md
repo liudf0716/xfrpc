@@ -184,9 +184,11 @@ xfrpc -c frpc_mini.ini -f -d 7
 xfrpc -c frpc_mini.ini -d 0
 ```
 
-## Openwrt UI
+## Openwrt luci configure ui
 
 If running xfrpc in openwrt box, [luci-app-xfrpc](https://github.com/liudf0716/luci-app-xfrpc) is a good choice 
+
+luci-app-xfrpc was recruited by [luci project](https://github.com/openwrt/luci) 
 
 ## How to contribute our project
 

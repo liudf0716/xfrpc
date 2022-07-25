@@ -101,12 +101,12 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		struct ftp_pasv *r_fp = new_ftp_pasv();
 		r_fp->code = local_fp->code;
 
-		if (! c_conf->server_ip) {
+		if (! c_conf->server_addr) {
 			debug(LOG_ERR, "error: FTP proxy without server ip!");
 			exit(0);
 		}
 
-		strncpy(r_fp->ftp_server_ip, c_conf->server_ip, IP_LEN);
+		strncpy(r_fp->ftp_server_ip, c_conf->server_addr, IP_LEN);
 		r_fp->ftp_server_port = p->remote_data_port;
 
 		if (r_fp->ftp_server_port <= 0) {

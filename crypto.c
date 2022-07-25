@@ -50,7 +50,7 @@ static void
 free_frp_coder(struct frp_coder *coder)
 {
 	free(coder->salt);
-	free(coder->privilege_token);
+	free(coder->token);
 	free(coder);
 }
 
@@ -91,14 +91,14 @@ get_block_size()
 }
 
 struct frp_coder *
-new_coder(const char *privilege_token, const char *salt)
+new_coder(const char *token, const char *salt)
 {
 	struct frp_coder *enc = calloc(sizeof(struct frp_coder), 1);
 	assert(enc);
 
-	enc->privilege_token = privilege_token ? strdup(privilege_token):strdup("\0");
+	enc->token = token ? strdup(token):strdup("\0");
 	enc->salt = strdup(salt);
-	encrypt_key(enc->privilege_token, strlen(enc->privilege_token), enc->salt, enc->key, block_size);
+	encrypt_key(enc->token, strlen(enc->token), enc->salt, enc->key, block_size);
 	encrypt_iv(enc->iv, block_size);
 	return enc;
 }
@@ -109,7 +109,7 @@ clone_coder(const struct frp_coder *coder)
 	assert(coder);
 	struct frp_coder *enc = calloc(sizeof(struct frp_coder), 1);
 	memcpy(enc, coder, sizeof(*coder));
-	enc->privilege_token = strdup(coder->privilege_token);
+	enc->token = strdup(coder->token);
 	enc->salt 	= strdup(coder->salt);
 
 	return enc;
@@ -273,7 +273,7 @@ D_END:
 void 
 free_encoder(struct frp_coder *encoder) {
 	if (encoder) {
-		SAFE_FREE(encoder->privilege_token);
+		SAFE_FREE(encoder->token);
 		SAFE_FREE(encoder->salt);
 		free(encoder);
 	}

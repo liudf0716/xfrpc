@@ -89,7 +89,6 @@ void init_login()
 	c_login->metas			= NULL;
 	c_login->pool_count 	= 1;
 	c_login->privilege_key 	= NULL;
-	c_login->user			= c_conf->user;
 
 	c_login->logged 		= 0;
 

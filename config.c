@@ -56,32 +56,8 @@ void free_common_config()
 	struct common_conf *c_conf = get_common_config();
 
 	if (c_conf->server_addr) free(c_conf->server_addr);
-	if (c_conf->http_proxy) free(c_conf->http_proxy);
-	if (c_conf->log_file) free(c_conf->log_file);
-	if (c_conf->log_way) free(c_conf->log_way);
-	if (c_conf->log_level) free(c_conf->log_level);
 	if (c_conf->auth_token) free(c_conf->auth_token);
-	if (c_conf->privilege_token) free(c_conf->privilege_token);
-	SAFE_FREE(c_conf->server_ip);
 };
-
-void set_common_server_ip(const char *ip)
-{
-	struct common_conf *c_conf = get_common_config();
-	c_conf->server_ip = strdup(ip);
-	assert(c_conf->server_ip);
-
-	debug(LOG_DEBUG, "server IP address: [%s]", c_conf->server_ip);
-}
-
-void free_base_config(struct base_conf *bconf)
-{
-	if (bconf->name) free(bconf->name);
-	if (bconf->auth_token) free(bconf->auth_token);
-	if (bconf->privilege_token) free(bconf->privilege_token);
-	if (bconf->host_header_rewrite) free(bconf->host_header_rewrite);
-	if (bconf->subdomain) free(bconf->subdomain);
-}
 
 static int is_true(const char *val)
 {
@@ -114,8 +90,9 @@ static void dump_common_conf()
 		return;
 	}
 
-	debug(LOG_DEBUG, "Section[common]: {server_addr:%s, server_port:%d, auth_token:%s, privilege_token:%s, interval:%d, timeout:%d}",
-			 c_conf->server_addr, c_conf->server_port, c_conf->auth_token, c_conf->privilege_token, c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
+	debug(LOG_DEBUG, "Section[common]: {server_addr:%s, server_port:%d, auth_token:%s, interval:%d, timeout:%d}",
+			 c_conf->server_addr, c_conf->server_port, c_conf->auth_token, 
+			 c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
 }
 
 static void dump_proxy_service(const int index, struct proxy_service *ps)
@@ -295,39 +272,10 @@ static int common_handler(void *user, const char *section, const char *name, con
 	#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
 	if (MATCH("common", "server_addr")) {
 		SAFE_FREE(config->server_addr);
-		int addr_len = strlen(value) + 1;
-		config->server_addr = (char *)calloc(1, addr_len);
+		config->server_addr = strdup(value);
 		assert(config->server_addr);
-		if(dns_unified(value, config->server_addr, addr_len)) {
-			debug(LOG_ERR, "error: server_addr [%s] is invalid!", value);
-			exit(0);
-		}
-		if (is_valid_ip_address(value))
-			set_common_server_ip(value);
 	} else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
-	} else if (MATCH("common", "http_proxy")) {
-		SAFE_FREE(config->http_proxy);
-		config->http_proxy = strdup(value);
-		assert(config->http_proxy);
-	} else if (MATCH("common", "log_file")) {
-		SAFE_FREE(config->log_file);
-		config->log_file = strdup(value);
-		assert(config->log_file);
-	} else if (MATCH("common", "log_way")) {
-		SAFE_FREE(config->log_way);
-		config->log_way = strdup(value);
-		assert(config->log_way);
-	} else if (MATCH("common", "log_level")) {
-		SAFE_FREE(config->log_level);
-		config->log_level = strdup(value);
-		assert(config->log_level);
-	} else if (MATCH("common", "log_max_days")) {
-		config->log_max_days = atoi(value);
-	} else if (MATCH("common", "privilege_token")) {
-		SAFE_FREE(config->privilege_token);
-		config->privilege_token = strdup(value);
-		assert(config->privilege_token);
 	} else if (MATCH("common", "heartbeat_interval")) {
 		config->heartbeat_interval = atoi(value);
 	} else if (MATCH("common", "heartbeat_timeout")) {
@@ -336,10 +284,6 @@ static int common_handler(void *user, const char *section, const char *name, con
 		SAFE_FREE(config->auth_token);
 		config->auth_token = strdup(value);
 		assert(config->auth_token);
-	} else if (MATCH("common", "user")) {
-		SAFE_FREE(config->user);
-		config->user = strdup(value);
-		assert(config->user);
 	} else if (MATCH("common", "tcp_mux")) {
 		config->tcp_mux = atoi(value);
 		config->tcp_mux = !!config->tcp_mux;
@@ -355,18 +299,9 @@ static void init_common_conf(struct common_conf *config)
 	config->server_addr			= strdup("0.0.0.0");
 	assert(config->server_addr);
 	config->server_port			= 7000;
-	config->log_file			= strdup("console");
-	assert(config->log_file);
-	config->log_way				= strdup("console");
-	assert(config->log_way);
-	config->log_level			= strdup("info");
-	assert(config->log_level);
-	config->log_max_days		= 3;
 	config->heartbeat_interval 	= 30;
 	config->heartbeat_timeout	= 90;
 	config->tcp_mux				= 1;
-	config->user				= NULL;
-	config->server_ip			= NULL;
 	config->is_router			= 0;
 }
 

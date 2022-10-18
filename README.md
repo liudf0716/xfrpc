@@ -30,9 +30,10 @@ the following table is detail  compatible feature:
 
 ## Architecture
 
-![Architecture](https://github.com/fatedier/frp/blob/dev/doc/pic/architecture.png?raw=true)
 
-Architecture quote from [frp](https://github.com/fatedier/frp) project, replace frpc with xfrpc.
+![Architecture](https://user-images.githubusercontent.com/1182593/196329678-1781b4e9-2355-4863-be3f-e128b31cc82c.png)
+
+
 
 ## Sequence Diagram
 

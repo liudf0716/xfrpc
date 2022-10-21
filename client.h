@@ -44,10 +44,9 @@ struct proxy_client {
 	struct bufferevent	*ctl_bev; // xfrpc proxy <---> frps
 	struct bufferevent 	*local_proxy_bev; // xfrpc proxy <---> local service
 	struct base_conf	*bconf;
-
+	struct tmux_stream 	stream;
+	
 	uint32_t				stream_id;
-	uint32_t				send_window;
-	enum tcp_mux_state		stream_state;
 	int						connected;
 	int 					work_started;
 	struct 	proxy_service 	*ps;
@@ -90,6 +89,8 @@ struct proxy_service {
 void start_xfrp_tunnel(struct proxy_client *client);
 
 void del_proxy_client(struct proxy_client *client);
+
+void del_proxy_client_by_stream_id(uint32_t sid);
 
 struct proxy_client	*get_proxy_client(uint32_t sid);
 

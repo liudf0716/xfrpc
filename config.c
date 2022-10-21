@@ -239,22 +239,17 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		ps->remote_data_port = atoi(value);
 	} else if (MATCH_NAME("http_user")) {
 		ps->http_user = strdup(value);
-		assert(ps->http_user);
 	} else if (MATCH_NAME("http_pwd")) {
 		ps->http_pwd = strdup(value);
-		assert(ps->http_pwd);
 	} else if (MATCH_NAME("subdomain")) {
 		ps->subdomain = strdup(value);
-		assert(ps->http_pwd);
 	} else if (MATCH_NAME("custom_domains")) {
 		ps->custom_domains = strdup(value);
 		assert(ps->custom_domains);
 	} else if (MATCH_NAME("locations")) {
 		ps->locations = strdup(value);
-		assert(ps->locations);
 	} else if (MATCH_NAME("host_header_rewrite")) {
 		ps->host_header_rewrite = strdup(value);
-		assert(ps->host_header_rewrite);
 	} else if (MATCH_NAME("use_encryption")) {
 		ps->use_encryption = TO_BOOL(value);
 	} else if (MATCH_NAME("use_compression")) {

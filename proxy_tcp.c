@@ -47,7 +47,7 @@
 #include "config.h"
 #include "tcpmux.h"
 
-#define	BUF_LEN	4096
+#define	BUF_LEN	2*1024
 
 // read data from local service
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
@@ -66,23 +66,15 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	if (client->send_window == 0) {
-		debug(LOG_DEBUG, "client %d recv len %d exceed send windows: %d", client->stream_id, len, client->send_window);
+	uint8_t *buf = (uint8_t *)malloc(len);
+	assert(buf != NULL);
+	memset(buf, 0, len);
+	uint32_t nr = bufferevent_read(bev, buf, len);
+	assert(nr == len);
+	nr = tmux_stream_write(partner, buf, len, &client->stream);
+	if (nr < len) {
+		debug(LOG_DEBUG, "stream_id [%d] len is %d tmux_stream_write %d data, disable read", client->stream.id, len, nr);
 		bufferevent_disable(bev, EV_READ);
-		return;
-	} else {
-		len = client->send_window>=len?len:client->send_window;
-		client->send_window -= len;
-	}
-
-	tcp_mux_send_data(partner, client->stream_id, len);
-	uint8_t buf[BUF_LEN];
-	while(len > 0) {
-		memset(buf, 0, BUF_LEN);
-		int nread = bufferevent_read(bev, buf, len>BUF_LEN?BUF_LEN:len);
-		assert(nread >= 0);
-		bufferevent_write(partner, buf, nread);
-		len -= nread;
 	}
 }
 

@@ -70,11 +70,10 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] stream_id %d: %s", 
 						client->ps->local_ip, client->ps->local_port, 
 						client->stream_id, strerror(errno));
-		tcp_mux_send_win_update_fin(client->ctl_bev, client->stream_id);
-		client->stream_state = LOCAL_CLOSE;
+		tmux_stream_close(client->ctl_bev, &client->stream);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "client [%d] connected", client->stream_id);
-		//client->stream_state = ESTABLISHED;
+		//client->stream.state = ESTABLISHED;
 		if (client->data_tail_size > 0) {
 			debug(LOG_DEBUG, "send client data ...");
 			send_client_data_tail(client);		
@@ -178,6 +177,7 @@ send_client_data_tail(struct proxy_client *client)
 static void 
 free_proxy_client(struct proxy_client *client)
 {
+	debug(LOG_DEBUG, "free client %d", client->stream_id);
 	if (client->local_proxy_bev) bufferevent_free(client->local_proxy_bev);
 	free(client);
 }
@@ -195,6 +195,15 @@ del_proxy_client(struct proxy_client *client)
 	free_proxy_client(client);
 }
 
+void
+del_proxy_client_by_stream_id(uint32_t sid)
+{
+	del_stream(sid);
+
+	struct proxy_client *pc = get_proxy_client(sid);
+	del_proxy_client(pc);
+}
+
 struct proxy_client *
 get_proxy_client(uint32_t sid)
 {
@@ -209,8 +218,7 @@ new_proxy_client()
 	struct proxy_client *client = calloc(1, sizeof(struct proxy_client));
 	assert(client);
 	client->stream_id   = get_next_session_id();
-	client->send_window	= 200*1024;
-	client->stream_state = INIT;
+	init_tmux_stream(&client->stream, client->stream_id, INIT);
 	HASH_ADD_INT(all_pc, stream_id, client);
 	
 	return client;

@@ -44,7 +44,7 @@ struct control {
 
 	struct event		*tcp_mux_ping_event;	
 	uint32_t			tcp_mux_ping_id;	
-	uint32_t			stream_id;	
+	struct tmux_stream	stream;
 };
 
 void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
@@ -67,13 +67,13 @@ void send_msg_frp_server(struct bufferevent *bev,
 			const enum msg_type type, 
 			const char *msg, 
 			const size_t msg_len, 
-			uint32_t sid);
+			struct tmux_stream *stream);
 
 void send_enc_msg_frp_server(struct bufferevent *bev, 
 			const enum msg_type type, 
 			const char *msg, 
 			const size_t msg_len, 
-			uint32_t sid);
+			struct tmux_stream *stream);
 
 void control_process(struct proxy_client *client);
 

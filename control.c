@@ -52,11 +52,11 @@
 #include "tcpmux.h"
 
 static struct control *main_ctl;
-static int clients_conn_signel = 0;
+static int client_connected = 0;
 static int is_login = 0;
 static time_t pong_time = 0;
 
-static void sync_new_work_connection(struct bufferevent *bev, uint32_t sid);
+static void new_work_connection(struct bufferevent *bev, struct tmux_stream *stream);
 static void recv_cb(struct bufferevent *bev, void *ctx);
 static void clear_main_control();
 static void start_base_connect();
@@ -65,25 +65,25 @@ static void keep_control_alive();
 static int 
 is_client_connected()
 {
-	return clients_conn_signel;
+	return client_connected;
 }
 
 static int 
-client_connected(int is_connected)
+set_client_status(int is_connected)
 {
 	if (is_connected)
-		clients_conn_signel = 1;
+		client_connected = 1;
 	else
-		clients_conn_signel = 0;
+		client_connected = 0;
 
-	return clients_conn_signel;
+	return client_connected;
 }
 
 static int 
 set_client_work_start(struct proxy_client *client, int is_start_work)
 {
+	assert(client->ps);
 	if (is_start_work) {
-		assert(client->ps);
 		client->work_started = 1;
 	}else
 		client->work_started = 0;
@@ -110,8 +110,8 @@ client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
 	} else if (what & BEV_EVENT_CONNECTED) {
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
-		sync_new_work_connection(bev, 0);
-		client_connected(1);
+		new_work_connection(bev, &main_ctl->stream);
+		set_client_status(1);
 		debug(LOG_INFO, "proxy service start");
 	}
 }
@@ -127,7 +127,8 @@ new_client_connect()
 	if (c_conf->tcp_mux) {
 		debug(LOG_DEBUG, "new client through tcp mux: %d", client->stream_id);
 		client->ctl_bev 	= main_ctl->connect_bev;
-		sync_new_work_connection(client->ctl_bev, client->stream_id);
+		send_window_update(client->ctl_bev, &client->stream, 0);
+		new_work_connection(client->ctl_bev, &client->stream);
 		return;
 	}
 
@@ -177,11 +178,11 @@ ping()
 	}
 	
 	char *ping_msg = "{}";
-	send_enc_msg_frp_server(bout, TypePing, ping_msg, strlen(ping_msg), main_ctl->stream_id);
+	send_enc_msg_frp_server(bout, TypePing, ping_msg, strlen(ping_msg), &main_ctl->stream);
 }
 
 static void 
-sync_new_work_connection(struct bufferevent *bev, uint32_t sid)
+new_work_connection(struct bufferevent *bev, struct tmux_stream *stream)
 {
 	assert(bev);
 	
@@ -199,10 +200,8 @@ sync_new_work_connection(struct bufferevent *bev, uint32_t sid)
 		debug(LOG_ERR, "new work connection request run_id marshal failed!");
 		return;
 	}
-	
-	tcp_mux_send_win_update_syn(bev, sid);
 
-	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, sid);
+	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, stream);
 
 	SAFE_FREE(new_work_conn_request_message);
 	SAFE_FREE(work_c);
@@ -237,7 +236,7 @@ static void
 hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
 	if (is_client_connected()) {
-		debug(LOG_DEBUG, "ping frps");
+		//debug(LOG_DEBUG, "ping frps");
 		ping(NULL);
 	}
 
@@ -312,7 +311,6 @@ handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 		init_main_decoder(buf);
 		buf += get_block_size();
 		ilen -= get_block_size();
-		debug(LOG_DEBUG, "first recv stream message, init decoder iv succeed! %d", ilen);
 		if (!ilen) {
 			// recv only iv
 			debug(LOG_DEBUG, "recv eas1238 iv data");
@@ -323,7 +321,6 @@ handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 	uint8_t *dec_msg = NULL;
 	size_t len = decrypt_data(buf, ilen, get_main_decoder(), &dec_msg);
 	*out = dec_msg;
-	//debug(LOG_DEBUG, "dec out len %d ", len);
 
 	return len;	
 }
@@ -336,10 +333,10 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 	const uint8_t *enc_msg = buf;
 
 	if (!ctx) {	
-		debug(LOG_DEBUG, "main control message");
+		//debug(LOG_DEBUG, "main control message");
 		handle_enc_msg(enc_msg, len, &frps_cmd);
 	} else {
-		debug(LOG_DEBUG, "worker message");
+		//debug(LOG_DEBUG, "worker message");
 		frps_cmd = (uint8_t *)buf;
 	}
 
@@ -349,18 +346,18 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 	struct msg_hdr *msg = (struct msg_hdr *)frps_cmd;
 
 	cmd_type = msg->type;
-	debug(LOG_DEBUG, "cmd_type is %c data is %s", cmd_type, msg->data);
 	switch(cmd_type) {
 	case TypeReqWorkConn: 
-		//debug(LOG_DEBUG, "TypeReqWorkConn cmd");
+	{
 		if (! is_client_connected()) {
 			start_proxy_services();
-			client_connected(1);
+			set_client_status(1);
 		}
 		new_client_connect();
 		break;
+	}
 	case TypeNewProxyResp:
-		debug(LOG_DEBUG, "TypeNewProxyResp cmd ");
+	{
 		struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
 		if (npr == NULL) {
 			debug(LOG_ERR, "new proxy response buffer unmarshal faild!");
@@ -370,8 +367,9 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		proxy_service_resp_raw(npr);
 		SAFE_FREE(npr);
 		break;
+	}
 	case TypeStartWorkConn:
-		debug(LOG_DEBUG, "TypeStartWorkConn cmd");
+	{
 		struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data); 
 		if (! sr) {
 			debug(LOG_ERR, 
@@ -406,8 +404,8 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		set_client_work_start(client, 1);
 
 		break;
+	}
 	case TypePong:
-		//debug(LOG_DEBUG, "receive pong from frps");
 		pong_time = time(NULL);
 		break;
 	default:
@@ -457,7 +455,7 @@ handle_login_response(const uint8_t *buf, int len)
 	assert(nret > 0);
 	// start proxy services must first send
 	start_proxy_services();
-	client_connected(1);
+	set_client_status(1);
 	debug(LOG_DEBUG, "TypeReqWorkConn cmd, msg :%s", &frps_cmd[8]);
 	assert (frps_cmd[0] == TypeReqWorkConn);
 	new_client_connect();
@@ -476,6 +474,8 @@ handle_frps_msg(uint8_t *buf, int len, void *ctx)
 	}	
 }
 
+static struct tmux_stream abandon_stream;
+
 // ctx: if recv_cb was called by common control, ctx == NULL
 //		else ctx == client struct
 static void 
@@ -484,22 +484,109 @@ recv_cb(struct bufferevent *bev, void *ctx)
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
 	if (len <= 0) {
-		return;
+			return;
 	}
-
-	uint8_t *buf = calloc(len+1, 1);
-	assert(buf);
-	evbuffer_remove(input, buf, len);
-
-	struct common_conf 	*c_conf = get_common_config();
 	
+	struct common_conf 	*c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
-		handle_tcp_mux_frps_msg(buf, len, handle_frps_msg);
-	} else {
-		handle_frps_msg(buf, len, ctx);
-	}
+		static struct tcp_mux_header tmux_hdr;
+		static uint32_t stream_len = 0;
+		while (len > 0) {
+				struct tmux_stream *cur = get_cur_stream();
+				size_t nr = 0;
+				if (!cur) {
+					memset(&tmux_hdr, 0, sizeof(tmux_hdr));
+					uint8_t *data = (uint8_t *)&tmux_hdr;
+					if (len < sizeof(tmux_hdr)) {
+						debug(LOG_INFO, "len [%d] < sizeof tmux_hdr", len);
+						break;
+					} 
+					nr = bufferevent_read(bev, data, sizeof(tmux_hdr));
+					assert(nr == sizeof(tmux_hdr));
+					assert(validate_tcp_mux_protocol(&tmux_hdr) > 0);
+					len -= nr;
+					if (tmux_hdr.type == DATA) {
+						uint32_t stream_id = ntohl(tmux_hdr.stream_id);
+						stream_len = ntohl(tmux_hdr.length);
+						cur = get_stream_by_id(stream_id);
+						if (!cur) {
+							debug(LOG_INFO, "cur is NULL stream_id is %d, stream_len is %d len is %d", 
+										stream_id, stream_len, len);
+							if (stream_len > 0)
+								cur = &abandon_stream;
+							else
+								continue;
+						}
 
-	SAFE_FREE(buf);
+						if (len == 0) {
+							set_cur_stream(cur);
+							break;
+						}
+						if (len >= stream_len) {
+							nr = tmux_stream_read(bev, cur, stream_len);
+							assert(nr == stream_len);
+							len -= stream_len;
+						} else {
+							nr = tmux_stream_read(bev, cur, len);
+							stream_len -= len;
+							assert(nr == len);
+							set_cur_stream(cur);
+							len -= nr;
+							break;	
+						} 
+					}
+				} else {
+					assert(tmux_hdr.type == DATA);
+					if (len >= stream_len ) {
+						nr = tmux_stream_read(bev, cur, stream_len);
+						assert(nr == stream_len);
+						len -= stream_len;
+					} else {
+						nr = tmux_stream_read(bev, cur, len);
+						stream_len -= len;
+						assert(nr == len);
+						len -= nr;
+						break;
+					}	
+				}
+				
+				if (cur == &abandon_stream) {
+					debug(LOG_INFO, "abandon stream data ...");
+					memset(cur , 0, sizeof(abandon_stream));
+					set_cur_stream(NULL);
+					continue;
+				}
+
+				switch(tmux_hdr.type) {
+				case DATA:
+				case WINDOW_UPDATE:
+				{
+					handle_tcp_mux_stream(&tmux_hdr, handle_frps_msg);
+					break;
+				}
+				case PING:
+					handle_tcp_mux_ping(&tmux_hdr);
+					break;
+				case GO_AWAY:
+					handle_tcp_mux_go_away(&tmux_hdr);
+					break;
+				default:
+					debug(LOG_ERR, "impossible here!!!!");
+					exit(-1);
+				}
+
+				set_cur_stream(NULL);
+		}
+	} else {	
+		uint8_t *buf = calloc(len, 1);
+		assert(buf);
+		evbuffer_remove(input, buf, len);
+
+		handle_frps_msg(buf, len, ctx);
+		SAFE_FREE(buf);
+	}
+		
+
 	return;
 }
 
@@ -520,11 +607,13 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 				c_conf->server_addr, 
 				c_conf->server_port,
 				strerror(errno));
+		assert(0);
+		reset_session_id();
 		clear_main_control();
 		run_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
-		tcp_mux_send_win_update_syn(bev, main_ctl->stream_id);	
+		send_window_update(bev, &main_ctl->stream, 0);
 		login();
 		
 		keep_control_alive();
@@ -576,7 +665,7 @@ login()
 		exit(0);
 	}
 	
-	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, 1);
+	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, &main_ctl->stream);
 	SAFE_FREE(lg_msg);
 }
 
@@ -585,7 +674,7 @@ send_msg_frp_server(struct bufferevent *bev,
 			 const enum msg_type type, 
 			 const char *msg, 
 			 const size_t msg_len, 
-			 uint32_t sid)
+			 struct tmux_stream *stream)
 {
 	struct bufferevent *bout = NULL;
 	if (bev) {
@@ -606,9 +695,11 @@ send_msg_frp_server(struct bufferevent *bev,
 	req_msg->length = msg_hton((uint64_t)msg_len);
 	memcpy(req_msg->data, msg, msg_len);
 	
-	tcp_mux_send_data(bout, sid, len);
-
-	bufferevent_write(bout, (uint8_t *)req_msg, len);
+	struct common_conf *c_conf = get_common_config();
+	if (c_conf->tcp_mux)
+		tmux_stream_write(bout, (uint8_t *)req_msg, len, stream);
+	else
+		bufferevent_write(bout, (uint8_t *)req_msg, len);
 	
 	free(req_msg);
 }
@@ -618,7 +709,7 @@ send_enc_msg_frp_server(struct bufferevent *bev,
 			 const enum msg_type type, 
 			 const char *msg, 
 			 const size_t msg_len, 
-			 uint32_t sid)
+			 struct tmux_stream *stream)
 {
 	struct bufferevent *bout = NULL;
 	if (bev) {
@@ -628,31 +719,28 @@ send_enc_msg_frp_server(struct bufferevent *bev,
 	}
 	assert(bout);
 
-	debug(LOG_DEBUG, "send enc msg ----> [%c: %s]", type, msg);
-	
 	struct msg_hdr *req_msg = calloc(msg_len+sizeof(struct msg_hdr), 1);
 	assert(req_msg);
 	req_msg->type = type;
 	req_msg->length = msg_hton((uint64_t)msg_len);
 	memcpy(req_msg->data, msg, msg_len);
 
+	struct common_conf *c_conf = get_common_config();
 	if (get_main_encoder() == NULL) {
-		debug(LOG_DEBUG, "init_main_encoder .......");
-		
-		tcp_mux_send_data(bout, sid, 16);
-
 		struct frp_coder *coder = init_main_encoder();
-		bufferevent_write(bout, coder->iv, 16);
+		if (c_conf->tcp_mux) 
+			tmux_stream_write(bout, coder->iv, 16, stream);
+		else
+			bufferevent_write(bout, coder->iv, 16);
 	}
 
 	uint8_t *enc_msg = NULL;
 	size_t olen = encrypt_data((uint8_t *)req_msg, msg_len+sizeof(struct msg_hdr), get_main_encoder(), &enc_msg);
 	assert(olen > 0);
-	//debug(LOG_DEBUG, "encrypt_data length %d", olen);
-
-	tcp_mux_send_data(bout, sid, olen);
-
-	bufferevent_write(bout, enc_msg, olen);
+	if (c_conf->tcp_mux)
+		tmux_stream_write(bout, enc_msg, olen, stream);
+	else
+		bufferevent_write(bout, enc_msg, olen);
 
 	free(enc_msg);	
 	free(req_msg);
@@ -700,7 +788,7 @@ send_new_proxy(struct proxy_service *ps)
 
 	debug(LOG_DEBUG, "control proxy client: [Type %d : proxy_name %s : msg_len %d]", TypeNewProxy, ps->proxy_name, len);
 
-	send_enc_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, main_ctl->stream_id);
+	send_enc_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, &main_ctl->stream);
 	SAFE_FREE(new_proxy_msg);
 }
 
@@ -725,9 +813,10 @@ init_main_control()
 	}
 	main_ctl->connect_base = base;
 	
-	if (c_conf->tcp_mux)
-		main_ctl->stream_id = get_next_session_id();
-	
+	if (c_conf->tcp_mux) {
+		init_tmux_stream(&main_ctl->stream, get_next_session_id(), INIT);
+	}
+
 	// if server_addr is ip, done control init.
 	if (is_valid_ip_address((const char *)c_conf->server_addr))
 		return;
@@ -765,7 +854,7 @@ clear_main_control()
 	if (main_ctl->tcp_mux_ping_event) evtimer_del(main_ctl->tcp_mux_ping_event);
 	clear_all_proxy_client();
 	free_evp_cipher_ctx();
-	client_connected(0);
+	set_client_status(0);
 	pong_time = 0;	
 	is_login = 0;
 }

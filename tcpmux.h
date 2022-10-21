@@ -29,6 +29,22 @@
 
 #include "uthash.h"
 
+#define	MAX_STREAM_WINDOW_SIZE	256*1024
+#define	RBUF_SIZE	32*1024
+
+struct ring_buffer {
+	uint32_t cur;
+	uint32_t end;
+	uint32_t sz;
+	uint8_t data[RBUF_SIZE];
+};
+
+enum go_away_type {
+	NORMAL,
+	PROTO_ERR,
+	INTERNAL_ERR,
+};
+
 enum tcp_mux_type {
 	DATA,
 	WINDOW_UPDATE,
@@ -73,20 +89,65 @@ enum tcp_mux_state {
 	RESET
 };
 
+struct tmux_stream {
+	uint32_t	id;
+	uint32_t	recv_window;
+	uint32_t	send_window;	
+	enum tcp_mux_state state;	
+	struct ring_buffer	tx_ring;
+	struct ring_buffer 	rx_ring;
+
+	// private arguments
+	UT_hash_handle hh;
+};
+
+typedef void (*handle_data_fn_t)(uint8_t *, int, void *);
+
+void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_state state);
+
+int validate_tcp_mux_protocol(struct tcp_mux_header *tmux_hdr);
+
+void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, uint32_t length);
+
 void tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id);
 
 void tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id, uint32_t delta);
 
 void tcp_mux_send_win_update_fin(struct bufferevent *bout, uint32_t stream_id);
 
-void tcp_mux_send_data(struct bufferevent *bout, uint32_t stream_id, uint32_t length);
+void tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id);
+
+void tcp_mux_send_data(struct bufferevent *bout, uint16_t flags, uint32_t stream_id, uint32_t length);
 
 void tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id);
 
 uint32_t get_next_session_id();
 
-void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags, uint32_t stream_id, uint32_t length, struct tcp_mux_header *tmux_hdr);
+void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags, 
+				uint32_t stream_id, uint32_t length, struct tcp_mux_header *tmux_hdr);
 
-void handle_tcp_mux_frps_msg(uint8_t *data, int len, void (*fn)(uint8_t *, int, void *));
+int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr, handle_data_fn_t fn);
+
+void handle_tcp_mux_ping(struct tcp_mux_header *tmux_hdr);
+
+void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr);
+
+uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data, uint32_t length, struct tmux_stream *stream);
+
+uint32_t tmux_stream_read(struct bufferevent *bev, struct tmux_stream *stream, uint32_t len);
+
+void reset_session_id();
+
+struct tmux_stream *get_cur_stream();
+
+void set_cur_stream(struct tmux_stream *stream);
+
+void add_stream(struct tmux_stream *stream);
+
+void del_stream(uint32_t stream_id);
+
+struct tmux_stream* get_stream_by_id(uint32_t id);
+
+void tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);
 
 #endif

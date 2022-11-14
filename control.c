@@ -607,7 +607,6 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 				c_conf->server_addr, 
 				c_conf->server_port,
 				strerror(errno));
-		assert(0);
 		reset_session_id();
 		clear_main_control();
 		run_control();

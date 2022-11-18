@@ -80,7 +80,7 @@ sequenceDiagram
   
 ```
 
-## Compile on Ubuntu 20.04.3 LTS
+## Quickstart for Ubuntu 20.04.3 LTS
 
 xfrp need [libevent](https://github.com/libevent/libevent) [openssl-dev](https://github.com/openssl/openssl) and [json-c](https://github.com/json-c/json-c) support
 
@@ -93,8 +93,10 @@ sudo apt-get install -y libjson-c-dev
 sudo apt-get install -y libevent-dev
 ```
 
+Fork xfrpc on GitHub
+
 ```shell
-git clone https://github.com/liudf0716/xfrpc.git
+git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git
 cd xfrp
 mkdir build
 cmake ..

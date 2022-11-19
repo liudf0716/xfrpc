@@ -18,6 +18,7 @@ the following table is detail  compatible feature:
 | tcpmux  | Yes |	 Yes  |
 | http  | Yes |	 Yes  |
 | https  | Yes |  Yes  |
+| custom_domains | Yes | Yes |
 | subdomain | Yes | Yes |
 | use_encryption | No | Yes |
 | use_compression | No | Yes |

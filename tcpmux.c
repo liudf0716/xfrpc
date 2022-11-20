@@ -41,8 +41,8 @@ static uint32_t g_session_id = 1;
 static struct tmux_stream *cur_stream = NULL;
 static struct tmux_stream *all_stream;
 
-static uint32_t ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
-static uint32_t ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
+static uint32_t rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
+static uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
 
 void
 add_stream(struct tmux_stream *stream)
@@ -300,7 +300,7 @@ send_window_update(struct bufferevent *bout, struct tmux_stream *stream, uint32_
 }
 
 static int
-ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len)
+rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len)
 {
 	assert(ring->sz >= len);
 	assert(data != NULL);
@@ -335,11 +335,11 @@ process_data(struct tmux_stream *stream, uint32_t length, uint16_t flags,
 	struct proxy_client *pc = (struct proxy_client *)param;
 	if (!pc || (pc && !pc->local_proxy_bev)) {
 		uint8_t *data = (uint8_t *)calloc(length, 1);
-		ring_buffer_pop(&stream->rx_ring, data, length);
+		rx_ring_buffer_pop(&stream->rx_ring, data, length);
 		fn(data, length, pc);
 		free(data);
 	} else {
-		ring_buffer_write(pc->local_proxy_bev, &stream->rx_ring, length);
+		tx_ring_buffer_write(pc->local_proxy_bev, &stream->rx_ring, length);
 	}
 	
 	struct bufferevent *bout = get_main_control()->connect_bev;
@@ -412,8 +412,15 @@ uint32_t
 tmux_stream_read(struct bufferevent *bev, struct tmux_stream *stream, uint32_t len)
 {
 	assert(stream != NULL);
+	if (stream->state != ESTABLISHED) {
+		debug(LOG_WARNING, "stream %d state is %d : not ESTABLISHED, discard its data", stream->id, stream->state);
+		uint8_t *data = (uint8_t *)malloc(len);
+		bufferevent_read(bev, data, len);
+		free(data);
+		return len;
+	}
 
-	return ring_buffer_read(bev, &stream->rx_ring, len);
+	return rx_ring_buffer_read(bev, &stream->rx_ring, len);
 }
 
 int
@@ -431,6 +438,7 @@ handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr, handle_data_fn_t fn)
 	}
 
 	struct tmux_stream *stream = get_stream_by_id(stream_id);
+	assert(stream != NULL);
 	struct proxy_client *pc = get_proxy_client(stream_id);
 	assert(stream != NULL);	
 	if (tmux_hdr->type == WINDOW_UPDATE) {
@@ -454,14 +462,14 @@ handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr, handle_data_fn_t fn)
 }
 
 static int
-ring_buffer_append(struct ring_buffer *ring, uint8_t *data, uint32_t len)
+tx_ring_buffer_append(struct ring_buffer *ring, uint8_t *data, uint32_t len)
 {
-	uint32_t left = RBUF_SIZE - ring->sz;	
+	uint32_t left = WBUF_SIZE - ring->sz;	
 	assert(left >= len);
 	int i = 0;
 	for (; i < len; i++) {
 		ring->data[ring->end++] = data[i];
-		if (ring->end == RBUF_SIZE) ring->end = 0;
+		if (ring->end == WBUF_SIZE) ring->end = 0;
 		ring->sz++;
 		if (ring->cur == ring->end) {
 			break;
@@ -472,7 +480,7 @@ ring_buffer_append(struct ring_buffer *ring, uint8_t *data, uint32_t len)
 }
 
 static uint32_t
-ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len)
+rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len)
 {
 	if (ring->sz == RBUF_SIZE) {
 		debug(LOG_ERR, "ring buffer is full");
@@ -499,7 +507,7 @@ ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len
 }
 
 static uint32_t
-ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len)
+tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len)
 {
 	if (ring->sz == 0) {
 		debug(LOG_ERR, "ring buffer is empty");
@@ -515,7 +523,7 @@ ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t le
 		bufferevent_write(bev, &ring->data[ring->cur++], 1);
 		len--;
 		ring->sz--;;
-		if (ring->cur == RBUF_SIZE) ring->cur = 0;
+		if (ring->cur == WBUF_SIZE) ring->cur = 0;
 		if (ring->cur == ring->end) {
 			assert(ring->sz == 0);
 			break;
@@ -539,10 +547,10 @@ tmux_stream_write(struct bufferevent *bev, uint8_t *data, uint32_t length, struc
 	}
 	
 	struct ring_buffer *tx_ring = &stream->tx_ring;	
-	uint32_t left = RBUF_SIZE - tx_ring->sz;	
+	uint32_t left = WBUF_SIZE - tx_ring->sz;	
 	if (stream->send_window == 0) {
 		debug(LOG_INFO, "stream %d send_window is zero, length %d left %d", stream->id, length, left);
-		ring_buffer_append(tx_ring, data, length);
+		tx_ring_buffer_append(tx_ring, data, length);
 		return 0;
 	}
 
@@ -555,21 +563,21 @@ tmux_stream_write(struct bufferevent *bev, uint8_t *data, uint32_t length, struc
 		debug(LOG_INFO, " send_window %u less than tx_ring size %u", stream->send_window, tx_ring->sz);
 		max = stream->send_window;
 		tcp_mux_send_data(bout, flags, stream->id, max);
-		ring_buffer_write(bev, tx_ring, max);
-		ring_buffer_append(tx_ring, data, length);
+		tx_ring_buffer_write(bev, tx_ring, max);
+		tx_ring_buffer_append(tx_ring, data, length);
 	} else if (stream->send_window < tx_ring->sz + length) {
 		debug(LOG_INFO, " send_window %u less than  %u", stream->send_window, tx_ring->sz+length);
 		max = stream->send_window;
 		tcp_mux_send_data(bout, flags, stream->id, max);
 		if (tx_ring->sz > 0)
-			ring_buffer_write(bev, tx_ring, tx_ring->sz);
+			tx_ring_buffer_write(bev, tx_ring, tx_ring->sz);
 		bufferevent_write(bev, data, max - tx_ring->sz);
-		ring_buffer_append(tx_ring, data + max - tx_ring->sz, length + tx_ring->sz - max);
+		tx_ring_buffer_append(tx_ring, data + max - tx_ring->sz, length + tx_ring->sz - max);
 	} else {
 		max = tx_ring->sz + length;
 		tcp_mux_send_data(bout, flags, stream->id, max);
 		if (tx_ring->sz > 0)
-			ring_buffer_write(bev, tx_ring, tx_ring->sz);
+			tx_ring_buffer_write(bev, tx_ring, tx_ring->sz);
 		bufferevent_write(bev, data, length);
 	}
 	
@@ -581,7 +589,7 @@ tmux_stream_write(struct bufferevent *bev, uint8_t *data, uint32_t length, struc
 void
 tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream)
 {
-	int closed = 0;
+	uint8_t flag = 0;
 	switch(stream->state) {
 	case SYN_SEND:
 	case SYN_RECEIVED:
@@ -590,8 +598,8 @@ tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream)
 		break;
 	case LOCAL_CLOSE:
 	case REMOTE_CLOSE:
+		flag = 1;
 		stream->state = CLOSED;
-		closed = 1;
 	case CLOSED:
 	case RESET:
 	default:
@@ -601,10 +609,10 @@ tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream)
 	uint16_t flags = get_send_flags(stream);
 	flags |= FIN;
 	tcp_mux_send_win_update(bout, flags, stream->id, 0);	
-	if (closed) {
-		debug(LOG_DEBUG, "del proxy client %d", stream->id);
-		del_proxy_client_by_stream_id(stream->id);
-	}
+	if (!flag) return;
+
+	debug(LOG_DEBUG, "del proxy client %d", stream->id);
+	del_proxy_client_by_stream_id(stream->id);
 }
 
 

@@ -88,8 +88,6 @@ struct proxy_service {
 // if client has data-tail(not NULL), client value will be changed 
 void start_xfrp_tunnel(struct proxy_client *client);
 
-void del_proxy_client(struct proxy_client *client);
-
 void del_proxy_client_by_stream_id(uint32_t sid);
 
 struct proxy_client	*get_proxy_client(uint32_t sid);

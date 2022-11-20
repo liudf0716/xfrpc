@@ -73,7 +73,6 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 		tmux_stream_close(client->ctl_bev, &client->stream);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "client [%d] connected", client->stream_id);
-		//client->stream.state = ESTABLISHED;
 		if (client->data_tail_size > 0) {
 			debug(LOG_DEBUG, "send client data ...");
 			send_client_data_tail(client);		
@@ -124,7 +123,7 @@ start_xfrp_tunnel(struct proxy_client *client)
 	client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
 	if ( !client->local_proxy_bev ) {
 		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
-		del_proxy_client(client);
+		del_proxy_client_by_stream_id(client->stream_id);
 		return;
 	}
 	
@@ -182,7 +181,7 @@ free_proxy_client(struct proxy_client *client)
 	free(client);
 }
 
-void 
+static void 
 del_proxy_client(struct proxy_client *client)
 {
 	if (!client || !all_pc ) {

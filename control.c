@@ -106,7 +106,7 @@ client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
 		}
 		debug(LOG_ERR, "Proxy connect server [%s:%d] error: %s", c_conf->server_addr, c_conf->server_port, strerror(errno));
 		bufferevent_free(bev);
-		del_proxy_client(client);
+		del_proxy_client_by_stream_id(client->stream_id);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 		bufferevent_enable(bev, EV_READ|EV_WRITE);

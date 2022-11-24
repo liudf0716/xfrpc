@@ -71,13 +71,15 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 						client->ps->local_ip, client->ps->local_port, 
 						client->stream_id, strerror(errno));
 		tmux_stream_close(client->ctl_bev, &client->stream);
+		bufferevent_free(bev);
+		client->local_proxy_bev = NULL;
 	} else if (what & BEV_EVENT_CONNECTED) {
-		debug(LOG_DEBUG, "client [%d] connected", client->stream_id);
+		debug(LOG_DEBUG, "what [%d] client [%d] connected : %s", what, client->stream_id, strerror(errno));
 		if (client->data_tail_size > 0) {
 			debug(LOG_DEBUG, "send client data ...");
 			send_client_data_tail(client);		
 		}
-	  }
+	}
 }
 
 int 
@@ -130,7 +132,7 @@ start_xfrp_tunnel(struct proxy_client *client)
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
 		  c_conf->server_addr, 
 		  ps->remote_port, 
-		  ps->local_ip ? ps->local_ip:"::1",
+		  ps->local_ip ? ps->local_ip:"127.0.0.1",
 		  ps->local_port);
 
 	bufferevent_data_cb proxy_s2c_recv, proxy_c2s_recv;

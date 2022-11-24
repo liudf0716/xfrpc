@@ -218,7 +218,6 @@ connect_server(struct event_base *base, const char *name, const int port)
 		bufferevent_free(bev);
 		return NULL;
 	}
-	
 	return bev;
 }
 

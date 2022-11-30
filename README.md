@@ -94,7 +94,7 @@ sudo apt-get install -y libjson-c-dev
 sudo apt-get install -y libevent-dev
 ```
 
-Fork xfrpc on GitHub
+**Fork** xfrpc on GitHub
 
 ```shell
 git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git

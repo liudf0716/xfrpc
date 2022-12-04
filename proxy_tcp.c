@@ -76,6 +76,7 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		debug(LOG_DEBUG, "stream_id [%d] len is %d tmux_stream_write %d data, disable read", client->stream.id, len, nr);
 		bufferevent_disable(bev, EV_READ);
 	}
+	free(buf);
 }
 
 // read data from frps

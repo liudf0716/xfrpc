@@ -31,7 +31,7 @@
 
 #define	MAX_STREAM_WINDOW_SIZE	256*1024
 #define	RBUF_SIZE	32*1024
-#define	WBUF_SIZE	4*1024
+#define	WBUF_SIZE	32*1024
 
 
 struct ring_buffer {
@@ -150,6 +150,6 @@ void del_stream(uint32_t stream_id);
 
 struct tmux_stream* get_stream_by_id(uint32_t id);
 
-void tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);
+int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);
 
 #endif

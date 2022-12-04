@@ -70,9 +70,10 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] stream_id %d: %s", 
 						client->ps->local_ip, client->ps->local_port, 
 						client->stream_id, strerror(errno));
-		tmux_stream_close(client->ctl_bev, &client->stream);
-		bufferevent_free(bev);
-		client->local_proxy_bev = NULL;
+		if (tmux_stream_close(client->ctl_bev, &client->stream)) {
+			bufferevent_free(bev);
+			client->local_proxy_bev = NULL;
+		}
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "what [%d] client [%d] connected : %s", what, client->stream_id, strerror(errno));
 		if (client->data_tail_size > 0) {

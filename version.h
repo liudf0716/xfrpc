@@ -1,7 +1,7 @@
 #ifndef _VERSION_H_
 #define _VERSION_H_
 
-#define VERSION   "1.11.587"
+#define VERSION   "1.12.595"
 #define PROTOCOL_VERESION "0.43.0"
 #define CLIENT_V 1
 

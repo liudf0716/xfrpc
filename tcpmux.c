@@ -351,10 +351,14 @@ process_data(struct tmux_stream *stream, uint32_t length, uint16_t flags,
 static int
 incr_send_window(struct bufferevent *bev, struct tcp_mux_header *tmux_hdr, uint16_t flags, struct tmux_stream *stream)
 {
+    if(!stream){
+        return 0;
+    }
+
 	if (!process_flags(flags, stream))
 		return 0;
-	
 	uint32_t length = ntohl(tmux_hdr->length);
+
 	if (stream->send_window == 0) bufferevent_enable(bev, EV_READ);
 	stream->send_window += length;
 	//debug(LOG_DEBUG, "incr_send_window : stream_id %d length %d send_window %d", 
@@ -434,9 +438,17 @@ handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr, handle_data_fn_t fn)
 	}
 
 	struct tmux_stream *stream = get_stream_by_id(stream_id);
-	assert(stream != NULL);
+
+    if(!stream){
+        return 0;
+    }
+
 	struct proxy_client *pc = get_proxy_client(stream_id);
-	assert(stream != NULL);	
+
+    if(!stream){
+        return 0;
+    }
+
 	if (tmux_hdr->type == WINDOW_UPDATE) {
 		struct bufferevent *bev = pc?pc->local_proxy_bev: get_main_control()->connect_bev;
 		if (!incr_send_window(bev, tmux_hdr, flags, stream)) {

@@ -445,10 +445,6 @@ handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr, handle_data_fn_t fn)
 
 	struct proxy_client *pc = get_proxy_client(stream_id);
 
-    if(!stream){
-        return 0;
-    }
-
 	if (tmux_hdr->type == WINDOW_UPDATE) {
 		struct bufferevent *bev = pc?pc->local_proxy_bev: get_main_control()->connect_bev;
 		if (!incr_send_window(bev, tmux_hdr, flags, stream)) {

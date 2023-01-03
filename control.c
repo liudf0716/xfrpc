@@ -246,6 +246,8 @@ hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	int interval = current_time - pong_time;
 	if (pong_time && interval > c_conf->heartbeat_timeout) {
 		debug(LOG_INFO, " interval [%d] greater than heartbeat_timeout [%d]", interval, c_conf->heartbeat_timeout);
+
+		reset_session_id();
 		clear_main_control();
 		run_control();
 		return;
@@ -485,7 +487,7 @@ recv_cb(struct bufferevent *bev, void *ctx)
 	if (len <= 0) {
 			return;
 	}
-	
+
 	struct common_conf 	*c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
 		static struct tcp_mux_header tmux_hdr;
@@ -610,6 +612,7 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 		clear_main_control();
 		run_control();
 	} else if (what & BEV_EVENT_CONNECTED) {
+		debug(LOG_DEBUG, "xfrp server connected");
 		retry_times = 0;
 		send_window_update(bev, &main_ctl->stream, 0);
 		login();
@@ -855,6 +858,8 @@ clear_main_control()
 	set_client_status(0);
 	pong_time = 0;	
 	is_login = 0;
+	if (get_common_config()->tcp_mux)
+		init_tmux_stream(&main_ctl->stream, get_next_session_id(), INIT);
 }
 
 void 

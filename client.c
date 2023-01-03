@@ -233,7 +233,7 @@ clear_all_proxy_client()
 	
 	struct proxy_client *client, *tmp;
 	HASH_ITER(hh, all_pc, client, tmp) {
-		HASH_DEL(all_pc, client);
-		free_proxy_client(client);
+		del_proxy_client_by_stream_id(client->stream_id);
 	}
+	all_pc = NULL;
 }

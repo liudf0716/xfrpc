@@ -148,6 +148,8 @@ void add_stream(struct tmux_stream *stream);
 
 void del_stream(uint32_t stream_id);
 
+void clear_stream();
+
 struct tmux_stream* get_stream_by_id(uint32_t id);
 
 int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);

@@ -53,11 +53,20 @@ add_stream(struct tmux_stream *stream)
 void
 del_stream(uint32_t id) 
 {
-	assert(all_stream != NULL);
+	if (!all_stream) return;
 
 	struct tmux_stream *stream = get_stream_by_id(id);
 	if (stream)
 		HASH_DEL(all_stream, stream);
+}
+
+void
+clear_stream()
+{
+	if (!all_stream) return;
+
+	HASH_CLEAR(hh, all_stream);
+	all_stream = NULL;
 }
 
 struct tmux_stream *

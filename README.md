@@ -103,6 +103,16 @@ mkdir build
 cmake ..
 make
 ```
+# Build static binary in Alpine container
+
+Under project root directory
+
+```shell
+$ DOCKER_BUILDKIT=1 docker build --output out . -f docker/Dockerfile
+
+$ ls out/
+xfrpc
+```
 
 ## Compile on OpenWrt
 

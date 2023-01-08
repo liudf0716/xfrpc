@@ -53,6 +53,10 @@ set(test_libs
 
 ADD_DEFINITIONS(-Wall -g  --std=gnu99)
 
+if (STATIC_BUILD STREQUAL "ON")
+  add_link_options(-static)
+endif (STATIC_BUILD)
+
 add_executable(xfrpc ${src_xfrpc})
 target_link_libraries(xfrpc ${libs})
 

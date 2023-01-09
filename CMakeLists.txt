@@ -2,20 +2,27 @@ cmake_minimum_required(VERSION 2.6)
 
 project(xfrp C)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+if (THIRDPARTY_STATIC_BUILD STREQUAL "ON") # add x86 iot device support
+	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/libevent)
+	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/openssl)
+	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/json-c)
+	link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/x86)
+else()
+	set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
-find_package(LibEvent)
-if(NOT LibEvent_FOUND)
-  message(FATAL_ERROR "libevent2 not found!")
-endif(NOT LibEvent_FOUND)
+	find_package(LibEvent)
+	if(NOT LibEvent_FOUND)
+	  message(FATAL_ERROR "libevent2 not found!")
+	endif(NOT LibEvent_FOUND)
 
-find_package(OpenSSL)
-if(NOT OPENSSL_FOUND)
-  message(FATAL_ERROR "OpenSSL not found!")
-endif(NOT OPENSSL_FOUND)
+	find_package(OpenSSL)
+	if(NOT OPENSSL_FOUND)
+	  message(FATAL_ERROR "OpenSSL not found!")
+	endif(NOT OPENSSL_FOUND)
 
-find_package(JSON-C REQUIRED)
-include_directories(${JSON-C_INCLUDE_DIR})
+	find_package(JSON-C REQUIRED)
+	include_directories(${JSON-C_INCLUDE_DIR})
+endif(THIRDPARTY_STATIC_BUILD)
 
 set(src_xfrpc
 	main.c

@@ -103,6 +103,21 @@ mkdir build
 cmake ..
 make
 ```
+
+# Build xfrpc by Built-in thirdparty
+
+use Built-in thirdparty build xfrpc.Now support x86_64 architecture.
+
+```shell
+git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git
+cd xfrp
+mkdir build
+cmake -D THIRDPARTY_STATIC_BUILD=ON ..
+make
+```
+
+Now,THIRDPARTY_STATIC_BUILD parameter is ON or OFF.THIRDPARTY_STATIC_BUILD parameter will be x86, arm, mips for support multiple architecture.
+
 # Build static binary in Alpine container
 
 Under project root directory

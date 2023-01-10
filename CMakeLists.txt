@@ -2,12 +2,26 @@ cmake_minimum_required(VERSION 2.6)
 
 project(xfrp C)
 
+
 if (THIRDPARTY_STATIC_BUILD STREQUAL "ON") # add x86 iot device support
+	execute_process(COMMAND uname -r OUTPUT_VARIABLE UNAME_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
+	message(-- " Kernel version: " ${UNAME_RESULT})
+	string(REGEX MATCH "[0-9]+.[0-9]+" LINUX_KERNEL_VERSION ${UNAME_RESULT})
+
+	if (LINUX_KERNEL_VERSION LESS 3.11)
+		message(STATUS "Linux kernel version less than 3.10")
+		link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/x86/kernel_3_10)
+	else()
+		message(STATUS "Linux kernel version greater than 3.10")
+		link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/x86/kernel_5_4)
+	endif()
 	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/libevent)
-	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/openssl)
-	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/json-c)
+	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/)
+	set(x86-libs dl pthread)
 	link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/x86)
+
 else()
+
 	set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
 	find_package(LibEvent)
@@ -22,6 +36,7 @@ else()
 
 	find_package(JSON-C REQUIRED)
 	include_directories(${JSON-C_INCLUDE_DIR})
+
 endif(THIRDPARTY_STATIC_BUILD)
 
 set(src_xfrpc
@@ -65,7 +80,7 @@ if (STATIC_BUILD STREQUAL "ON")
 endif (STATIC_BUILD)
 
 add_executable(xfrpc ${src_xfrpc})
-target_link_libraries(xfrpc ${libs})
+target_link_libraries(xfrpc ${libs} ${x86-libs})
 
 install(TARGETS xfrpc
         RUNTIME DESTINATION bin

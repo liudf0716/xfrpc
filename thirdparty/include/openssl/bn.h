@@ -1,30 +1,36 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
- * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
+ * Copyright 1995-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the Apache License 2.0 (the "License").  You may not use
+ * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
 
-#ifndef OPENSSL_BN_H
-# define OPENSSL_BN_H
-# pragma once
+/* ====================================================================
+ * Copyright 2002 Sun Microsystems, Inc. ALL RIGHTS RESERVED.
+ *
+ * Portions of the attached software ("Contribution") are developed by
+ * SUN MICROSYSTEMS, INC., and are contributed to the OpenSSL project.
+ *
+ * The Contribution is licensed pursuant to the Eric Young open source
+ * license provided above.
+ *
+ * The binary polynomial arithmetic software is originally written by
+ * Sheueling Chang Shantz and Douglas Stebila of Sun Microsystems Laboratories.
+ *
+ */
 
-# include <openssl/macros.h>
-# ifndef OPENSSL_NO_DEPRECATED_3_0
-#  define HEADER_BN_H
-# endif
+#ifndef HEADER_BN_H
+# define HEADER_BN_H
 
 # include <openssl/e_os2.h>
 # ifndef OPENSSL_NO_STDIO
 #  include <stdio.h>
 # endif
 # include <openssl/opensslconf.h>
-# include <openssl/types.h>
+# include <openssl/ossl_typ.h>
 # include <openssl/crypto.h>
-# include <openssl/bnerr.h>
 
 #ifdef  __cplusplus
 extern "C" {
@@ -62,12 +68,12 @@ extern "C" {
  * avoid leaking exponent information through timing,
  * BN_mod_exp_mont() will call BN_mod_exp_mont_consttime,
  * BN_div() will call BN_div_no_branch,
- * BN_mod_inverse() will call bn_mod_inverse_no_branch.
+ * BN_mod_inverse() will call BN_mod_inverse_no_branch.
  */
 # define BN_FLG_CONSTTIME        0x04
 # define BN_FLG_SECURE           0x08
 
-# ifndef OPENSSL_NO_DEPRECATED_0_9_8
+# if OPENSSL_API_COMPAT < 0x00908000L
 /* deprecated name for the flag */
 #  define BN_FLG_EXP_CONSTTIME BN_FLG_CONSTTIME
 #  define BN_FLG_FREE            0x8000 /* used for debugging */
@@ -109,82 +115,29 @@ void BN_GENCB_set(BN_GENCB *gencb, int (*callback) (int, int, BN_GENCB *),
 
 void *BN_GENCB_get_arg(BN_GENCB *cb);
 
-# ifndef OPENSSL_NO_DEPRECATED_3_0
-#  define BN_prime_checks 0      /* default: select number of iterations based
-                                  * on the size of the number */
+# define BN_prime_checks 0      /* default: select number of iterations based
+                                 * on the size of the number */
 
 /*
- * BN_prime_checks_for_size() returns the number of Miller-Rabin iterations
- * that will be done for checking that a random number is probably prime. The
- * error rate for accepting a composite number as prime depends on the size of
- * the prime |b|. The error rates used are for calculating an RSA key with 2 primes,
- * and so the level is what you would expect for a key of double the size of the
- * prime.
- *
- * This table is generated using the algorithm of FIPS PUB 186-4
- * Digital Signature Standard (DSS), section F.1, page 117.
- * (https://dx.doi.org/10.6028/NIST.FIPS.186-4)
- *
- * The following magma script was used to generate the output:
- * securitybits:=125;
- * k:=1024;
- * for t:=1 to 65 do
- *   for M:=3 to Floor(2*Sqrt(k-1)-1) do
- *     S:=0;
- *     // Sum over m
- *     for m:=3 to M do
- *       s:=0;
- *       // Sum over j
- *       for j:=2 to m do
- *         s+:=(RealField(32)!2)^-(j+(k-1)/j);
- *       end for;
- *       S+:=2^(m-(m-1)*t)*s;
- *     end for;
- *     A:=2^(k-2-M*t);
- *     B:=8*(Pi(RealField(32))^2-6)/3*2^(k-2)*S;
- *     pkt:=2.00743*Log(2)*k*2^-k*(A+B);
- *     seclevel:=Floor(-Log(2,pkt));
- *     if seclevel ge securitybits then
- *       printf "k: %5o, security: %o bits  (t: %o, M: %o)\n",k,seclevel,t,M;
- *       break;
- *     end if;
- *   end for;
- *   if seclevel ge securitybits then break; end if;
- * end for;
- *
- * It can be run online at:
- * http://magma.maths.usyd.edu.au/calc
- *
- * And will output:
- * k:  1024, security: 129 bits  (t: 6, M: 23)
- *
- * k is the number of bits of the prime, securitybits is the level we want to
- * reach.
- *
- * prime length | RSA key size | # MR tests | security level
- * -------------+--------------|------------+---------------
- *  (b) >= 6394 |     >= 12788 |          3 |        256 bit
- *  (b) >= 3747 |     >=  7494 |          3 |        192 bit
- *  (b) >= 1345 |     >=  2690 |          4 |        128 bit
- *  (b) >= 1080 |     >=  2160 |          5 |        128 bit
- *  (b) >=  852 |     >=  1704 |          5 |        112 bit
- *  (b) >=  476 |     >=   952 |          5 |         80 bit
- *  (b) >=  400 |     >=   800 |          6 |         80 bit
- *  (b) >=  347 |     >=   694 |          7 |         80 bit
- *  (b) >=  308 |     >=   616 |          8 |         80 bit
- *  (b) >=   55 |     >=   110 |         27 |         64 bit
- *  (b) >=    6 |     >=    12 |         34 |         64 bit
+ * number of Miller-Rabin iterations for an error rate of less than 2^-80 for
+ * random 'b'-bit input, b >= 100 (taken from table 4.4 in the Handbook of
+ * Applied Cryptography [Menezes, van Oorschot, Vanstone; CRC Press 1996];
+ * original paper: Damgaard, Landrock, Pomerance: Average case error
+ * estimates for the strong probable prime test. -- Math. Comp. 61 (1993)
+ * 177-194)
  */
-
-#  define BN_prime_checks_for_size(b) ((b) >= 3747 ?  3 : \
-                                      (b) >=  1345 ?  4 : \
-                                      (b) >=  476 ?  5 : \
-                                      (b) >=  400 ?  6 : \
-                                      (b) >=  347 ?  7 : \
-                                      (b) >=  308 ?  8 : \
-                                      (b) >=  55  ? 27 : \
-                                      /* b >= 6 */ 34)
-# endif
+# define BN_prime_checks_for_size(b) ((b) >= 1300 ?  2 : \
+                                (b) >=  850 ?  3 : \
+                                (b) >=  650 ?  4 : \
+                                (b) >=  550 ?  5 : \
+                                (b) >=  450 ?  6 : \
+                                (b) >=  400 ?  7 : \
+                                (b) >=  350 ?  8 : \
+                                (b) >=  300 ?  9 : \
+                                (b) >=  250 ? 12 : \
+                                (b) >=  200 ? 15 : \
+                                (b) >=  150 ? 18 : \
+                                /* b >= 100 */ 27)
 
 # define BN_num_bytes(a) ((BN_num_bits(a)+7)/8)
 
@@ -198,7 +151,7 @@ int BN_is_odd(const BIGNUM *a);
 
 void BN_zero_ex(BIGNUM *a);
 
-# if OPENSSL_API_LEVEL > 908
+# if OPENSSL_API_COMPAT >= 0x00908000L
 #  define BN_zero(a)      BN_zero_ex(a)
 # else
 #  define BN_zero(a)      (BN_set_word((a),0))
@@ -206,32 +159,16 @@ void BN_zero_ex(BIGNUM *a);
 
 const BIGNUM *BN_value_one(void);
 char *BN_options(void);
-BN_CTX *BN_CTX_new_ex(OSSL_LIB_CTX *ctx);
 BN_CTX *BN_CTX_new(void);
-BN_CTX *BN_CTX_secure_new_ex(OSSL_LIB_CTX *ctx);
 BN_CTX *BN_CTX_secure_new(void);
 void BN_CTX_free(BN_CTX *c);
 void BN_CTX_start(BN_CTX *ctx);
 BIGNUM *BN_CTX_get(BN_CTX *ctx);
 void BN_CTX_end(BN_CTX *ctx);
-int BN_rand_ex(BIGNUM *rnd, int bits, int top, int bottom,
-               unsigned int strength, BN_CTX *ctx);
 int BN_rand(BIGNUM *rnd, int bits, int top, int bottom);
-int BN_priv_rand_ex(BIGNUM *rnd, int bits, int top, int bottom,
-                    unsigned int strength, BN_CTX *ctx);
-int BN_priv_rand(BIGNUM *rnd, int bits, int top, int bottom);
-int BN_rand_range_ex(BIGNUM *r, const BIGNUM *range, unsigned int strength,
-                     BN_CTX *ctx);
-int BN_rand_range(BIGNUM *rnd, const BIGNUM *range);
-int BN_priv_rand_range_ex(BIGNUM *r, const BIGNUM *range,
-                          unsigned int strength, BN_CTX *ctx);
-int BN_priv_rand_range(BIGNUM *rnd, const BIGNUM *range);
-# ifndef OPENSSL_NO_DEPRECATED_3_0
-OSSL_DEPRECATEDIN_3_0
 int BN_pseudo_rand(BIGNUM *rnd, int bits, int top, int bottom);
-OSSL_DEPRECATEDIN_3_0
+int BN_rand_range(BIGNUM *rnd, const BIGNUM *range);
 int BN_pseudo_rand_range(BIGNUM *rnd, const BIGNUM *range);
-# endif
 int BN_num_bits(const BIGNUM *a);
 int BN_num_bits_word(BN_ULONG l);
 int BN_security_bits(int L, int N);
@@ -245,8 +182,6 @@ int BN_bn2bin(const BIGNUM *a, unsigned char *to);
 int BN_bn2binpad(const BIGNUM *a, unsigned char *to, int tolen);
 BIGNUM *BN_lebin2bn(const unsigned char *s, int len, BIGNUM *ret);
 int BN_bn2lebinpad(const BIGNUM *a, unsigned char *to, int tolen);
-BIGNUM *BN_native2bn(const unsigned char *s, int len, BIGNUM *ret);
-int BN_bn2nativepad(const BIGNUM *a, unsigned char *to, int tolen);
 BIGNUM *BN_mpi2bn(const unsigned char *s, int len, BIGNUM *ret);
 int BN_bn2mpi(const BIGNUM *a, unsigned char *to);
 int BN_sub(BIGNUM *r, const BIGNUM *a, const BIGNUM *b);
@@ -261,7 +196,7 @@ int BN_sqr(BIGNUM *r, const BIGNUM *a, BN_CTX *ctx);
  */
 void BN_set_negative(BIGNUM *b, int n);
 /** BN_is_negative returns 1 if the BIGNUM is negative
- * \param  b  pointer to the BIGNUM object
+ * \param  a  pointer to the BIGNUM object
  * \return 1 if a < 0 and 0 otherwise
  */
 int BN_is_negative(const BIGNUM *b);
@@ -316,11 +251,6 @@ int BN_mod_exp2_mont(BIGNUM *r, const BIGNUM *a1, const BIGNUM *p1,
                      BN_CTX *ctx, BN_MONT_CTX *m_ctx);
 int BN_mod_exp_simple(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
                       const BIGNUM *m, BN_CTX *ctx);
-int BN_mod_exp_mont_consttime_x2(BIGNUM *rr1, const BIGNUM *a1, const BIGNUM *p1,
-                                 const BIGNUM *m1, BN_MONT_CTX *in_mont1,
-                                 BIGNUM *rr2, const BIGNUM *a2, const BIGNUM *p2,
-                                 const BIGNUM *m2, BN_MONT_CTX *in_mont2,
-                                 BN_CTX *ctx);
 
 int BN_mask_bits(BIGNUM *a, int n);
 # ifndef OPENSSL_NO_STDIO
@@ -352,51 +282,38 @@ BIGNUM *BN_mod_sqrt(BIGNUM *ret,
 void BN_consttime_swap(BN_ULONG swap, BIGNUM *a, BIGNUM *b, int nwords);
 
 /* Deprecated versions */
-# ifndef OPENSSL_NO_DEPRECATED_0_9_8
-OSSL_DEPRECATEDIN_0_9_8
-BIGNUM *BN_generate_prime(BIGNUM *ret, int bits, int safe,
-                          const BIGNUM *add, const BIGNUM *rem,
-                          void (*callback) (int, int, void *),
-                          void *cb_arg);
-OSSL_DEPRECATEDIN_0_9_8
-int BN_is_prime(const BIGNUM *p, int nchecks,
-                void (*callback) (int, int, void *),
-                BN_CTX *ctx, void *cb_arg);
-OSSL_DEPRECATEDIN_0_9_8
-int BN_is_prime_fasttest(const BIGNUM *p, int nchecks,
-                         void (*callback) (int, int, void *),
-                         BN_CTX *ctx, void *cb_arg,
-                         int do_trial_division);
-# endif
-# ifndef OPENSSL_NO_DEPRECATED_3_0
-OSSL_DEPRECATEDIN_3_0
-int BN_is_prime_ex(const BIGNUM *p, int nchecks, BN_CTX *ctx, BN_GENCB *cb);
-OSSL_DEPRECATEDIN_3_0
-int BN_is_prime_fasttest_ex(const BIGNUM *p, int nchecks, BN_CTX *ctx,
-                            int do_trial_division, BN_GENCB *cb);
-# endif
+DEPRECATEDIN_0_9_8(BIGNUM *BN_generate_prime(BIGNUM *ret, int bits, int safe,
+                                             const BIGNUM *add,
+                                             const BIGNUM *rem,
+                                             void (*callback) (int, int,
+                                                               void *),
+                                             void *cb_arg))
+DEPRECATEDIN_0_9_8(int
+                   BN_is_prime(const BIGNUM *p, int nchecks,
+                               void (*callback) (int, int, void *),
+                               BN_CTX *ctx, void *cb_arg))
+DEPRECATEDIN_0_9_8(int
+                   BN_is_prime_fasttest(const BIGNUM *p, int nchecks,
+                                        void (*callback) (int, int, void *),
+                                        BN_CTX *ctx, void *cb_arg,
+                                        int do_trial_division))
+
 /* Newer versions */
-int BN_generate_prime_ex2(BIGNUM *ret, int bits, int safe,
-                          const BIGNUM *add, const BIGNUM *rem, BN_GENCB *cb,
-                          BN_CTX *ctx);
 int BN_generate_prime_ex(BIGNUM *ret, int bits, int safe, const BIGNUM *add,
                          const BIGNUM *rem, BN_GENCB *cb);
-int BN_check_prime(const BIGNUM *p, BN_CTX *ctx, BN_GENCB *cb);
+int BN_is_prime_ex(const BIGNUM *p, int nchecks, BN_CTX *ctx, BN_GENCB *cb);
+int BN_is_prime_fasttest_ex(const BIGNUM *p, int nchecks, BN_CTX *ctx,
+                            int do_trial_division, BN_GENCB *cb);
 
-# ifndef OPENSSL_NO_DEPRECATED_3_0
-OSSL_DEPRECATEDIN_3_0
 int BN_X931_generate_Xpq(BIGNUM *Xp, BIGNUM *Xq, int nbits, BN_CTX *ctx);
 
-OSSL_DEPRECATEDIN_3_0
 int BN_X931_derive_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2,
                             const BIGNUM *Xp, const BIGNUM *Xp1,
                             const BIGNUM *Xp2, const BIGNUM *e, BN_CTX *ctx,
                             BN_GENCB *cb);
-OSSL_DEPRECATEDIN_3_0
 int BN_X931_generate_prime_ex(BIGNUM *p, BIGNUM *p1, BIGNUM *p2, BIGNUM *Xp1,
                               BIGNUM *Xp2, const BIGNUM *Xp, const BIGNUM *e,
                               BN_CTX *ctx, BN_GENCB *cb);
-# endif
 
 BN_MONT_CTX *BN_MONT_CTX_new(void);
 int BN_mod_mul_montgomery(BIGNUM *r, const BIGNUM *a, const BIGNUM *b,
@@ -440,12 +357,10 @@ BN_BLINDING *BN_BLINDING_create_param(BN_BLINDING *b,
                                                          BN_CTX *ctx,
                                                          BN_MONT_CTX *m_ctx),
                                       BN_MONT_CTX *m_ctx);
-# ifndef OPENSSL_NO_DEPRECATED_0_9_8
-OSSL_DEPRECATEDIN_0_9_8
-void BN_set_params(int mul, int high, int low, int mont);
-OSSL_DEPRECATEDIN_0_9_8
-int BN_get_params(int which); /* 0, mul, 1 high, 2 low, 3 mont */
-# endif
+
+DEPRECATEDIN_0_9_8(void BN_set_params(int mul, int high, int low, int mont))
+DEPRECATEDIN_0_9_8(int BN_get_params(int which)) /* 0, mul, 1 high, 2 low, 3
+                                                  * mont */
 
 BN_RECP_CTX *BN_RECP_CTX_new(void);
 void BN_RECP_CTX_free(BN_RECP_CTX *recp);
@@ -563,19 +478,96 @@ BIGNUM *BN_get_rfc3526_prime_4096(BIGNUM *bn);
 BIGNUM *BN_get_rfc3526_prime_6144(BIGNUM *bn);
 BIGNUM *BN_get_rfc3526_prime_8192(BIGNUM *bn);
 
-#  ifndef OPENSSL_NO_DEPRECATED_1_1_0
-#   define get_rfc2409_prime_768 BN_get_rfc2409_prime_768
-#   define get_rfc2409_prime_1024 BN_get_rfc2409_prime_1024
-#   define get_rfc3526_prime_1536 BN_get_rfc3526_prime_1536
-#   define get_rfc3526_prime_2048 BN_get_rfc3526_prime_2048
-#   define get_rfc3526_prime_3072 BN_get_rfc3526_prime_3072
-#   define get_rfc3526_prime_4096 BN_get_rfc3526_prime_4096
-#   define get_rfc3526_prime_6144 BN_get_rfc3526_prime_6144
-#   define get_rfc3526_prime_8192 BN_get_rfc3526_prime_8192
-#  endif
+# if OPENSSL_API_COMPAT < 0x10100000L
+#  define get_rfc2409_prime_768 BN_get_rfc2409_prime_768
+#  define get_rfc2409_prime_1024 BN_get_rfc2409_prime_1024
+#  define get_rfc3526_prime_1536 BN_get_rfc3526_prime_1536
+#  define get_rfc3526_prime_2048 BN_get_rfc3526_prime_2048
+#  define get_rfc3526_prime_3072 BN_get_rfc3526_prime_3072
+#  define get_rfc3526_prime_4096 BN_get_rfc3526_prime_4096
+#  define get_rfc3526_prime_6144 BN_get_rfc3526_prime_6144
+#  define get_rfc3526_prime_8192 BN_get_rfc3526_prime_8192
+# endif
 
 int BN_bntest_rand(BIGNUM *rnd, int bits, int top, int bottom);
 
+/* BEGIN ERROR CODES */
+/*
+ * The following lines are auto generated by the script mkerr.pl. Any changes
+ * made after this point may be overwritten when the script is next run.
+ */
+
+int ERR_load_BN_strings(void);
+
+/* Error codes for the BN functions. */
+
+/* Function codes. */
+# define BN_F_BNRAND                                      127
+# define BN_F_BN_BLINDING_CONVERT_EX                      100
+# define BN_F_BN_BLINDING_CREATE_PARAM                    128
+# define BN_F_BN_BLINDING_INVERT_EX                       101
+# define BN_F_BN_BLINDING_NEW                             102
+# define BN_F_BN_BLINDING_UPDATE                          103
+# define BN_F_BN_BN2DEC                                   104
+# define BN_F_BN_BN2HEX                                   105
+# define BN_F_BN_COMPUTE_WNAF                             142
+# define BN_F_BN_CTX_GET                                  116
+# define BN_F_BN_CTX_NEW                                  106
+# define BN_F_BN_CTX_START                                129
+# define BN_F_BN_DIV                                      107
+# define BN_F_BN_DIV_RECP                                 130
+# define BN_F_BN_EXP                                      123
+# define BN_F_BN_EXPAND_INTERNAL                          120
+# define BN_F_BN_GENCB_NEW                                143
+# define BN_F_BN_GENERATE_DSA_NONCE                       140
+# define BN_F_BN_GENERATE_PRIME_EX                        141
+# define BN_F_BN_GF2M_MOD                                 131
+# define BN_F_BN_GF2M_MOD_EXP                             132
+# define BN_F_BN_GF2M_MOD_MUL                             133
+# define BN_F_BN_GF2M_MOD_SOLVE_QUAD                      134
+# define BN_F_BN_GF2M_MOD_SOLVE_QUAD_ARR                  135
+# define BN_F_BN_GF2M_MOD_SQR                             136
+# define BN_F_BN_GF2M_MOD_SQRT                            137
+# define BN_F_BN_LSHIFT                                   145
+# define BN_F_BN_MOD_EXP2_MONT                            118
+# define BN_F_BN_MOD_EXP_MONT                             109
+# define BN_F_BN_MOD_EXP_MONT_CONSTTIME                   124
+# define BN_F_BN_MOD_EXP_MONT_WORD                        117
+# define BN_F_BN_MOD_EXP_RECP                             125
+# define BN_F_BN_MOD_EXP_SIMPLE                           126
+# define BN_F_BN_MOD_INVERSE                              110
+# define BN_F_BN_MOD_INVERSE_NO_BRANCH                    139
+# define BN_F_BN_MOD_LSHIFT_QUICK                         119
+# define BN_F_BN_MOD_SQRT                                 121
+# define BN_F_BN_MPI2BN                                   112
+# define BN_F_BN_NEW                                      113
+# define BN_F_BN_RAND                                     114
+# define BN_F_BN_RAND_RANGE                               122
+# define BN_F_BN_RSHIFT                                   146
+# define BN_F_BN_SET_WORDS                                144
+# define BN_F_BN_USUB                                     115
+
+/* Reason codes. */
+# define BN_R_ARG2_LT_ARG3                                100
+# define BN_R_BAD_RECIPROCAL                              101
+# define BN_R_BIGNUM_TOO_LONG                             114
+# define BN_R_BITS_TOO_SMALL                              118
+# define BN_R_CALLED_WITH_EVEN_MODULUS                    102
+# define BN_R_DIV_BY_ZERO                                 103
+# define BN_R_ENCODING_ERROR                              104
+# define BN_R_EXPAND_ON_STATIC_BIGNUM_DATA                105
+# define BN_R_INPUT_NOT_REDUCED                           110
+# define BN_R_INVALID_LENGTH                              106
+# define BN_R_INVALID_RANGE                               115
+# define BN_R_INVALID_SHIFT                               119
+# define BN_R_NOT_A_SQUARE                                111
+# define BN_R_NOT_INITIALIZED                             107
+# define BN_R_NO_INVERSE                                  108
+# define BN_R_NO_SOLUTION                                 116
+# define BN_R_PRIVATE_KEY_TOO_LARGE                       117
+# define BN_R_P_IS_NOT_PRIME                              112
+# define BN_R_TOO_MANY_ITERATIONS                         113
+# define BN_R_TOO_MANY_TEMPORARY_VARIABLES                109
 
 # ifdef  __cplusplus
 }

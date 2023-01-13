@@ -1,0 +1,95 @@
+# Temp files
+*~
+*.swp
+*.bak
+*.backup
+\#*
+.\#*
+*\#
+*.sav
+*.save
+*.autosav
+*.autosave
+
+# Tests
+/tests/Makefile
+/tests/test1
+/tests/test1Formatted
+/tests/test2
+/tests/test2Formatted
+/tests/test4
+/tests/testReplaceExisting
+/tests/testSubDir
+/tests/test_cast
+/tests/test_charcase
+/tests/test_compare
+/tests/test_deep_copy
+/tests/test_double_serializer
+/tests/test_float
+/tests/test_int_add
+/tests/test_int_get
+/tests/test_json_pointer
+/tests/test_locale
+/tests/test_null
+/tests/test_parse
+/tests/test_parse_int64
+/tests/test_printbuf
+/tests/test_set_serializer
+/tests/test_set_value
+/tests/test_util_file
+/tests/test_visit
+/tests/*.vg.out
+/tests/*.log
+/tests/*.trs
+
+# Generated folders
+/build
+/Debug
+/Release
+/*/Debug
+/*/Release
+
+# Archives
+*.zip
+*.tar.*
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.lz
+*.lzma
+*.7z
+*.dll
+*.deb
+*.rpm
+*.apk
+*.exe
+*.msi
+*.dmg
+*.ipa
+
+# It's not good practice to build directly in the source tree
+# but ignore cmake auto-generated files anyway:
+/json_config.h
+/json.h
+/config.h
+/json-c.pc
+/Makefile
+/CMakeCache.txt
+/CMakeFiles
+/CMakeDoxyfile.in
+/*.cmake
+/DartConfiguration.tcl
+/tests/CMakeFiles/
+/tests/*.cmake
+/Testing/
+
+# ...and build artifacts.
+/doc/html
+/libjson-c.a
+/libjson-c.so
+/libjson-c.so.*
+
+# Benchmarking input and output
+/bench/data
+/bench/work

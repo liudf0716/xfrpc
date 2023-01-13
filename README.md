@@ -108,6 +108,8 @@ make
 
 use Built-in thirdparty build xfrpc.Now support x86_64 architecture.
 
+require cmake version > 3.1.
+
 ```shell
 git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git
 cd xfrp

@@ -3,10 +3,11 @@ cmake_minimum_required(VERSION 2.6)
 project(xfrp C)
 
 if (THIRDPARTY_STATIC_BUILD STREQUAL "ON") # add x86 iot device support
+	add_subdirectory(${PROJECT_SOURCE_DIR}/thirdparty/)
 	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/libevent)
-	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/openssl)
-	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/json-c)
-	link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/x86)
+	include_directories(${PROJECT_SOURCE_DIR}/thirdparty/include/)
+	link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/)
+	set(static_libs dl pthread)
 else()
 	set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
@@ -65,7 +66,7 @@ if (STATIC_BUILD STREQUAL "ON")
 endif (STATIC_BUILD)
 
 add_executable(xfrpc ${src_xfrpc})
-target_link_libraries(xfrpc ${libs})
+target_link_libraries(xfrpc ${libs} ${static_libs})
 
 install(TARGETS xfrpc
         RUNTIME DESTINATION bin

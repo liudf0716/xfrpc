@@ -3,8 +3,7 @@
 
 ## What is xfrpc 
 
-`xfrpc` is [frp](https://github.com/fatedier/frp) client implemented by c language for [OpenWRT](https://github.com/openwrt/openwrt)
-The motivation to start xfrpc project is that we are OpenWRTer, and openwrt usually run in devices which have limit ROM and RAM space, however frpc always need more space and memory; therefore we launched xfrpc project.
+The xfrpc project is an implementation of frp client written in C language for OpenWRT and IOT system. The main motivation of this project is to provide a lightweight solution for devices with limited resources such as OpenWRT devices which often have limited ROM and RAM space. The project aims to provide a frp client that uses less space and memory than other available options.
 
 ## Development Status
 
@@ -25,7 +24,7 @@ the following table is detail  compatible feature:
 | udp  | No |  Yes  |
 | p2p  | No |  Yes  |
 | xtcp  | No |  Yes  |
-| vistor  | No |  Yes  |
+| stcp  | No |  Yes  |
 
 
 
@@ -81,34 +80,43 @@ sequenceDiagram
   
 ```
 
-## Quickstart for Ubuntu 20.04.3 LTS
+## How to build
 
-xfrp need [libevent](https://github.com/libevent/libevent) [openssl-dev](https://github.com/openssl/openssl) and [json-c](https://github.com/json-c/json-c) support
+### Build on Ubuntu 20.04.3 LTS
 
-Before compile xfrp, please install `libevent` and `json-c` in your system.
+To run xfrpc on Ubuntu 20.04 LTS, you will need to have the following libraries installed: libevent, openssl-dev, and json-c. Use the following command in your terminal to install these libraries:
 
-Install json-c libevent in ubuntu 20.04 LTS
-
-```shell
-sudo apt-get install -y libjson-c-dev
-sudo apt-get install -y libevent-dev
+```
+sudo apt-get install -y libjson-c-dev libevent-dev libssl-dev
 ```
 
-**Fork** xfrpc on GitHub
+Once the required libraries are installed, you can download the xfrpc source code by forking the xfrpc repository on GitHub and then cloning it to your local machine using the following command:
 
-```shell
+```
 git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git
+```
+
+Navigate to the xfrp directory and create a build directory by using these commands:
+
+```
 cd xfrp
 mkdir build
+```
+Use the following commands to build and install xfrpc:
+
+```
 cmake ..
 make
 ```
+This will compile xfrpc and create an executable in the build directory. You can then run xfrpc using the executable by running the appropriate command in terminal.
 
-# Build xfrpc by Built-in thirdparty
+### Build xfrpc by Built-in thirdparty
 
-use Built-in thirdparty build xfrpc.Now support x86_64 architecture.
+use Built-in thirdparty build xfrpc.
 
 require cmake version > 3.1.
+
+To build xfrpc using the built-in third-party libraries, you can fork the xfrpc repository on GitHub and then clone it locally. Then, navigate to the xfrp directory, create a build directory, and use cmake to configure the build.
 
 ```shell
 git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git
@@ -118,9 +126,14 @@ cmake -D THIRDPARTY_STATIC_BUILD=ON ..
 make
 ```
 
-Now,THIRDPARTY_STATIC_BUILD parameter is ON or OFF.THIRDPARTY_STATIC_BUILD parameter will be x86, arm, mips for support multiple architecture.
+By setting THIRDPARTY_STATIC_BUILD=ON the build process will use the libraries that are included in the xfrpc source code, instead of using the libraries installed on your system.
 
-# Build static binary in Alpine container
+The THIRDPARTY_STATIC_BUILD parameter is default set to OFF, which means that by default the build process will use the libraries installed on your system.
+
+It's important to note that you will need cmake version greater than 3.1 to use this feature.
+
+
+### Build static binary in Alpine container
 
 Under project root directory
 
@@ -131,21 +144,27 @@ $ ls out/
 xfrpc
 ```
 
-## Compile on OpenWrt
+### Build on OpenWrt master
 
-xfrpc was recruited by openwrt community since version 1.04.515
+xfrpc is included in the OpenWrt community since version 1.04.515, which allows users to easily include it in their custom firmware images. It is recommended to use the latest version of xfrpc as it may have bug fixes and new features.
 
-anyway I highly recommend you to use latest version 
+To include xfrpc in your OpenWrt firmware image, you can use the make menuconfig command to open the configuration menu. In the menu, navigate to "Network" and select "Web Servers/Proxies" and then select xfrpc. This will include xfrpc in the firmware image that will be built.
 
-in order to compile xfrpc in openwrt sdk environment, you should firstly `make menuconfig`, then select `Network --> Web Servers/Proxies  ---> xfrpc`
-
-## Quick start
+## Quick start for use
 
 **before using xfrpc, you should get frps server: [frps](https://github.com/fatedier/frp/releases)**
 
+frps is a server-side component of the FRP (Fast Reverse Proxy) system and it is used to forward incoming connections to xfrpc. 
+
 + frps 
 
-frps use latest release 0.42.0
+To run frps, you can use the following command, providing it with the path to the frps configuration file:
+
+```
+./frps -c frps.ini
+```
+
+A sample frps.ini configuration file is provided in the example, which binds frps to listen on port 7000.
 
 ```
 # frps.ini
@@ -153,13 +172,9 @@ frps use latest release 0.42.0
 bind_port = 7000
 ```
 
-run frps
++ xfrpc tcp support
 
-```
-./frps -c frps.ini
-```
-
-+ xfrpc tcp
+xfrpc is a client-side component of the FRP system and it can be used to forward TCP connections. To forward incoming TCP connections to a local service, you can configure xfrpc with the following example in xfrpc_mini.ini file
 
 ```
 #xfrpc_mini.ini 
@@ -174,9 +189,11 @@ local_port = 22
 remote_port = 6128
 ```
 
-+ xfrpc http&https
+This configuration tells the frp server (frps) to forward incoming connections on remote port 6128 to the xfrpc client. The xfrpc client, in turn, will forward these connections to the local service running on IP address 127.0.0.1 and port 22.
 
- compare with supporting tcp, supporting http&https need to add vhost_http_port&vhost_https_port in frps.ini as the following
++ xfrpc http&https support
+
+ Supporting HTTP and HTTPS in xfrpc requires additional configuration compared to supporting just TCP. In the frps.ini configuration file, the vhost_http_port and vhost_https_port options must be added to specify the ports that the frp server (frps) will listen on for incoming HTTP and HTTPS connections.
  
 ```
 # frps.ini
@@ -185,6 +202,8 @@ bind_port = 7000
 vhost_http_port = 80
 vhost_https_port = 443
 ```
+
+It is important to ensure that the xfrpc client is properly configured to communicate with the frp server by specifying the correct server address and port in the xfrpc configuration file.
 
 ```
 # xfrpc_mini.ini 
@@ -195,15 +214,23 @@ server_port = 7000
 [http]
 type = http
 local_port = 80
+local_ip = 127.0.0.1
 custom_domains = www.example.com
 
 [https]
 type = https
 local_port = 443
+local_ip = 127.0.0.1
 custom_domains = www.example.com
 ```
 
+The FRP server (frps) will forward incoming HTTP and HTTPS connections to the domain "www.example.com" to the location where xfrpc is running on the local IP and port specified in the configuration file (127.0.0.1:80 and 127.0.0.1:443 respectively).
+
+It is important to note that the domain name "www.example.com" should be pointed to the public IP address of the FRP server (frps) so that when a user's HTTP and HTTPS connections visit the domain, the FRP server can forward those connections to the xfrpc client. This can be done by configuring a DNS server or by using a dynamic DNS service.
+
 + Run in debug mode 
+
+In order to troubleshooting problem when run xfrpc, you can use debug mode. which has more information when running.
 
 ```shell
 xfrpc -c frpc_mini.ini -f -d 7 
@@ -215,11 +242,15 @@ xfrpc -c frpc_mini.ini -f -d 7
 xfrpc -c frpc_mini.ini -d 0
 ```
 
+It is important to note that running xfrpc in release mode will generate less log output and will run faster than in debug mode, so it is the recommended way to run xfrpc in production environment.
+
 ## Openwrt luci configure ui
 
-If running xfrpc in openwrt box, [luci-app-xfrpc](https://github.com/liudf0716/luci-app-xfrpc) is a good choice 
+If you're running xfrpc on an OpenWRT device, luci-app-xfrpc is a good option to use as it provides a web-based interface for configuring and managing xfrpc. luci-app-xfrpc is a module for the LuCI web interface, which is the default web interface for OpenWRT.
 
-luci-app-xfrpc was recruited by [luci project](https://github.com/openwrt/luci) 
+luci-app-xfrpc was adopted by the LuCI project, which is the official web interface for OpenWRT. This means that it is a supported and well-maintained option for managing xfrpc on OpenWRT devices.
+
+luci-app-xfrpc can be installed via the opkg package manager on OpenWRT and provides a user-friendly interface for configuring the xfrpc client, including options for setting up multiple connections, custom domains and more.
 
 ## How to contribute our project
 

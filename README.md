@@ -1,4 +1,5 @@
-![xfrpc](https://github.com/liudf0716/xfrpc/blob/master/logo.png)
+
+![xfrpc](https://user-images.githubusercontent.com/1182593/213063003-73501d3b-1a22-4f4a-8f3f-4ca3268b5bee.png)
 
 
 ## What is xfrpc 

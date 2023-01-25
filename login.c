@@ -99,7 +99,7 @@ void init_login()
 		exit(0);
 	}
 
-	if (strcmp(ifname, "br-lan") == 0) {
+	if (strcmp(ifname, "br-lan") == 0 || strcmp(ifname, "br0") == 0) {
 		c_conf->is_router = 1;
 		debug(LOG_DEBUG, "working in router");
 	}

@@ -158,8 +158,8 @@ int get_net_ifname(char *if_buf, int blen)
 	    family = ifa->ifa_addr->sa_family;
 
 		if (family == AF_INET) {
-			// for LEDE/OpenWRT embedded router os
-			if (strcmp(ifa->ifa_name, "br-lan") == 0) {
+			// for LEDE/OpenWRT or Padavan embedded router os
+			if (strcmp(ifa->ifa_name, "br-lan") == 0 || strcmp(ifa->ifa_name, "br0") == 0) {
 				found = 1;
 				break;
 			}

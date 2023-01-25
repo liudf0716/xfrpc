@@ -331,8 +331,16 @@ static int
 process_data(struct tmux_stream *stream, uint32_t length, uint16_t flags, 
 				void (*fn)(uint8_t *, int, void *), void *param)
 {
+    if(!stream){
+        return 0;
+    }
+	uint32_t id = stream->id;
+
 	if (!process_flags(flags, stream)) return 0;
 
+	if(!get_stream_by_id(id)){
+		return length;
+	}
 
 	if (length > stream->recv_window) {
 		debug(LOG_ERR, "receive window exceed (remain %d, recv %d)", stream->recv_window, length);
@@ -363,9 +371,15 @@ incr_send_window(struct bufferevent *bev, struct tcp_mux_header *tmux_hdr, uint1
     if(!stream){
         return 0;
     }
+	uint32_t id = stream->id;
 
 	if (!process_flags(flags, stream))
 		return 0;
+
+	if(!get_stream_by_id(id)){
+		return 1;
+	}
+
 	uint32_t length = ntohl(tmux_hdr->length);
 
 	if (stream->send_window == 0) bufferevent_enable(bev, EV_READ);

@@ -88,6 +88,7 @@ sequenceDiagram
 To run xfrpc on Ubuntu 20.04 LTS, you will need to have the following libraries installed: libevent, openssl-dev, and json-c. Use the following command in your terminal to install these libraries:
 
 ```
+sudo apt-get update
 sudo apt-get install -y libjson-c-dev libevent-dev libssl-dev
 ```
 

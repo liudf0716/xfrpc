@@ -27,5 +27,5 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake ..
+        cmake -D THIRDPARTY_STATIC_BUILD=ON ..
         make

@@ -16,12 +16,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    
-    - name: install other depend lib
-      run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libjson-c-dev
-          sudo apt-get install -y libevent-dev
           
     - name: compile xfrpc
       run: |

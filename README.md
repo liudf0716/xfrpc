@@ -134,6 +134,30 @@ The THIRDPARTY_STATIC_BUILD parameter is default set to OFF, which means that by
 
 It's important to note that you will need cmake version greater than 3.1 to use this feature.
 
+### Cross-compile xfrpc by Built-in thirdparty
+
+The method of compiling arm architecture or mips architecture xfrpc under x86 architecture is as follows.
+
+Test on Ubuntu 22.04 LTS
+
+Cross-compile mips architecture xfrpc(only support linux mips, irix mips don't supported)
+If can't run in special mips architecture, Modify the CMakeLists.txt in the thirdparty folder and change the linux-mips32 string to linux-generic32.After modify can work.
+```
+sudo apt-get install gcc-mips-linux-gnu # install mips-gcc compiler
+mkdir build && cd build
+cmake -DTHIRDPARTY_STATIC_BUILD=mips -DCMAKE_C_COMPILER=mips-linux-gnu-gcc ..
+make
+```
+
+CMAKE_C_COMPILER flag is the path of your cross compiler.I recommend that you put this in an environment variable.
+
+Cross-compile arm architecture xfrpc
+```
+sudo apt-get install arm-linux-gnueabihf-gcc
+mkdir build && cd build
+cmake -DTHIRDPARTY_STATIC_BUILD=arm -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc ..
+make
+```
 
 ### Build static binary in Alpine container
 

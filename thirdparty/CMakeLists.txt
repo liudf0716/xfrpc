@@ -6,10 +6,10 @@ message(STATUS "architecture is::${THIRDPARTY_STATIC_BUILD}")
 
 if (THIRDPARTY_STATIC_BUILD STREQUAL "mips")
     set(ARCH_FLAG "linux-mips32")
-    set(CROSS_C_COMPILER "mips-linux-gnu-gcc")
+    set(CROSS_C_COMPILER ${CMAKE_C_COMPILER})
 elseif (THIRDPARTY_STATIC_BUILD STREQUAL "arm")
     set(ARCH_FLAG "linux-armv4")
-    set(CROSS_C_COMPILER "arm-linux-gnueabihf-gcc")
+    set(CROSS_C_COMPILER ${CMAKE_C_COMPILER})
 endif()
 
 

@@ -235,7 +235,7 @@ static void
 hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 {
 	if (is_client_connected()) {
-		//debug(LOG_DEBUG, "ping frps");
+		debug(LOG_INFO, "ping frps");
 		ping(NULL);
 	}
 

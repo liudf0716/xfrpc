@@ -173,6 +173,9 @@ new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 {
 	const char *tmp = NULL;
 	int  nret = 0;
+	char *path = NULL;
+	char *delimiter = ",";
+	char *save = NULL;
 	struct json_object *j_np_req = json_object_new_object();
 	if ( ! j_np_req)
 		return 0;
@@ -208,6 +211,11 @@ new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	json_object *j_location_array = json_object_new_array();
 	if (np_req->locations) {
 		json_object_object_add(j_np_req, "locations", j_location_array);
+		path = strtok_r(np_req->locations, delimiter, &save);
+		while (path) {
+			json_object_array_add(j_location_array, json_object_new_string(path));
+			path = strtok_r(NULL, delimiter, &save);
+		}
 	} else {
 		json_object_object_add(j_np_req, "locations", NULL);
 	}

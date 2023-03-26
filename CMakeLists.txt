@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8.12)
 
 project(xfrp C)
 
@@ -14,7 +14,7 @@ else()
 
 	find_package(LibEvent)
 	if(NOT LibEvent_FOUND)
-	  message(FATAL_ERROR "libevent2 not found!")
+	  message(FATAL_ERROR "LibEvent not found!")
 	endif(NOT LibEvent_FOUND)
 
 	find_package(OpenSSL)

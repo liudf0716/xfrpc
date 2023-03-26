@@ -1,0 +1,75 @@
+#write a circle config file to compile xfrpc project
+# the xfrpc project is a c project
+# to compile the project, we need to install some dependencies
+# in ubuntu 22.04, we need to install the following dependencies
+# 1. gcc
+# 2. cmake
+# 3. libevent-dev
+# 4. libjson-c
+# 5. openssl
+# 6. libz-dev
+# the following is the config file
+
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: ubuntu:22.04
+    steps:
+      - checkout
+      - run:
+          name: install dependencies
+          command: |
+            apt-get update
+            apt-get install -y gcc cmake libevent-dev libjson-c-dev libssl-dev libz-dev
+
+      - run:
+          name: install go-shadowsocks
+          command: |
+            # install wget and tar
+            apt-get install -y wget tar
+            # download the go-shadowsocks project
+            wget https://github.com/shadowsocks/go-shadowsocks2/releases/download/v0.1.5/shadowsocks2-linux.tgz
+            # unzip the project
+            tar -zxvf shadowsocks2-linux.tgz
+            # move the shadowsocks2-linux to build folder
+            mv shadowsocks2-linux /usr/bin/shadowsocks2-linux
+            
+      - run:
+          name: run xfrpc
+          command: |
+            mkdir build
+            cd build
+            cmake ..
+            make
+            # generate ini file for xfrpc
+            # the ini file is to configure the xfrpc
+            # the xfrpc will connect to frps server
+            # the frps server is running on from environment variable XFRPC_SERVER
+            # the frps server is listening on port from environment variable FRPS_PORT
+            # the frps server is using the token from environment variable TOKEN
+            # xfrpc add a proxy named chatgptd
+            # the proxy is listening on port 1080
+            # xfrpc will connect to frps server and forward the traffic to the proxy
+            # the proxy will forward the traffic to the shadowsocks-libev
+            # the shadowsocks-libev will forward the traffic to the internet
+            echo "[common]" > xfrpc.ini
+            echo "server_addr = $XFRPC_SERVER" >> xfrpc.ini
+            echo "server_port = $FRPS_PORT" >> xfrpc.ini
+            echo "token = $TOKEN" >> xfrpc.ini
+            echo "[chatgptd]" >> xfrpc.ini
+            echo "type = tcp" >> xfrpc.ini
+            echo "local_ip = 127.0.0.1" >> xfrpc.ini
+            echo "local_port = 1080" >> xfrpc.ini
+            echo "remote_port = 1980" >> xfrpc.ini
+            # run go-shadowsocks2
+            shadowsocks2-linux -s "ss://AEAD_CHACHA20_POLY1305:$SS_PASSWD@:1080" -verbose &
+            # run xfrpc in debug mode
+            cat xfrpc.ini
+            ./xfrpc -c xfrpc.ini -f -d 7
+
+      - store_artifacts:
+          path: build/xfrpc
+          destination: xfrpc
+
+# the above config file is to compile the xfrpc project

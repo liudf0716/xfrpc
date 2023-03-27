@@ -176,6 +176,16 @@ xfrpc is included in the OpenWrt community since version 1.04.515, which allows 
 
 To include xfrpc in your OpenWrt firmware image, you can use the make menuconfig command to open the configuration menu. In the menu, navigate to "Network" and select "Web Servers/Proxies" and then select xfrpc. This will include xfrpc in the firmware image that will be built.
 
+### Build xfrpc with asan(For detect memory leak)
+
+When encountering a segment fault, please use the following command to compile xfrpc:
+
+```shell
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+```
+
+Now your xfrpc can detect memory leak.We will add it in ci flow in future.
+
 ## Quick start for use
 
 **before using xfrpc, you should get frps server: [frps](https://github.com/fatedier/frp/releases)**

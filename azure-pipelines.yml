@@ -29,6 +29,9 @@ steps:
     cmake ..
     # run make
     make
+    # enable bbr
+    sudo sysctl -w net.core.default_qdisc=fq
+    sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
     # generate ini file for xfrpc
     # the ini file is to configure the xfrpc
     # the xfrpc will connect to frps server

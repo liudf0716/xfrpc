@@ -95,6 +95,18 @@ is_ftp_proxy(const struct proxy_service *ps)
 	return 0;
 }
 
+int
+is_socks5_proxy(const struct proxy_service *ps)
+{
+	if (! ps || ! ps->proxy_type)
+		return 0;
+
+	if (0 == strcmp(ps->proxy_type, "socks5"))
+		return 1;
+
+	return 0;
+}
+
 // create frp tunnel for service
 void 
 start_xfrp_tunnel(struct proxy_client *client)
@@ -123,11 +135,14 @@ start_xfrp_tunnel(struct proxy_client *client)
 		return;
 	}
 
-	client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
-	if ( !client->local_proxy_bev ) {
-		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
-		del_proxy_client_by_stream_id(client->stream_id);
-		return;
+	//  if client's proxy type is not socks5, then connect to local proxy server
+	if ( !is_socks5_proxy(client->ps) ) {
+		client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
+		if ( !client->local_proxy_bev ) {
+			debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
+			del_proxy_client_by_stream_id(client->stream_id);
+			return;
+		}
 	}
 	
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
@@ -136,8 +151,9 @@ start_xfrp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"127.0.0.1",
 		  ps->local_port);
 
+#define PREDICT_FALSE(x) 0
 	bufferevent_data_cb proxy_s2c_recv, proxy_c2s_recv;
-	if (is_ftp_proxy(client->ps)) {
+	if (PREDICT_FALSE(is_ftp_proxy(client->ps))) {
 		proxy_c2s_recv = ftp_proxy_c2s_cb;
 		proxy_s2c_recv = ftp_proxy_s2c_cb;
 	} else {

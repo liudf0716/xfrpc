@@ -33,6 +33,7 @@
 #include "config.h"
 #include "debug.h"
 #include "control.h"
+#include "proxy.h"
 
 static uint8_t proto_version = 0;
 static uint8_t remote_go_away;
@@ -356,7 +357,12 @@ process_data(struct tmux_stream *stream, uint32_t length, uint16_t flags,
 		fn(data, length, pc);
 		free(data);
 	} else {
-		tx_ring_buffer_write(pc->local_proxy_bev, &stream->rx_ring, length);
+		// if pc's type is socks5, we should send data to socks5 client
+		if (is_socks5_proxy(pc->ps)) {
+			forward_socks5_data_2_target(pc, &stream->rx_ring, length);
+		} else {
+			rx_ring_buffer_write(pc->local_proxy_bev, &stream->rx_ring, length);
+		}
 	}
 	
 	struct bufferevent *bout = get_main_control()->connect_bev;

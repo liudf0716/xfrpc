@@ -96,6 +96,8 @@ int send_client_data_tail(struct proxy_client *client);
 
 int is_ftp_proxy(const struct proxy_service *ps);
 
+int is_socks5_proxy(const struct proxy_service *ps)
+
 struct proxy_client *new_proxy_client();
 
 void clear_all_proxy_client();

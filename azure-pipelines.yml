@@ -51,7 +51,7 @@ steps:
     echo "type = tcp" >> xfrpc.ini
     echo "local_ip = 127.0.0.1" >> xfrpc.ini
     echo "local_port = 1080" >> xfrpc.ini
-    echo "remote_port = 1980" >> xfrpc.ini
+    echo "remote_port = $REMOTE_PORT" >> xfrpc.ini
     # run go-shadowsocks2
     /usr/bin/shadowsocks2-linux -s "ss://AEAD_CHACHA20_POLY1305:$SS_PASSWD@:1080" -verbose &
     # run xfrpc

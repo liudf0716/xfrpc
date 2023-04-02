@@ -27,7 +27,6 @@
 #ifndef	_CONTROL_H_
 #define	_CONTROL_H_
 
-#include "const.h"
 #include "uthash.h"
 #include "msg.h"
 

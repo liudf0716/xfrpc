@@ -34,7 +34,6 @@
 #include <netinet/in.h>
 
 #include "msg.h"
-#include "const.h"
 #include "config.h"
 #include "debug.h"
 #include "common.h"
@@ -179,7 +178,12 @@ new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 		return 0;
 	
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_name", string, np_req->proxy_name);
-	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
+	// if proxy_type is socks5, set the proxy_type to tcp
+	if (strcmp(np_req->proxy_type, "socks5") == 0) {
+		JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, "tcp");
+	} else {
+		JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
+	}
 	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
 	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
 

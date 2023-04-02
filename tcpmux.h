@@ -154,4 +154,10 @@ struct tmux_stream* get_stream_by_id(uint32_t id);
 
 int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);
 
+int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len);
+
+uint32_t rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
+
+uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
+
 #endif

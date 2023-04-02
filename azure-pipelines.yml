@@ -1,0 +1,59 @@
+# write a azure pipeline yaml
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- checkout: self
+  persistCredentials: true
+
+- script: |
+    # install dependencies
+    sudo apt-get update
+    sudo apt-get install -y gcc cmake libevent-dev libjson-c-dev libssl-dev libz-dev
+    # install wget and tar
+    sudo apt-get install -y wget tar
+    # download the go-shadowsocks project
+    wget https://github.com/shadowsocks/go-shadowsocks2/releases/download/v0.1.5/shadowsocks2-linux.tgz
+    # unzip the project
+    tar -zxvf shadowsocks2-linux.tgz
+    # move the shadowsocks2-linux to /usr/bin/shadowsocks2-linux
+    sudo mv shadowsocks2-linux /usr/bin/shadowsocks2-linux
+    # create a build folder
+    mkdir build
+    # go to build folder
+    cd build
+    # run cmake
+    cmake ..
+    # run make
+    make
+    # enable bbr
+    sudo sysctl -w net.core.default_qdisc=fq
+    sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
+    # generate ini file for xfrpc
+    # the ini file is to configure the xfrpc
+    # the xfrpc will connect to frps server
+    # the frps server is running on from environment variable XFRPC_SERVER
+    # the frps server is listening on port from environment variable FRPS_PORT
+    # the frps server is using the token from environment variable TOKEN
+    # xfrpc add a proxy named chatgptd
+    # the proxy is listening on port 1080
+    # xfrpc will connect to frps server and forward the traffic to the proxy
+    # the proxy will forward the traffic to the go-shadowsocks2
+    # the go-shadowsocks2 will forward the traffic to the internet
+    echo "[common]" > xfrpc.ini
+    echo "server_addr = $XFRPC_SERVER" >> xfrpc.ini
+    echo "server_port = $FRPS_PORT" >> xfrpc.ini
+    echo "token = $TOKEN" >> xfrpc.ini
+    echo "[chatgptd]" >> xfrpc.ini
+    echo "type = tcp" >> xfrpc.ini
+    echo "local_ip = 127.0.0.1" >> xfrpc.ini
+    echo "local_port = 1080" >> xfrpc.ini
+    echo "remote_port = $REMOTE_PORT" >> xfrpc.ini
+    # run go-shadowsocks2
+    /usr/bin/shadowsocks2-linux -s "ss://AEAD_CHACHA20_POLY1305:$SS_PASSWD@:1080" -verbose &
+    # run xfrpc
+    ./xfrpc -c xfrpc.ini -f -d 7
+  displayName: 'build and run xfrpc'

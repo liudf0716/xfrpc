@@ -58,4 +58,6 @@ struct proxy_service *get_proxy_service(const char *proxy_name);
 
 struct proxy_service *get_all_proxy_services();
 
+int validate_proxy(struct proxy_service *ps);
+
 #endif //_CONFIG_H_

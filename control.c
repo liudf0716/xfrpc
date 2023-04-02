@@ -41,7 +41,6 @@
 #include "client.h"
 #include "uthash.h"
 #include "config.h"
-#include "const.h"
 #include "msg.h"
 #include "control.h"
 #include "uthash.h"

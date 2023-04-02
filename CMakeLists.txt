@@ -26,6 +26,38 @@ else()
 	include_directories(${JSON-C_INCLUDE_DIR})
 endif(THIRDPARTY_STATIC_BUILD)
 
+macro(check_asan _RESULT)
+    include(CheckCSourceRuns)
+    set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
+    check_c_source_runs(
+            [====[
+int main()
+{
+  return 0;
+}
+]====]
+            ${_RESULT}
+    )
+    unset(CMAKE_REQUIRED_FLAGS)
+endmacro()
+
+# Enable address sanitizer
+option(ENABLE_SANITIZER "Enable sanitizer(Debug+Gcc/Clang/AppleClang)" ON)
+if(ENABLE_SANITIZER AND NOT MSVC)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        check_asan(HAS_ASAN)
+        if(HAS_ASAN)
+		message(WARNING "add sanitizer")
+		set(asan_c_flags "-fsanitize=address -fsanitize=leak")
+		set(asan_c_libs "asan")
+        else()
+            message(WARNING "sanitizer is no supported with current tool-chains")
+        endif()
+    else()
+        message(WARNING "Sanitizer supported only for debug type")
+    endif()
+endif()
+
 set(src_xfrpc
 	main.c
   	client.c
@@ -60,14 +92,14 @@ set(test_libs
 	event
 	)
 
-ADD_DEFINITIONS(-Wall -g  --std=gnu99)
+ADD_DEFINITIONS(-Wall -g -Wno-deprecated-declarations --std=gnu99 ${asan_c_flags})
 
 if (STATIC_BUILD STREQUAL "ON")
   add_link_options(-static)
 endif (STATIC_BUILD)
 
 add_executable(xfrpc ${src_xfrpc})
-target_link_libraries(xfrpc ${libs} ${static_libs})
+target_link_libraries(xfrpc ${libs} ${static_libs} ${asan_c_libs})
 
 install(TARGETS xfrpc
         RUNTIME DESTINATION bin

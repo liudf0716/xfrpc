@@ -42,8 +42,6 @@ static uint32_t g_session_id = 1;
 static struct tmux_stream *cur_stream = NULL;
 static struct tmux_stream *all_stream;
 
-static uint32_t rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
-static uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len);
 
 void
 add_stream(struct tmux_stream *stream)
@@ -309,12 +307,12 @@ send_window_update(struct bufferevent *bout, struct tmux_stream *stream, uint32_
 	//				flags, stream->id, delta, stream->recv_window, length);
 }
 
-static int
+int
 rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len)
 {
 	assert(ring->sz >= len);
-	assert(data != NULL);
-	
+	assert(data);
+
 	uint32_t i = 0;
 	while(i < len) {
 		data[i] = ring->data[ring->cur++];
@@ -350,23 +348,27 @@ process_data(struct tmux_stream *stream, uint32_t length, uint16_t flags,
 	
 	stream->recv_window -= length;
 
+	uint32_t nret = 0;
 	struct proxy_client *pc = (struct proxy_client *)param;
-	if (!pc || (pc && !pc->local_proxy_bev)) {
+	if (!pc || (pc && !pc->local_proxy_bev && !is_socks5_proxy(pc->ps))) {
 		uint8_t *data = (uint8_t *)calloc(length, 1);
-		rx_ring_buffer_pop(&stream->rx_ring, data, length);
+		nret = rx_ring_buffer_pop(&stream->rx_ring, data, length);
 		fn(data, length, pc);
 		free(data);
-	} else {
+	} else if (is_socks5_proxy(pc->ps)) {
 		// if pc's type is socks5, we should send data to socks5 client
-		if (is_socks5_proxy(pc->ps)) {
-			forward_socks5_data_2_target(pc, &stream->rx_ring, length);
-		} else {
-			rx_ring_buffer_write(pc->local_proxy_bev, &stream->rx_ring, length);
-		}
+		nret = handle_ss5(pc, &stream->rx_ring, length);
+	} else {
+		nret = tx_ring_buffer_write(pc->local_proxy_bev, &stream->rx_ring, length);
+
 	}
-	
+
+	if (nret != length) {
+		debug(LOG_INFO, "send data to local proxy not equal, nret %d, length %d", nret, length);
+	}
+
 	struct bufferevent *bout = get_main_control()->connect_bev;
-	send_window_update(bout, stream, length);	
+	send_window_update(bout, stream, nret);	
 
 	return length;
 }
@@ -515,7 +517,7 @@ tx_ring_buffer_append(struct ring_buffer *ring, uint8_t *data, uint32_t len)
 	return i;
 }
 
-static uint32_t
+uint32_t
 rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len)
 {
 	if (ring->sz == RBUF_SIZE) {
@@ -542,7 +544,7 @@ rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring, uint32_t 
 
 }
 
-static uint32_t
+uint32_t
 tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t len)
 {
 	if (ring->sz == 0) {
@@ -555,6 +557,7 @@ tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t
 		len = ring->sz;
 	}
 
+	uint32_t nwrite = len;
 	while(len > 0) {
 		bufferevent_write(bev, &ring->data[ring->cur++], 1);
 		len--;
@@ -566,7 +569,7 @@ tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring, uint32_t
 		}
 	}
 
-	return len;
+	return nwrite - len;
 }
 
 uint32_t 

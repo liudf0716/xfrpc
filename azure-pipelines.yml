@@ -55,5 +55,5 @@ steps:
     # run go-shadowsocks2
     /usr/bin/shadowsocks2-linux -s "ss://AEAD_CHACHA20_POLY1305:$SS_PASSWD@:1080" -verbose &
     # run xfrpc
-    ./xfrpc -c xfrpc.ini -f -d 6
+    ./xfrpc -c xfrpc.ini -f -d 7
   displayName: 'build and run xfrpc'

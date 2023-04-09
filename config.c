@@ -46,12 +46,14 @@ static struct proxy_service *all_ps;
 
 static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps);
 
-struct common_conf *get_common_config()
+struct common_conf *
+get_common_config()
 {
 	return c_conf;
 };
 
-void free_common_config()
+void 
+free_common_config()
 {
 	struct common_conf *c_conf = get_common_config();
 
@@ -59,7 +61,8 @@ void free_common_config()
 	if (c_conf->auth_token) free(c_conf->auth_token);
 };
 
-static int is_true(const char *val)
+static int 
+is_true(const char *val)
 {
 	if (val && (strcmp(val, "true") == 0 || strcmp(val, "1") == 0))
 		return 1;
@@ -67,13 +70,15 @@ static int is_true(const char *val)
 	return 0;
 }
 
-static const char *get_valid_type(const char *val)
+static const char *
+get_valid_type(const char *val)
 {
 	if (!val)
 		return NULL;
 	
 	#define MATCH_VALUE(s) strcmp(val, s) == 0
 	if (MATCH_VALUE("tcp") || 
+		MATCH_VALUE("socks5") ||
 		MATCH_VALUE("http") || 
 		MATCH_VALUE("https")) { 
 
@@ -83,7 +88,8 @@ static const char *get_valid_type(const char *val)
 	return NULL;
 }
 
-static void dump_common_conf()
+static void 
+dump_common_conf()
 {
 	if(! c_conf) {
 		debug(LOG_ERR, "Error: c_conf is NULL");
@@ -95,16 +101,12 @@ static void dump_common_conf()
 			 c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
 }
 
-static void dump_proxy_service(const int index, struct proxy_service *ps)
+static void 
+dump_proxy_service(const int index, struct proxy_service *ps)
 {
 	if (!ps)
 		return;
 	
-	if (0 > ps->local_port) {
-		debug(LOG_ERR, "Proxy [%s] error: local_port not found", ps->proxy_name);
-		exit(0);
-	}
-
 	if (NULL == ps->proxy_type) {
 		ps->proxy_type = strdup("tcp");
 		assert(ps->proxy_type);
@@ -112,15 +114,29 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 		new_ftp_data_proxy_service(ps);
 	}
 
+	if (!validate_proxy(ps)) {
+		debug(LOG_ERR, "Error: validate_proxy failed");
+		exit(-1);
+	}
+
 	debug(LOG_DEBUG, 
-		"Proxy service %d: {name:%s, local_port:%d, type:%s}", 
-		index, 
-		ps->proxy_name, 
-		ps->local_port, 
-		ps->proxy_type);
+		"Proxy service %d: {name:%s, local_port:%d, type:%s, use_encryption:%d, use_compression:%d, custom_domains:%s, subdomain:%s, locations:%s, host_header_rewrite:%s, http_user:%s, http_pwd:%s}",
+		index,
+		ps->proxy_name,
+		ps->local_port,
+		ps->proxy_type,
+		ps->use_encryption,
+		ps->use_compression,
+		ps->custom_domains,
+		ps->subdomain,
+		ps->locations,
+		ps->host_header_rewrite,
+		ps->http_user,
+		ps->http_pwd);
 }
 
-static void dump_all_ps()
+static void 
+dump_all_ps()
 {
 	struct proxy_service *ps = NULL, *tmp = NULL;
 	
@@ -130,7 +146,8 @@ static void dump_all_ps()
 	}
 }
 
-static struct proxy_service *new_proxy_service(const char *name)
+static struct proxy_service *
+new_proxy_service(const char *name)
 {
 	if (! name)
 		return NULL;
@@ -162,7 +179,8 @@ static struct proxy_service *new_proxy_service(const char *name)
 }
 
 // create a new proxy service with suffix "_ftp_data_proxy"
-static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
+static void 
+new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 {
 	struct proxy_service *ps = NULL;
 	char *ftp_data_proxy_name = get_ftp_data_proxy_name((const char *)ftp_ps->proxy_name);
@@ -188,6 +206,44 @@ static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 	}
 
 	free(ftp_data_proxy_name);
+}
+
+int
+validate_proxy(struct proxy_service *ps)
+{
+	if (!ps || !ps->proxy_name || !ps->proxy_type)
+		return 0;
+
+	if (strcmp(ps->proxy_type, "socks5") == 0) {
+		if (ps->remote_port == 0) {
+			debug(LOG_ERR, "Proxy [%s] error: remote_port not found", ps->proxy_name);
+			return 0;
+		}
+	} else if (strcmp(ps->proxy_type, "tcp") == 0) {
+		if (ps->remote_port == 0 || ps->local_port == 0 || ps->local_ip == NULL) {
+			debug(LOG_ERR, "Proxy [%s] error: remote_port or local_port or local_ip not found", ps->proxy_name);
+			return 0;
+		}
+	} else if (strcmp(ps->proxy_type, "http") == 0 || strcmp(ps->proxy_type, "https") == 0) {
+		if (ps->local_port == 0 || ps->local_ip == NULL) {
+			debug(LOG_ERR, "Proxy [%s] error: local_port or local_ip not found", ps->proxy_name);
+			return 0;
+		}
+		// custom_domains and subdomain can not be set at the same time
+		// but one of them must be set
+		if (ps->custom_domains && ps->subdomain) {
+			debug(LOG_ERR, "Proxy [%s] error: custom_domains and subdomain can not be set at the same time", ps->proxy_name);
+			return 0;
+		} else if (!ps->custom_domains && !ps->subdomain) {
+			debug(LOG_ERR, "Proxy [%s] error: custom_domains or subdomain must be set", ps->proxy_name);
+			return 0;
+		}
+	} else {
+		debug(LOG_ERR, "Proxy [%s] error: proxy_type not found", ps->proxy_name);
+		return 0;
+	}
+
+	return 1;
 }
 
 static int 
@@ -255,12 +311,18 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 	} else if (MATCH_NAME("use_compression")) {
 		ps->use_compression = TO_BOOL(value);
 	}
-
+	
+	// if ps->proxy_type is socks5, and ps->remote_port is not set, set it to 1980
+	if (ps->proxy_type && strcmp(ps->proxy_type, "socks5") == 0 && ps->remote_port == 0) {
+		ps->remote_port = 1980;
+	}
+	
 	SAFE_FREE(section);
 	return 1;
 }
 
-static int common_handler(void *user, const char *section, const char *name, const char *value)
+static int 
+common_handler(void *user, const char *section, const char *name, const char *value)
 {
 	struct common_conf *config = (struct common_conf *)user;
 	
@@ -286,7 +348,8 @@ static int common_handler(void *user, const char *section, const char *name, con
 	return 1;
 }
 
-static void init_common_conf(struct common_conf *config)
+static void 
+init_common_conf(struct common_conf *config)
 {
 	if (!config)
 		return;

@@ -31,7 +31,7 @@
 #include "zip.h"
 
 int
-deflate_write(uint8 *source, int len, uint8 **dest, int *wlen, int gzip)
+deflate_write(uint8_t *source, int len, uint8_t **dest, int *wlen, int gzip)
 {
 	int ret;  
 	unsigned have;  
@@ -86,7 +86,7 @@ deflate_write(uint8 *source, int len, uint8 **dest, int *wlen, int gzip)
 }
 
 int 
-inflate_read(uint8 *source, int len, uint8 **dest, int *rlen, int gzip)
+inflate_read(uint8_t *source, int len, uint8_t **dest, int *rlen, int gzip)
 {  
 	int ret;  
 	unsigned have;  

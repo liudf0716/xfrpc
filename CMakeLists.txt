@@ -92,7 +92,7 @@ set(test_libs
 	event
 	)
 
-ADD_DEFINITIONS(-Wall -g  --std=gnu99 ${asan_c_flags})
+ADD_DEFINITIONS(-Wall -g -Wno-deprecated-declarations --std=gnu99 ${asan_c_flags})
 
 if (STATIC_BUILD STREQUAL "ON")
   add_link_options(-static)

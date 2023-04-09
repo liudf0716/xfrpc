@@ -39,6 +39,21 @@ struct bufferevent;
 struct event;
 struct proxy_service;
 
+#define SOCKS5_ADDRES_LEN 20
+struct socks5_addr {
+	uint8_t 	addr[SOCKS5_ADDRES_LEN];
+	uint16_t	port;
+	uint8_t 	type;
+	uint8_t		reserve;
+};
+
+enum socks5_state {
+	SOCKS5_INIT,
+	SOCKS5_HANDSHAKE,
+	SOCKS5_CONNECT,
+	SOCKS5_ESTABLISHED,
+};
+
 struct proxy_client {
 	struct event_base 	*base;
 	struct bufferevent	*ctl_bev; // xfrpc proxy <---> frps
@@ -53,6 +68,10 @@ struct proxy_client {
 	unsigned char			*data_tail; // storage untreated data
 	size_t					data_tail_size;
 	
+	// socks5 only
+	struct 	socks5_addr remote_addr;
+	enum 	socks5_state state;
+
 	// private arguments
 	UT_hash_handle hh;
 };
@@ -64,6 +83,7 @@ struct proxy_service {
 	int 	use_encryption;
 	int		use_compression;
 
+	// tcp only
 	char	*local_ip;
 	int		remote_port;
 	int 	remote_data_port;
@@ -96,8 +116,12 @@ int send_client_data_tail(struct proxy_client *client);
 
 int is_ftp_proxy(const struct proxy_service *ps);
 
+int is_socks5_proxy(const struct proxy_service *ps);
+
 struct proxy_client *new_proxy_client();
 
 void clear_all_proxy_client();
+
+void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx);
 
 #endif //_CLIENT_H_

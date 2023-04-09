@@ -41,7 +41,6 @@
 #include "uthash.h"
 #include "control.h"
 #include "config.h"
-#include "const.h"
 #include "uthash.h"
 #include "zip.h"
 #include "common.h"
@@ -60,16 +59,25 @@ xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-static void 
+void 
 xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	struct proxy_client *client = ctx;
 	assert(client);
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] stream_id %d: %s", 
-						client->ps->local_ip, client->ps->local_port, 
-						client->stream_id, strerror(errno));
+		if (0 == strcmp(client->ps->proxy_type, "tcp"))
+			debug(LOG_DEBUG, "xfrpc tcp proxy close connect server [%s:%d] stream_id %d: %s", 
+							client->ps->local_ip, client->ps->local_port, 
+							client->stream_id, strerror(errno));
+		else if (0 == strcmp(client->ps->proxy_type, "socks5"))
+			debug(LOG_DEBUG, "xfrpc socks5 proxy close connect [%d:%d]  stream_id %d: %s", 
+							client->remote_addr.type, client->remote_addr.port,
+							client->stream_id, strerror(errno));
+		else
+			debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] stream_id %d: %s", 
+							client->ps->local_ip, client->ps->local_port, 
+							client->stream_id, strerror(errno));
 		if (tmux_stream_close(client->ctl_bev, &client->stream)) {
 			bufferevent_free(bev);
 			client->local_proxy_bev = NULL;
@@ -79,6 +87,42 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 		if (client->data_tail_size > 0) {
 			debug(LOG_DEBUG, "send client data ...");
 			send_client_data_tail(client);		
+		} else if (is_socks5_proxy(client->ps)) {
+#if 0
+			debug(LOG_DEBUG, "send socks5 proxy response data ...");
+			client->state = SOCKS5_CONNECT;
+			uint8_t *socks5_response = NULL;
+			int offset = 0;
+			if (client->remote_addr.type == 0x01) {
+				offset = 10;
+			} else if (client->remote_addr.type == 0x03) {
+				uint8_t domain_len = strlen(client->remote_addr.addr);
+				offset = 7 + domain_len;
+			} else if (client->remote_addr.type == 0x04) {
+				offset = 22;
+			} else {
+				debug(LOG_ERR, "not support addr type: %d", client->remote_addr.type);
+				assert(0);
+				return;
+			}
+			socks5_response = (uint8_t *)malloc(offset);
+			memset(socks5_response, 0, offset);
+			socks5_response[0] = 0x05;
+			socks5_response[3] = client->remote_addr.type;
+			if (client->remote_addr.type == 0x03) {
+				uint8_t domain_len = strlen(client->remote_addr.addr);
+				socks5_response[4] = domain_len;
+				memcpy(socks5_response + 5, client->remote_addr.addr, domain_len);
+			}
+			tmux_stream_write(client->ctl_bev, socks5_response, offset, &client->stream);
+#endif
+		    // if rb is not empty, send data
+			// rb is client->stream.rx_ring
+			struct ring_buffer *rb = &client->stream.rx_ring;
+			if (rb->sz > 0)
+				tx_ring_buffer_write(client->local_proxy_bev, rb, rb->sz);
+
+			client->state = SOCKS5_ESTABLISHED;
 		}
 	}
 }
@@ -90,6 +134,18 @@ is_ftp_proxy(const struct proxy_service *ps)
 		return 0;
 
 	if (0 == strcmp(ps->proxy_type, "ftp") && ps->remote_data_port > 0)
+		return 1;
+
+	return 0;
+}
+
+int
+is_socks5_proxy(const struct proxy_service *ps)
+{
+	if (! ps || ! ps->proxy_type)
+		return 0;
+
+	if (0 == strcmp(ps->proxy_type, "socks5"))
 		return 1;
 
 	return 0;
@@ -123,11 +179,14 @@ start_xfrp_tunnel(struct proxy_client *client)
 		return;
 	}
 
-	client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
-	if ( !client->local_proxy_bev ) {
-		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
-		del_proxy_client_by_stream_id(client->stream_id);
-		return;
+	//  if client's proxy type is not socks5, then connect to local proxy server
+	if ( !is_socks5_proxy(client->ps) ) {
+		client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
+		if ( !client->local_proxy_bev ) {
+			debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
+			del_proxy_client_by_stream_id(client->stream_id);
+			return;
+		}
 	}
 	
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
@@ -136,8 +195,9 @@ start_xfrp_tunnel(struct proxy_client *client)
 		  ps->local_ip ? ps->local_ip:"127.0.0.1",
 		  ps->local_port);
 
+#define PREDICT_FALSE(x) 0
 	bufferevent_data_cb proxy_s2c_recv, proxy_c2s_recv;
-	if (is_ftp_proxy(client->ps)) {
+	if (PREDICT_FALSE(is_ftp_proxy(client->ps))) {
 		proxy_c2s_recv = ftp_proxy_c2s_cb;
 		proxy_s2c_recv = ftp_proxy_s2c_cb;
 	} else {
@@ -152,6 +212,11 @@ start_xfrp_tunnel(struct proxy_client *client)
 						xfrp_worker_event_cb, 
 						client);
 		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
+	}
+
+	if (is_socks5_proxy(client->ps)) {
+		debug(LOG_DEBUG, "socks5 proxy client can't connect to remote server here ...");
+		return;
 	}
 
 	bufferevent_setcb(client->local_proxy_bev, 

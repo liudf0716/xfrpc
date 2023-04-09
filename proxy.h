@@ -36,6 +36,7 @@
 
 #include "client.h"
 #include "common.h"
+#include "tcpmux.h"
 
 #define IP_LEN 16
 
@@ -60,4 +61,8 @@ void free_proxy_obj(struct proxy *p);
 void set_ftp_data_proxy_tunnel(const char *ftp_proxy_name, 
 								struct ftp_pasv *local_fp, 
 								struct ftp_pasv *remote_fp);
+
+uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len);
+uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len);
+
 #endif //_PROXY_H_

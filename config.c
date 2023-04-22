@@ -310,11 +310,22 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		ps->use_encryption = TO_BOOL(value);
 	} else if (MATCH_NAME("use_compression")) {
 		ps->use_compression = TO_BOOL(value);
+	} else if (MATCH_NAME("group")) {
+		ps->group = strdup(value);
+	} else if (MATCH_NAME("group_key")) {
+		ps->group_key = strdup(value);
+	} else {
+		debug(LOG_ERR, "unknown option %s in section %s", nm, section);
+		SAFE_FREE(section);
+		return 0;
 	}
 	
 	// if ps->proxy_type is socks5, and ps->remote_port is not set, set it to 1980
-	if (ps->proxy_type && strcmp(ps->proxy_type, "socks5") == 0 && ps->remote_port == 0) {
-		ps->remote_port = 1980;
+	if (ps->proxy_type && strcmp(ps->proxy_type, "socks5") == 0) {
+		if (ps->remote_port == 0)
+			ps->remote_port = DEFAULT_SOCKS5_PORT;
+		if (ps->group == NULL)
+			ps->group = strdup("chatgptd");
 	}
 	
 	SAFE_FREE(section);

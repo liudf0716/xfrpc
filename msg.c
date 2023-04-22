@@ -190,6 +190,20 @@ new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
 	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
 
+	// if proxy_type is tcp, http, https and socks5, set group and group_key to j_np_req
+	if (strcmp(np_req->proxy_type, "tcp") == 0 || 
+		strcmp(np_req->proxy_type, "http") == 0 || 
+		strcmp(np_req->proxy_type, "https") == 0 || 
+		strcmp(np_req->proxy_type, "socks5") == 0) {
+		
+		if (np_req->group) {
+			JSON_MARSHAL_TYPE(j_np_req, "group", string, np_req->group);
+		}
+		if (np_req->group_key) {
+			JSON_MARSHAL_TYPE(j_np_req, "group_key", string, np_req->group_key);
+		}
+	}
+
 	if (is_ftp_proxy(np_req)) {
 		JSON_MARSHAL_TYPE(j_np_req, "remote_data_port", int, np_req->remote_data_port);
 	}

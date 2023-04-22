@@ -97,6 +97,10 @@ struct proxy_service {
 	char	*http_user;
 	char	*http_pwd;
 
+	// load balance
+	char	*group;
+	char	*group_key;
+	
 	// private arguments
 	UT_hash_handle hh;
 };

@@ -1,0 +1,12 @@
+#!/usr/bin/make -f
+export DEB_LDFLAGS_MAINT_APPEND=-Wl,-O1
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+
+# get the various DEB_BUILD/DEB_HOST variables
+include /usr/share/dpkg/architecture.mk
+
+override_dh_install:
+  dh_install --autodest 	
+
+%:
+	dh $@

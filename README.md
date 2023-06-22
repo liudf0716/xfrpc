@@ -20,9 +20,9 @@ the following table is detail  compatible feature:
 | https  | Yes |  Yes  |
 | custom_domains | Yes | Yes |
 | subdomain | Yes | Yes |
+| socks5 | Yes | No |
 | use_encryption | No | Yes |
 | use_compression | No | Yes |
-| socks5 | Yes | No |
 | udp  | No |  Yes  |
 | p2p  | No |  Yes  |
 | xtcp  | No |  Yes  |

@@ -41,6 +41,17 @@
 #include "utils.h"
 #include "version.h"
 
+
+// define a list of type in array
+static const char *valid_types[] = {
+	"tcp",
+	"mstsc",
+	"socks5",
+	"http",
+	"https",
+	NULL
+};
+
 static struct common_conf 	*c_conf;
 static struct proxy_service *all_ps;
 
@@ -77,12 +88,11 @@ get_valid_type(const char *val)
 		return NULL;
 	
 	#define MATCH_VALUE(s) strcmp(val, s) == 0
-	if (MATCH_VALUE("tcp") || 
-		MATCH_VALUE("socks5") ||
-		MATCH_VALUE("http") || 
-		MATCH_VALUE("https")) { 
-
-		return val;
+	// iterate the valid_types array
+	for (int i = 0; valid_types[i]; i++) {
+		if (MATCH_VALUE(valid_types[i])) {
+			return valid_types[i];
+		}
 	}
 	
 	return NULL;
@@ -219,6 +229,11 @@ validate_proxy(struct proxy_service *ps)
 			debug(LOG_ERR, "Proxy [%s] error: remote_port not found", ps->proxy_name);
 			return 0;
 		}
+	} else if (strcmp(ps->proxy_type, "mstsc") == 0) {
+		if (ps->remote_port == 0 || ps->local_port == 0) {
+			debug(LOG_ERR, "Proxy [%s] error: remote_port or local_port not found", ps->proxy_name);
+			return 0;
+		}
 	} else if (strcmp(ps->proxy_type, "tcp") == 0) {
 		if (ps->remote_port == 0 || ps->local_port == 0 || ps->local_ip == NULL) {
 			debug(LOG_ERR, "Proxy [%s] error: remote_port or local_port or local_ip not found", ps->proxy_name);
@@ -326,6 +341,11 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 			ps->remote_port = DEFAULT_SOCKS5_PORT;
 		if (ps->group == NULL)
 			ps->group = strdup("chatgptd");
+	} else if (ps->proxy_type && strcmp(ps->proxy_type, "mstsc") == 0) {
+		// if ps->proxy_type is mstsc, and ps->local_port is not set, set it to 3389
+		// start a thread to listen on local_port, and forward data to remote_port
+		if (ps->local_port == 0)
+			ps->local_port = DEFAULT_MSTSC_PORT;
 	}
 	
 	SAFE_FREE(section);

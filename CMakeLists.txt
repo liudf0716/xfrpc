@@ -78,6 +78,7 @@ set(src_xfrpc
 	proxy_ftp.c
 	proxy.c
 	tcpmux.c
+	tcp_redir.c
 	)
 	
 set(libs

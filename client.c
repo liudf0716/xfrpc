@@ -88,34 +88,6 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 			debug(LOG_DEBUG, "send client data ...");
 			send_client_data_tail(client);		
 		} else if (is_socks5_proxy(client->ps)) {
-#if 0
-			debug(LOG_DEBUG, "send socks5 proxy response data ...");
-			client->state = SOCKS5_CONNECT;
-			uint8_t *socks5_response = NULL;
-			int offset = 0;
-			if (client->remote_addr.type == 0x01) {
-				offset = 10;
-			} else if (client->remote_addr.type == 0x03) {
-				uint8_t domain_len = strlen(client->remote_addr.addr);
-				offset = 7 + domain_len;
-			} else if (client->remote_addr.type == 0x04) {
-				offset = 22;
-			} else {
-				debug(LOG_ERR, "not support addr type: %d", client->remote_addr.type);
-				assert(0);
-				return;
-			}
-			socks5_response = (uint8_t *)malloc(offset);
-			memset(socks5_response, 0, offset);
-			socks5_response[0] = 0x05;
-			socks5_response[3] = client->remote_addr.type;
-			if (client->remote_addr.type == 0x03) {
-				uint8_t domain_len = strlen(client->remote_addr.addr);
-				socks5_response[4] = domain_len;
-				memcpy(socks5_response + 5, client->remote_addr.addr, domain_len);
-			}
-			tmux_stream_write(client->ctl_bev, socks5_response, offset, &client->stream);
-#endif
 		    // if rb is not empty, send data
 			// rb is client->stream.rx_ring
 			struct ring_buffer *rb = &client->stream.rx_ring;

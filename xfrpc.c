@@ -45,11 +45,27 @@
 #include "crypto.h"
 #include "msg.h"
 #include "utils.h"
+#include "tcp_redir.h"
+#include "config.h"
+
+static void start_xfrpc_local_service()
+{
+	// iterate all proxy service to find mstsc service
+	// if found, start tcp_redir for it
+	struct proxy_service *ps, *ps_tmp;
+	struct proxy_service *all_ps = get_all_proxy_services();
+	HASH_ITER(hh, all_ps, ps, ps_tmp) {
+		if (ps->proxy_type && strcmp(ps->proxy_type, "mstsc") == 0) {
+			// start tcp_redir for it
+			start_tcp_redir_service(ps);
+		}
+	}
+}
 
 void xfrpc_loop()
 {
+	start_xfrpc_local_service();
 	init_main_control();
 	run_control();
-	
 	close_main_control();
 }

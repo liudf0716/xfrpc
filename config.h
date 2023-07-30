@@ -29,6 +29,7 @@
 #include "client.h"
 #include "common.h"
 
+#define DEFAULT_MSTSC_PORT		3389
 #define DEFAULT_SOCKS5_PORT		1980
 #define FTP_RMT_CTL_PROXY_SUFFIX	"_ftp_remote_ctl_proxy"
 

@@ -162,6 +162,10 @@ start_proxy_services()
 			debug(LOG_ERR, "proxy service is invalid!");
 			return;
 		}
+		if (strcmp(ps->proxy_type, "mstsc") == 0) {
+			debug(LOG_ERR, "no need to send mstsc service!");
+			continue;
+		}
 		send_new_proxy(ps);
 	}
 }

@@ -31,7 +31,7 @@ void s_sleep(unsigned int s, unsigned int u)
 }
 
 // is_valid_ip_address:
-// return 0:ipaddress unlegal
+// return 0:ip address illegal
 int is_valid_ip_address(const char *ip_address) 
 {
     struct sockaddr_in sa;

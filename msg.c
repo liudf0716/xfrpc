@@ -427,3 +427,146 @@ get_msg_type(uint8_t type)
 	return NULL;
 }
 
+// marshal udp packet msg
+int 
+new_udp_packet_marshal(const struct udp_packet *udp, char **msg)
+{
+	// parse struct udp_packet to json
+	struct json_object *j_udp = json_object_new_object();
+	assert(j_udp);
+
+	struct json_object *content = json_object_new_string(udp->content);
+	assert(content);
+	json_object_object_add(j_udp, "c", content);
+
+	if (udp->laddr) {
+		// laddr is a struct, parse it to json object and add to j_udp
+		struct json_object *j_laddr = json_object_new_object();
+		assert(j_laddr);
+		struct json_object *j_laddr_addr = json_object_new_string(udp->laddr->addr);
+		assert(j_laddr_addr);
+		json_object_object_add(j_laddr, "IP", j_laddr_addr);
+		struct json_object *j_laddr_port = json_object_new_int(udp->laddr->port);
+		assert(j_laddr_port);
+		json_object_object_add(j_laddr, "Port", j_laddr_port);
+		json_object_object_add(j_udp, "l", j_laddr);
+		json_object *j_laddr_zone = json_object_new_string("");
+		assert(j_laddr_zone);
+		json_object_object_add(j_laddr, "Zone", j_laddr_zone);
+	} else {
+		// laddr is NULL, add null to j_udp
+		struct json_object *j_laddr = json_object_new_object();
+		assert(j_laddr);
+		json_object_object_add(j_udp, "l", j_laddr);
+	}
+
+	if (udp->raddr) {
+		// raddr is a struct, parse it to json object and add to j_udp
+		struct json_object *j_raddr = json_object_new_object();
+		assert(j_raddr);
+		struct json_object *j_raddr_addr = json_object_new_string(udp->raddr->addr);
+		assert(j_raddr_addr);
+		json_object_object_add(j_raddr, "IP", j_raddr_addr);
+		struct json_object *j_raddr_port = json_object_new_int(udp->raddr->port);
+		assert(j_raddr_port);
+		json_object_object_add(j_raddr, "Port", j_raddr_port);
+		json_object_object_add(j_udp, "r", j_raddr);
+		json_object *j_raddr_zone = json_object_new_string("");
+		assert(j_raddr_zone);
+		json_object_object_add(j_raddr, "Zone", j_raddr_zone);
+	} else {
+		// raddr is NULL, add null to j_udp
+		struct json_object *j_raddr = json_object_new_object();
+		assert(j_raddr);
+		json_object_object_add(j_udp, "r", j_raddr);		
+	}
+
+	// convert json to string msg
+	*msg = strdup(json_object_to_json_string(j_udp));
+	assert(*msg);
+	json_object_put(j_udp);
+
+	return 0;
+}
+
+void 
+udp_packet_free(struct udp_packet *udp)
+{
+	if (!udp)
+		return;
+	
+	SAFE_FREE(udp->content);
+	SAFE_FREE(udp->laddr->addr);
+	SAFE_FREE(udp->laddr->zone);
+	SAFE_FREE(udp->laddr);
+	SAFE_FREE(udp->raddr->addr);
+	SAFE_FREE(udp->raddr->zone);
+	SAFE_FREE(udp->raddr);
+
+	SAFE_FREE(udp);
+}
+
+// unmarshal udp packet msg
+struct udp_packet *
+udp_packet_unmarshal (const char *msg)
+{
+	struct json_object *j_udp = json_tokener_parse(msg);
+	if (j_udp == NULL)
+		return NULL;
+	struct udp_packet *udp = calloc(sizeof(struct udp_packet), 1);
+	assert(udp);
+
+	struct json_object *j_content = NULL;
+	if(! json_object_object_get_ex(j_udp, "c", &j_content))
+		goto END_ERROR;
+	udp->content = strdup(json_object_get_string(j_content));
+	assert(udp->content);
+
+	struct json_object *j_laddr = NULL;
+	if(! json_object_object_get_ex(j_udp, "l", &j_laddr))
+		goto END_ERROR;
+	struct json_object *j_laddr_ip = NULL;
+	if(! json_object_object_get_ex(j_laddr, "IP", &j_laddr_ip))
+		goto END_ERROR;
+	struct json_object *j_laddr_port = NULL;
+	if(! json_object_object_get_ex(j_laddr, "Port", &j_laddr_port))
+		goto END_ERROR;
+	struct json_object *j_laddr_zone = NULL;
+	if(! json_object_object_get_ex(j_laddr, "Zone", &j_laddr_zone))
+		goto END_ERROR;
+	udp->laddr = calloc(sizeof(struct udp_addr), 1);
+	assert(udp->laddr);
+	udp->laddr->addr = strdup(json_object_get_string(j_laddr_ip));
+	assert(udp->laddr->addr);
+	udp->laddr->port = json_object_get_int(j_laddr_port);
+	udp->laddr->zone = strdup(json_object_get_string(j_laddr_zone));
+	assert(udp->laddr->zone);
+
+	struct json_object *j_raddr = NULL;
+	if(! json_object_object_get_ex(j_udp, "r", &j_raddr))
+		goto END_ERROR;
+	struct json_object *j_raddr_ip = NULL;
+	if(! json_object_object_get_ex(j_raddr, "IP", &j_raddr_ip))
+		goto END_ERROR;
+	struct json_object *j_raddr_port = NULL;
+	if(! json_object_object_get_ex(j_raddr, "Port", &j_raddr_port))
+		goto END_ERROR;
+	struct json_object *j_raddr_zone = NULL;
+	if(! json_object_object_get_ex(j_raddr, "Zone", &j_raddr_zone))
+		goto END_ERROR;
+	udp->raddr = calloc(sizeof(struct udp_addr), 1);
+	assert(udp->raddr);
+	udp->raddr->addr = strdup(json_object_get_string(j_raddr_ip));
+	assert(udp->raddr->addr);
+	udp->raddr->port = json_object_get_int(j_raddr_port);
+	udp->raddr->zone = strdup(json_object_get_string(j_raddr_zone));
+	assert(udp->raddr->zone);
+
+	json_object_put(j_udp);
+	return udp;
+
+END_ERROR:
+	json_object_put(j_udp);
+	udp_packet_free(udp);
+	return NULL;
+}

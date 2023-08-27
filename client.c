@@ -123,6 +123,18 @@ is_socks5_proxy(const struct proxy_service *ps)
 	return 0;
 }
 
+int
+is_udp_proxy (const struct proxy_service *ps)
+{
+	if (! ps || ! ps->proxy_type)
+		return 0;
+
+	if (0 == strcmp(ps->proxy_type, "udp"))
+		return 1;
+
+	return 0;
+}
+
 // create frp tunnel for service
 void 
 start_xfrp_tunnel(struct proxy_client *client)
@@ -151,14 +163,25 @@ start_xfrp_tunnel(struct proxy_client *client)
 		return;
 	}
 
-	//  if client's proxy type is not socks5, then connect to local proxy server
-	if ( !is_socks5_proxy(client->ps) ) {
+	// if client's proxy type is udp
+	if ( is_udp_proxy(ps) ) {
+		debug(LOG_DEBUG, "start udp proxy tunnel for service [%s:%d]", ps->local_ip, ps->local_port);
+		client->local_proxy_bev = connect_udp_server(base);
+		if ( !client->local_proxy_bev ) {
+			debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
+			del_proxy_client_by_stream_id(client->stream_id);
+			return;
+		}
+	} else if ( !is_socks5_proxy(ps) ) {
 		client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
 		if ( !client->local_proxy_bev ) {
 			debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
 			del_proxy_client_by_stream_id(client->stream_id);
 			return;
 		}
+	} else {
+		debug(LOG_DEBUG, "socks5 proxy client can't connect to remote server here ...");
+		return;
 	}
 	
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
@@ -172,6 +195,9 @@ start_xfrp_tunnel(struct proxy_client *client)
 	if (PREDICT_FALSE(is_ftp_proxy(client->ps))) {
 		proxy_c2s_recv = ftp_proxy_c2s_cb;
 		proxy_s2c_recv = ftp_proxy_s2c_cb;
+	} else if ( is_udp_proxy(ps) ) {
+		proxy_c2s_recv = udp_proxy_c2s_cb;
+		proxy_s2c_recv = udp_proxy_s2c_cb;
 	} else {
 		proxy_c2s_recv = tcp_proxy_c2s_cb; // local service ---> xfrpc
 		proxy_s2c_recv = tcp_proxy_s2c_cb; // frps ---> xfrpc
@@ -186,10 +212,7 @@ start_xfrp_tunnel(struct proxy_client *client)
 		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	}
 
-	if (is_socks5_proxy(client->ps)) {
-		debug(LOG_DEBUG, "socks5 proxy client can't connect to remote server here ...");
-		return;
-	}
+	
 
 	bufferevent_setcb(client->local_proxy_bev, 
 						proxy_c2s_recv, 

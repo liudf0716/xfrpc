@@ -49,6 +49,7 @@
 #include "common.h"
 #include "login.h"
 #include "tcpmux.h"
+#include "proxy.h"
 
 static struct control *main_ctl;
 static int client_connected = 0;
@@ -221,6 +222,33 @@ connect_server(struct event_base *base, const char *name, const int port)
 		bufferevent_free(bev);
 		return NULL;
 	}
+	return bev;
+}
+
+struct bufferevent *
+connect_udp_server(struct event_base *base)
+{
+	evutil_socket_t fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (fd < 0) {
+		debug(LOG_ERR, "create udp socket failed!");
+		return NULL;
+	}
+
+	if (evutil_make_socket_nonblocking(fd) < 0) {
+		debug(LOG_ERR, "make udp socket nonblocking failed!");
+		evutil_closesocket(fd);
+		return NULL;
+	}
+
+	
+	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
+	assert(bev);
+	if (!bev) {
+		evutil_closesocket(fd);
+		debug(LOG_ERR, "create udp bufferevent failed!");
+		return NULL;
+	}
+
 	return bev;
 }
 
@@ -407,6 +435,22 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		start_xfrp_tunnel(client);
 		set_client_work_start(client, 1);
 
+		break;
+	}
+	case TypeUDPPacket:
+	{
+		struct udp_packet *udp = udp_packet_unmarshal((const char *)msg->data);
+		if (!udp) {
+			debug(LOG_ERR, "TypeUDPPacket unmarshal failed!");
+			break;
+		}
+		debug(LOG_DEBUG, "recv udp packet from server, content is %s", 
+			udp->content);
+		assert(ctx);
+		struct proxy_client *client = ctx;
+		assert(client->ps);
+		handle_udp_packet(udp, client);
+		SAFE_FREE(udp);
 		break;
 	}
 	case TypePong:

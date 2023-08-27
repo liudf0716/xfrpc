@@ -86,6 +86,18 @@ struct work_conn {
 	char *run_id;
 };
 
+struct udp_addr {
+	char *addr;
+	int port;
+	char *zone;
+};
+
+struct udp_packet {
+	char *content; // base64
+	struct udp_addr *laddr;
+	struct udp_addr *raddr;
+};
+
 struct __attribute__((__packed__)) msg_hdr {
 	char		type;
 	uint64_t	length;
@@ -96,6 +108,7 @@ struct start_work_conn_resp {
 	char 	*proxy_name;
 };
 
+int new_udp_packet_marshal(const struct udp_packet *udp, char **msg);
 int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg);
 int msg_type_valid_check(char msg_type);
 char *calc_md5(const char *data, int datalen);
@@ -111,6 +124,11 @@ struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg
 struct control_response *control_response_unmarshal(const char *jres);
 struct work_conn *new_work_conn();
 int new_work_conn_marshal(const struct work_conn *work_c, char **msg);
+
+// parse json string to udp packet
+struct udp_packet *udp_packet_unmarshal(const char *jres);
+
+void udp_packet_free(struct udp_packet *udp);
 
 void control_response_free(struct control_response *res);
 

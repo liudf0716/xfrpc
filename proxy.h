@@ -37,6 +37,7 @@
 #include "client.h"
 #include "common.h"
 #include "tcpmux.h"
+#include "msg.h"
 
 #define IP_LEN 16
 
@@ -56,6 +57,9 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void ftp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
+void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
+void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
+
 struct proxy *new_proxy_obj(struct bufferevent *bev);
 void free_proxy_obj(struct proxy *p);
 void set_ftp_data_proxy_tunnel(const char *ftp_proxy_name, 
@@ -64,5 +68,7 @@ void set_ftp_data_proxy_tunnel(const char *ftp_proxy_name,
 
 uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len);
 uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len);
+
+void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client);
 
 #endif //_PROXY_H_

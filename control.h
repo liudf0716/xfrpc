@@ -80,4 +80,6 @@ void send_new_proxy(struct proxy_service *ps);
 
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port);
 
+struct bufferevent *connect_udp_server(struct event_base *base);
+
 #endif //_CONTROL_H_

@@ -100,6 +100,11 @@ struct proxy_service {
 	// load balance
 	char	*group;
 	char	*group_key;
+
+	// plugin
+	char	*plugin;
+	char	*plugin_user;
+	char	*plugin_pwd;
 	
 	// private arguments
 	UT_hash_handle hh;

@@ -48,6 +48,8 @@
 #include "tcp_redir.h"
 #include "config.h"
 
+#include "plugins/telnetd.h"
+
 static void start_xfrpc_local_service()
 {
 	// iterate all proxy service to find mstsc service
@@ -59,7 +61,12 @@ static void start_xfrpc_local_service()
 			// start tcp_redir for it
 			start_tcp_redir_service(ps);
 		}
+		if (ps->plugin && strcmp(ps->plugin, "telnetd") == 0) {
+			simple_telnetd_start(ps->local_port);
+		}
 	}
+
+	
 }
 
 void xfrpc_loop()

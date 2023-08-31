@@ -81,14 +81,19 @@ set(src_xfrpc
 	tcpmux.c
 	tcp_redir.c
 	)
-	
+
+set(src_xfrpc_plugins
+	plugins/telnetd.c)
+
 set(libs
 	ssl
 	crypto
 	event
 	z
 	m
-	json-c)
+	json-c
+	crypt
+	pthread)
 	
 set(test_libs
 	event
@@ -100,7 +105,7 @@ if (STATIC_BUILD STREQUAL "ON")
   add_link_options(-static)
 endif (STATIC_BUILD)
 
-add_executable(xfrpc ${src_xfrpc})
+add_executable(xfrpc ${src_xfrpc} ${src_xfrpc_plugins})
 target_link_libraries(xfrpc ${libs} ${static_libs} ${asan_c_libs})
 
 install(TARGETS xfrpc

@@ -32,6 +32,10 @@
 #include <syslog.h>
 #include <sys/utsname.h>
 
+#include <unistd.h>
+#include <shadow.h>
+#include <crypt.h>
+
 #include "ini.h"
 #include "uthash.h"
 #include "config.h"
@@ -173,9 +177,9 @@ new_proxy_service(const char *name)
 
 	ps->proxy_type 			= NULL;
 	ps->use_encryption 		= 0;
-	ps->local_port			= -1;
-	ps->remote_port			= -1;
-	ps->remote_data_port	= -1;
+	ps->local_port			= 0;
+	ps->remote_port			= 0;
+	ps->remote_data_port	= 0;
 	ps->use_compression 	= 0;
 	ps->use_encryption		= 0;
 
@@ -185,6 +189,13 @@ new_proxy_service(const char *name)
 	ps->host_header_rewrite	= NULL;
 	ps->http_user			= NULL;
 	ps->http_pwd			= NULL;
+
+	ps->group				= NULL;
+	ps->group_key			= NULL;
+
+	ps->plugin				= NULL;
+	ps->plugin_user			= NULL;
+	ps->plugin_pwd			= NULL;
 
 	return ps;
 }
@@ -263,6 +274,79 @@ validate_proxy(struct proxy_service *ps)
 }
 
 static int 
+add_user_and_set_password(const char *username, const char *password) 
+{
+    struct passwd *pwd_entry;
+    struct spwd *spwd_entry;
+    char *encrypted_password;
+    FILE *passwd_file;
+
+    // Check if the user already exists.
+    if ((pwd_entry = getpwnam(username)) != NULL || (spwd_entry = getspnam(username)) != NULL) {
+		debug(LOG_ERR, "Error: User '%s' already exists.\n", username);
+        return 0; // Return 0 to indicate failure.
+    }
+
+    // Generate an encrypted password.
+    encrypted_password = crypt(password, "$6$randomsalt$");
+
+    if (encrypted_password == NULL) {
+		debug(LOG_ERR, "Error: Failed to generate an encrypted password.");
+        return 0; // Return 0 to indicate failure.
+    }
+
+    // Create a new user entry in the passwd file.
+    passwd_file = fopen("/etc/passwd", "a");
+    if (passwd_file == NULL) {
+		debug(LOG_ERR, "Error: Failed to open /etc/passwd for writing.");
+        return 0; // Return 0 to indicate failure.
+    }
+
+    fprintf(passwd_file, "%s:x:1001:1001::/home/%s:/bin/bash\n", username, username);
+    fclose(passwd_file);
+
+    // Create the user's home directory.
+    char home_directory[256];
+    snprintf(home_directory, sizeof(home_directory), "/home/%s", username);
+
+    if (mkdir(home_directory, 0755) != 0) {
+        perror("Error: Failed to create the user's home directory.");
+        return 0; // Return 0 to indicate failure.
+    }
+
+    // Set the user's encrypted password in the shadow file.
+    passwd_file = fopen("/etc/shadow", "a");
+    if (passwd_file == NULL) {
+        perror("Error: Failed to open /etc/shadow for writing.");
+        return 0; // Return 0 to indicate failure.
+    }
+
+    fprintf(passwd_file, "%s:%s:::::::\n", username, encrypted_password);
+    fclose(passwd_file);
+
+	debug(LOG_INFO, "User '%s' added to the system with the specified password and home directory.\n", username);
+    return 1; // Return 1 to indicate success.
+}
+
+static void
+process_plugin_conf(struct proxy_service *ps) 
+{
+	if (!ps || !ps->plugin)
+		return;
+
+	if (strcmp(ps->plugin, "telnetd") == 0) {
+		if (ps->local_port == 0)
+			ps->local_port = 23;
+		if (ps->local_ip == NULL)
+			ps->local_ip = strdup("127.0.0.1");
+
+		if (ps->plugin_user !=NULL && ps->plugin_pwd != NULL) {
+			add_user_and_set_password (ps->plugin_user, ps->plugin_pwd);
+		}
+	}
+}
+
+static int 
 proxy_service_handler(void *user, const char *sect, const char *nm, const char *value)
 {
  	struct proxy_service *ps = NULL;
@@ -330,6 +414,12 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		ps->group = strdup(value);
 	} else if (MATCH_NAME("group_key")) {
 		ps->group_key = strdup(value);
+	} else if (MATCH_NAME("plugin")) {
+		ps->plugin = strdup(value);
+	} else if (MATCH_NAME("plugin_user")) {
+		ps->plugin_user = strdup(value);
+	} else if (MATCH_NAME("plugin_pwd")) {
+		ps->plugin_pwd = strdup(value);
 	} else {
 		debug(LOG_ERR, "unknown option %s in section %s", nm, section);
 		SAFE_FREE(section);
@@ -347,6 +437,8 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		// start a thread to listen on local_port, and forward data to remote_port
 		if (ps->local_port == 0)
 			ps->local_port = DEFAULT_MSTSC_PORT;
+	} else if (ps->proxy_type && strcmp(ps->proxy_type, "tcp") == 0) {
+		process_plugin_conf(ps);
 	}
 	
 	SAFE_FREE(section);

@@ -40,7 +40,6 @@ steps:
     echo "[chatgptd]" >> xfrpc.ini
     echo "type = socks5" >> xfrpc.ini
     echo "remote_port = $(REMOTE_PORT)" >> xfrpc.ini
-    echo "group = chatgpt" >> xfrpc.ini
     # run xfrpc
     ./xfrpc -c xfrpc.ini -f -d 7
   displayName: 'build and run xfrpc'

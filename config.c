@@ -28,11 +28,9 @@
 #include <string.h>
 #include <assert.h>
 #include <time.h>
-
-#include <syslog.h>
-#include <sys/utsname.h>
-
 #include <unistd.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include <shadow.h>
 #include <crypt.h>
 
@@ -276,56 +274,40 @@ validate_proxy(struct proxy_service *ps)
 static int 
 add_user_and_set_password(const char *username, const char *password) 
 {
-    struct passwd *pwd_entry;
-    struct spwd *spwd_entry;
-    char *encrypted_password;
-    FILE *passwd_file;
-
-    // Check if the user already exists.
-    if ((pwd_entry = getpwnam(username)) != NULL || (spwd_entry = getspnam(username)) != NULL) {
-		debug(LOG_ERR, "Error: User '%s' already exists.\n", username);
-        return 0; // Return 0 to indicate failure.
+    // Check if the user already exists
+    struct passwd *pw = getpwnam(username);
+    if (pw != NULL) {
+		debug (LOG_ERR, "User %s already exists\n", username);
+        return -1;
     }
 
-    // Generate an encrypted password.
-    encrypted_password = crypt(password, "$6$randomsalt$");
-
-    if (encrypted_password == NULL) {
-		debug(LOG_ERR, "Error: Failed to generate an encrypted password.");
-        return 0; // Return 0 to indicate failure.
+    // Create the new user with useradd command
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "sudo useradd -m -s /bin/bash %s", username);
+    int ret = system(cmd);
+    if (ret != 0) {
+		debug (LOG_ERR, "Failed to create user %s\n", username);
+        return -1;
     }
 
-    // Create a new user entry in the passwd file.
-    passwd_file = fopen("/etc/passwd", "a");
-    if (passwd_file == NULL) {
-		debug(LOG_ERR, "Error: Failed to open /etc/passwd for writing.");
-        return 0; // Return 0 to indicate failure.
+    // Set the user's password with passwd command
+    snprintf(cmd, sizeof(cmd), "echo '%s:%s' | sudo chpasswd", username, password);
+    ret = system(cmd);
+    if (ret != 0) {
+		debug (LOG_ERR, "Failed to set password for user %s\n", username);
+        return -1;
     }
 
-    fprintf(passwd_file, "%s:x:1001:1001::/home/%s:/bin/bash\n", username, username);
-    fclose(passwd_file);
-
-    // Create the user's home directory.
-    char home_directory[256];
-    snprintf(home_directory, sizeof(home_directory), "/home/%s", username);
-
-    if (mkdir(home_directory, 0755) != 0) {
-        perror("Error: Failed to create the user's home directory.");
-        return 0; // Return 0 to indicate failure.
+    // Add the user to the sudo group with usermod command
+    snprintf(cmd, sizeof(cmd), "sudo usermod -aG sudo %s", username);
+    ret = system(cmd);
+    if (ret != 0) {
+		debug (LOG_ERR, "Failed to add user %s to sudo group\n", username);
+        return -1;
     }
-
-    // Set the user's encrypted password in the shadow file.
-    passwd_file = fopen("/etc/shadow", "a");
-    if (passwd_file == NULL) {
-        perror("Error: Failed to open /etc/shadow for writing.");
-        return 0; // Return 0 to indicate failure.
-    }
-
-    fprintf(passwd_file, "%s:%s:::::::\n", username, encrypted_password);
-    fclose(passwd_file);
-
-	debug(LOG_INFO, "User '%s' added to the system with the specified password and home directory.\n", username);
-    return 1; // Return 1 to indicate success.
+	
+	debug (LOG_DEBUG, "User %s added successfully\n", username);
+    return 0;
 }
 
 static void

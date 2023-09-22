@@ -28,10 +28,13 @@
  * https://busybox.net/downloads/busybox-0.60.5.tar.bz2
  */
 
+#define _GNU_SOURCE
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>

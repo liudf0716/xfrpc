@@ -318,13 +318,20 @@ process_plugin_conf(struct proxy_service *ps)
 
 	if (strcmp(ps->plugin, "telnetd") == 0) {
 		if (ps->local_port == 0)
-			ps->local_port = 23;
+			ps->local_port = XFRPC_PLUGIN_TELNETD_PORT;
 		if (ps->local_ip == NULL)
 			ps->local_ip = strdup("127.0.0.1");
 
 		if (ps->plugin_user !=NULL && ps->plugin_pwd != NULL) {
 			add_user_and_set_password (ps->plugin_user, ps->plugin_pwd);
 		}
+	} else if (strcmp(ps->plugin, "instaloader") == 0) {
+		if (ps->local_port == 0)
+			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
+		if (ps->local_ip == NULL)
+			ps->local_ip = strdup("127.0.0.1");
+	} else {
+		debug(LOG_INFO, "plugin %s is not supportted", ps->plugin);
 	}
 }
 

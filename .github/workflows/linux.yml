@@ -16,10 +16,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-          
+    
+    - name: prepare build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libjson-c-dev libevent-dev libssl-dev
+
     - name: compile xfrpc
       run: |
         mkdir build
         cd build
-        cmake -D THIRDPARTY_STATIC_BUILD=ON ..
+        cmake ..
         make

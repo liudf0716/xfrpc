@@ -83,7 +83,8 @@ set(src_xfrpc
 	)
 
 set(src_xfrpc_plugins
-	plugins/telnetd.c)
+	plugins/telnetd.c
+	plugins/instaloader.c)
 
 set(libs
 	ssl

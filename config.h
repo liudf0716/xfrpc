@@ -31,6 +31,9 @@
 
 #define DEFAULT_MSTSC_PORT		3389
 #define DEFAULT_SOCKS5_PORT		1980
+#define	XFRPC_PLUGIN_TELNETD_PORT		23
+#define	XFRPC_PLUGIN_INSTALOADER_PORT	10000
+
 #define FTP_RMT_CTL_PROXY_SUFFIX	"_ftp_remote_ctl_proxy"
 
 //client common config

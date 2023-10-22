@@ -49,6 +49,7 @@
 #include "config.h"
 
 #include "plugins/telnetd.h"
+#include "plugins/instaloader.h"
 
 static void start_xfrpc_local_service()
 {
@@ -61,8 +62,16 @@ static void start_xfrpc_local_service()
 			// start tcp_redir for it
 			start_tcp_redir_service(ps);
 		}
-		if (ps->plugin && strcmp(ps->plugin, "telnetd") == 0) {
-			simple_telnetd_start(ps->local_port);
+
+		if (ps->plugin) {
+			if (strcmp(ps->plugin, "telnetd") == 0) {
+				simple_telnetd_start(ps->local_port);
+			} else if (strcmp(ps->plugin, "instaloader") == 0) {
+				// start instaloader service
+				start_instaloader_service(ps->local_port);
+			} else {
+				debug(LOG_ERR, "start_xfrpc_local_service: unknown plugin %s\n", ps->plugin);
+			}
 		}
 	}
 

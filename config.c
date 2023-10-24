@@ -48,7 +48,6 @@
 static const char *valid_types[] = {
 	"tcp",
 	"udp",
-	"mstsc",
 	"socks5",
 	"http",
 	"https",
@@ -239,11 +238,6 @@ validate_proxy(struct proxy_service *ps)
 			debug(LOG_ERR, "Proxy [%s] error: remote_port not found", ps->proxy_name);
 			return 0;
 		}
-	} else if (strcmp(ps->proxy_type, "mstsc") == 0) {
-		if (ps->remote_port == 0 || ps->local_port == 0) {
-			debug(LOG_ERR, "Proxy [%s] error: remote_port or local_port not found", ps->proxy_name);
-			return 0;
-		}
 	} else if (strcmp(ps->proxy_type, "tcp") == 0 || strcmp(ps->proxy_type, "udp") == 0) {
 		if (ps->remote_port == 0 || ps->local_port == 0 || ps->local_ip == NULL) {
 			debug(LOG_ERR, "Proxy [%s] error: remote_port or local_port or local_ip not found", ps->proxy_name);
@@ -328,8 +322,17 @@ process_plugin_conf(struct proxy_service *ps)
 	} else if (strcmp(ps->plugin, "instaloader") == 0) {
 		if (ps->local_port == 0)
 			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
+		if (ps->remote_port == 0)
+			ps->remote_port = XFRPC_PLUGIN_INSTALOADER_ROMOTE_PORT;
 		if (ps->local_ip == NULL)
 			ps->local_ip = strdup("127.0.0.1");
+	} else if (strcmp(ps->plugin, "instaloader_client") == 0) {
+		if (ps->local_port == 0)
+			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
+		if (ps->remote_port == 0)
+			ps->remote_port == XFRPC_PLUGIN_INSTALOADER_ROMOTE_PORT;
+		if (ps->local_ip == NULL)
+			ps->local_ip = strdup("0.0.0.0");
 	} else {
 		debug(LOG_INFO, "plugin %s is not supportted", ps->plugin);
 	}
@@ -421,11 +424,6 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 			ps->remote_port = DEFAULT_SOCKS5_PORT;
 		if (ps->group == NULL)
 			ps->group = strdup("chatgptd");
-	} else if (ps->proxy_type && strcmp(ps->proxy_type, "mstsc") == 0) {
-		// if ps->proxy_type is mstsc, and ps->local_port is not set, set it to 3389
-		// start a thread to listen on local_port, and forward data to remote_port
-		if (ps->local_port == 0)
-			ps->local_port = DEFAULT_MSTSC_PORT;
 	} else if (ps->proxy_type && strcmp(ps->proxy_type, "tcp") == 0) {
 		process_plugin_conf(ps);
 	}

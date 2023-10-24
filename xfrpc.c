@@ -58,17 +58,14 @@ static void start_xfrpc_local_service()
 	struct proxy_service *ps, *ps_tmp;
 	struct proxy_service *all_ps = get_all_proxy_services();
 	HASH_ITER(hh, all_ps, ps, ps_tmp) {
-		if (ps->proxy_type && strcmp(ps->proxy_type, "mstsc") == 0) {
-			// start tcp_redir for it
-			start_tcp_redir_service(ps);
-		}
-
 		if (ps->plugin) {
 			if (strcmp(ps->plugin, "telnetd") == 0) {
 				simple_telnetd_start(ps->local_port);
 			} else if (strcmp(ps->plugin, "instaloader") == 0) {
 				// start instaloader service
 				start_instaloader_service(ps->local_port);
+			} else if (strcmp(ps->plugin, "instaloader_redir") == 0) {
+				start_tcp_redir_service(ps);
 			} else {
 				debug(LOG_ERR, "start_xfrpc_local_service: unknown plugin %s\n", ps->plugin);
 			}

@@ -25,9 +25,15 @@ instaloader_worker(void *param)
     struct instaloader_param *p = (struct instaloader_param *)param;
     debug(LOG_DEBUG, "instaloader: action: %s, profile: %s\n", p->action, p->profile);
     char cmd[512] = {0};
+
+    // create directory instaloader and change current directory to it
+    snprintf(cmd, sizeof(cmd), "mkdir -p instaloader && cd instaloader");
+    debug(LOG_DEBUG, "instaloader: cmd: %s\n", cmd);
+    system(cmd);
+
     if (strcmp(p->action, "download") == 0) {
         // download profile
-        snprintf(cmd, 200, "instaloader --no-captions --no-metadata-json --no-compress-json --no-pictures %s", p->profile);
+        snprintf(cmd, sizeof(cmd), "instaloader --no-captions --no-metadata-json --no-compress-json --no-pictures %s", p->profile);
         debug(LOG_DEBUG, "instaloader: cmd: %s\n", cmd);
         // use popen to execute cmd and get its output
         FILE *fp = popen(cmd, "r");
@@ -49,7 +55,6 @@ instaloader_worker(void *param)
     } else {
         debug(LOG_ERR, "instaloader: unknown action: %s\n", p->action);
     }
-
 
     // free param
     free(param);
@@ -203,6 +208,8 @@ instaloader_service(void *local_port)
         debug(LOG_ERR, "Failed to bind HTTP server to port %d\n", port);
         return NULL;
     }
+
+    debug(LOG_DEBUG, "instaloader: start instaloader service on port %d\n", port);
 
     // Set up a callback function for handling HTTP requests
     evhttp_set_cb(http, "/", http_post_cb, NULL);

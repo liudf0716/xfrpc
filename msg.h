@@ -110,7 +110,6 @@ struct start_work_conn_resp {
 
 int new_udp_packet_marshal(const struct udp_packet *udp, char **msg);
 int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg);
-int msg_type_valid_check(char msg_type);
 char *calc_md5(const char *data, int datalen);
 char *get_auth_key(const char *token, long int *timestamp);
 size_t login_request_marshal(char **msg);
@@ -131,7 +130,5 @@ struct udp_packet *udp_packet_unmarshal(const char *jres);
 void udp_packet_free(struct udp_packet *udp);
 
 void control_response_free(struct control_response *res);
-
-char *get_msg_type(uint8_t type);
 
 #endif //_MSG_H_

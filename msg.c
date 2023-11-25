@@ -138,8 +138,7 @@ login_request_marshal(char **msg)
 		return 0;
 
 	struct login *lg = get_common_login_config();
-	if (!lg)
-	{
+	if (!lg) {
 		json_object_put(j_login_req);
 		return 0;
 	}
@@ -157,15 +156,18 @@ login_request_marshal(char **msg)
 	JSON_MARSHAL_TYPE(j_login_req, "user", string, SAFE_JSON_STRING(lg->user));
 
 	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, SAFE_JSON_STRING(lg->privilege_key));
-	JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
+	if (sizeof(time_t) == 4) {
+		JSON_MARSHAL_TYPE(j_login_req, "timestamp", int, lg->timestamp);
+	} else {
+		JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
+	}
 	JSON_MARSHAL_TYPE(j_login_req, "run_id", string, SAFE_JSON_STRING(lg->run_id));
 	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
 	json_object_object_add(j_login_req, "metas", NULL);
 
 	const char *tmp = NULL;
 	tmp = json_object_to_json_string(j_login_req);
-	if (tmp && strlen(tmp) > 0)
-	{
+	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp);
 		*msg = strdup(tmp);
 		assert(*msg);
@@ -188,12 +190,9 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_name", string, np_req->proxy_name);
 	// if proxy_type is socks5, set the proxy_type to tcp
-	if (strcmp(np_req->proxy_type, "socks5") == 0 || strcmp(np_req->proxy_type, "mstsc") == 0)
-	{
+	if (strcmp(np_req->proxy_type, "socks5") == 0 || strcmp(np_req->proxy_type, "mstsc") == 0) {
 		JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, "tcp");
-	}
-	else
-	{
+	} else {
 		JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
 	}
 	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
@@ -203,38 +202,28 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	if (strcmp(np_req->proxy_type, "tcp") == 0 ||
 		strcmp(np_req->proxy_type, "http") == 0 ||
 		strcmp(np_req->proxy_type, "https") == 0 ||
-		strcmp(np_req->proxy_type, "socks5") == 0)
-	{
+		strcmp(np_req->proxy_type, "socks5") == 0) {
 
-		if (np_req->group)
-		{
+		if (np_req->group) {
 			JSON_MARSHAL_TYPE(j_np_req, "group", string, np_req->group);
-		}
-		if (np_req->group_key)
-		{
+		} 
+		if (np_req->group_key) {
 			JSON_MARSHAL_TYPE(j_np_req, "group_key", string, np_req->group_key);
 		}
 	}
 
-	if (is_ftp_proxy(np_req))
-	{
+	if (is_ftp_proxy(np_req)) {
 		JSON_MARSHAL_TYPE(j_np_req, "remote_data_port", int, np_req->remote_data_port);
 	}
 
-	if (np_req->custom_domains)
-	{
+	if (np_req->custom_domains) {
 		fill_custom_domains(j_np_req, np_req->custom_domains);
 		json_object_object_add(j_np_req, "remote_port", NULL);
-	}
-	else
-	{
+	} else {
 		json_object_object_add(j_np_req, "custom_domains", NULL);
-		if (np_req->remote_port != -1)
-		{
+		if (np_req->remote_port != -1) {
 			JSON_MARSHAL_TYPE(j_np_req, "remote_port", int, np_req->remote_port);
-		}
-		else
-		{
+		} else {
 			json_object_object_add(j_np_req, "remote_port", NULL);
 		}
 	}
@@ -242,18 +231,14 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));
 
 	json_object *j_location_array = json_object_new_array();
-	if (np_req->locations)
-	{
+	if (np_req->locations) {
 		json_object_object_add(j_np_req, "locations", j_location_array);
 		path = strtok_r(np_req->locations, delimiter, &save);
-		while (path)
-		{
+		while (path) {
 			json_object_array_add(j_location_array, json_object_new_string(path));
 			path = strtok_r(NULL, delimiter, &save);
 		}
-	}
-	else
-	{
+	} else {
 		json_object_object_add(j_np_req, "locations", NULL);
 	}
 
@@ -262,8 +247,7 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
 
 	tmp = json_object_to_json_string(j_np_req);
-	if (tmp && strlen(tmp) > 0)
-	{
+	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp);
 		*msg = strdup(tmp);
 		assert(*msg);
@@ -283,8 +267,7 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 
 	JSON_MARSHAL_TYPE(j_new_work_conn, "run_id", string, SAFE_JSON_STRING(work_c->run_id));
 	tmp = json_object_to_json_string(j_new_work_conn);
-	if (tmp && strlen(tmp) > 0)
-	{
+	if (tmp && strlen(tmp) > 0) {
 		nret = strlen(tmp);
 		*msg = strdup(tmp);
 		assert(*msg);
@@ -311,8 +294,7 @@ new_proxy_resp_unmarshal(const char *jres)
 		npr->run_id = strdup(json_object_get_string(npr_run_id));
 
 	struct json_object *npr_proxy_remote_addr = NULL;
-	if (!json_object_object_get_ex(j_np_res, "remote_addr", &npr_proxy_remote_addr))
-	{
+	if (!json_object_object_get_ex(j_np_res, "remote_addr", &npr_proxy_remote_addr)) {
 		free(npr->run_id);
 		free(npr);
 		npr = NULL;
@@ -321,15 +303,13 @@ new_proxy_resp_unmarshal(const char *jres)
 
 	const char *remote_addr = json_object_get_string(npr_proxy_remote_addr);
 	char *port = strrchr(remote_addr, ':');
-	if (port)
-	{
+	if (port) {
 		port++;
 		npr->remote_port = atoi(port);
 	}
 
 	struct json_object *npr_proxy_name = NULL;
-	if (!json_object_object_get_ex(j_np_res, "proxy_name", &npr_proxy_name))
-	{
+	if (!json_object_object_get_ex(j_np_res, "proxy_name", &npr_proxy_name)) {
 		free(npr->run_id);
 		free(npr);
 		npr = NULL;
@@ -340,8 +320,7 @@ new_proxy_resp_unmarshal(const char *jres)
 	assert(npr->proxy_name);
 
 	struct json_object *npr_error = NULL;
-	if (!json_object_object_get_ex(j_np_res, "error", &npr_error))
-	{
+	if (!json_object_object_get_ex(j_np_res, "error", &npr_error)) {
 		free(npr->run_id);
 		free(npr->proxy_name);
 		free(npr);
@@ -368,8 +347,7 @@ login_resp_unmarshal(const char *jres)
 	assert(lr);
 
 	struct json_object *l_version = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "version", &l_version))
-	{
+	if (!json_object_object_get_ex(j_lg_res, "version", &l_version)) {
 		free(lr);
 		lr = NULL;
 		goto END_ERROR;
@@ -379,8 +357,7 @@ login_resp_unmarshal(const char *jres)
 	assert(lr->version);
 
 	struct json_object *l_run_id = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "run_id", &l_run_id))
-	{
+	if (!json_object_object_get_ex(j_lg_res, "run_id", &l_run_id)) {
 		free(lr->version);
 		free(lr);
 		lr = NULL;
@@ -391,8 +368,7 @@ login_resp_unmarshal(const char *jres)
 	assert(lr->run_id);
 
 	struct json_object *l_error = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "error", &l_error))
-	{
+	if (!json_object_object_get_ex(j_lg_res, "error", &l_error)) {
 		free(lr->version);
 		free(lr->run_id);
 		free(lr);
@@ -419,8 +395,7 @@ start_work_conn_resp_unmarshal(const char *resp_msg)
 	assert(sr);
 
 	struct json_object *pn = NULL;
-	if (!json_object_object_get_ex(j_start_w_res, "proxy_name", &pn))
-	{
+	if (!json_object_object_get_ex(j_start_w_res, "proxy_name", &pn)) {
 		free(sr);
 		sr = NULL;
 		goto START_W_C_R_END;
@@ -444,8 +419,7 @@ control_response_unmarshal(const char *jres)
 	assert(ctl_res);
 
 	struct json_object *jtype = NULL;
-	if (!json_object_object_get_ex(j_ctl_res, "type", &jtype))
-	{
+	if (!json_object_object_get_ex(j_ctl_res, "type", &jtype)) {
 		free(ctl_res);
 		ctl_res = NULL;
 		goto END_ERROR;
@@ -453,8 +427,7 @@ control_response_unmarshal(const char *jres)
 	ctl_res->type = json_object_get_int(jtype);
 
 	struct json_object *jcode = NULL;
-	if (!json_object_object_get_ex(j_ctl_res, "code", &jcode))
-	{
+	if (!json_object_object_get_ex(j_ctl_res, "code", &jcode)) {
 		free(ctl_res);
 		ctl_res = NULL;
 		goto END_ERROR;
@@ -463,8 +436,7 @@ control_response_unmarshal(const char *jres)
 	ctl_res->code = json_object_get_int(jcode);
 
 	struct json_object *jmsg = NULL;
-	if (!json_object_object_get_ex(j_ctl_res, "msg", &jmsg))
-	{
+	if (!json_object_object_get_ex(j_ctl_res, "msg", &jmsg)) {
 		free(ctl_res);
 		ctl_res = NULL;
 		goto END_ERROR;
@@ -499,8 +471,7 @@ new_udp_packet_marshal(const struct udp_packet *udp, char **msg)
 	assert(content);
 	json_object_object_add(j_udp, "c", content);
 
-	if (udp->laddr)
-	{
+	if (udp->laddr) {
 		// laddr is a struct, parse it to json object and add to j_udp
 		struct json_object *j_laddr = json_object_new_object();
 		assert(j_laddr);
@@ -514,17 +485,14 @@ new_udp_packet_marshal(const struct udp_packet *udp, char **msg)
 		json_object *j_laddr_zone = json_object_new_string("");
 		assert(j_laddr_zone);
 		json_object_object_add(j_laddr, "Zone", j_laddr_zone);
-	}
-	else
-	{
+	} else {
 		// laddr is NULL, add null to j_udp
 		struct json_object *j_laddr = json_object_new_object();
 		assert(j_laddr);
 		json_object_object_add(j_udp, "l", j_laddr);
 	}
 
-	if (udp->raddr)
-	{
+	if (udp->raddr) {
 		// raddr is a struct, parse it to json object and add to j_udp
 		struct json_object *j_raddr = json_object_new_object();
 		assert(j_raddr);
@@ -538,9 +506,7 @@ new_udp_packet_marshal(const struct udp_packet *udp, char **msg)
 		json_object *j_raddr_zone = json_object_new_string("");
 		assert(j_raddr_zone);
 		json_object_object_add(j_raddr, "Zone", j_raddr_zone);
-	}
-	else
-	{
+	} else {
 		// raddr is NULL, add null to j_udp
 		struct json_object *j_raddr = json_object_new_object();
 		assert(j_raddr);
@@ -583,8 +549,7 @@ udp_packet_unmarshal(const char *msg)
 	assert(udp);
 
 	struct json_object *j_content = NULL;
-	if (!json_object_object_get_ex(j_udp, "c", &j_content))
-	{
+	if (!json_object_object_get_ex(j_udp, "c", &j_content)) {
 		goto END_ERROR;
 	}
 	
@@ -592,25 +557,21 @@ udp_packet_unmarshal(const char *msg)
 	assert(udp->content);
 
 	struct json_object *j_laddr = NULL;
-	if (!json_object_object_get_ex(j_udp, "l", &j_laddr))
-	{
+	if (!json_object_object_get_ex(j_udp, "l", &j_laddr)) {
 		goto END_ERROR;
 	}
 	
 	struct json_object *j_laddr_ip = NULL;
-	if (!json_object_object_get_ex(j_laddr, "IP", &j_laddr_ip))
-	{
+	if (!json_object_object_get_ex(j_laddr, "IP", &j_laddr_ip)) {
 		goto END_ERROR;
 	}
 	struct json_object *j_laddr_port = NULL;
-	if (!json_object_object_get_ex(j_laddr, "Port", &j_laddr_port))
-	{
+	if (!json_object_object_get_ex(j_laddr, "Port", &j_laddr_port)) {
 		goto END_ERROR;
 	}
 	
 	struct json_object *j_laddr_zone = NULL;
-	if (!json_object_object_get_ex(j_laddr, "Zone", &j_laddr_zone))
-	{
+	if (!json_object_object_get_ex(j_laddr, "Zone", &j_laddr_zone)) {
 		goto END_ERROR;
 	}
 	
@@ -623,26 +584,22 @@ udp_packet_unmarshal(const char *msg)
 	assert(udp->laddr->zone);
 
 	struct json_object *j_raddr = NULL;
-	if (!json_object_object_get_ex(j_udp, "r", &j_raddr))
-	{
+	if (!json_object_object_get_ex(j_udp, "r", &j_raddr)) {
 		goto END_ERROR;
 	}
 	
 	struct json_object *j_raddr_ip = NULL;
-	if (!json_object_object_get_ex(j_raddr, "IP", &j_raddr_ip))
-	{
+	if (!json_object_object_get_ex(j_raddr, "IP", &j_raddr_ip)) {
 		goto END_ERROR;
 	}
 	
 	struct json_object *j_raddr_port = NULL;
-	if (!json_object_object_get_ex(j_raddr, "Port", &j_raddr_port))
-	{
+	if (!json_object_object_get_ex(j_raddr, "Port", &j_raddr_port)) {
 		goto END_ERROR;
 	}
 		
 	struct json_object *j_raddr_zone = NULL;
-	if (!json_object_object_get_ex(j_raddr, "Zone", &j_raddr_zone))
-	{
+	if (!json_object_object_get_ex(j_raddr, "Zone", &j_raddr_zone)) {
 		goto END_ERROR;
 	}
 		

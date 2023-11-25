@@ -72,7 +72,8 @@ void init_login()
 
 	struct utsname uname_buf;
 	if (uname(&uname_buf)) {
-		return;
+		debug(LOG_ERR, "error: get system info failed!");
+		exit(0);
 	}
 
 	c_login->version 		= strdup(PROTOCOL_VERESION);

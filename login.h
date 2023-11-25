@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <netinet/in.h>
+#include <time.h>
 
 #include "uthash.h"
 
@@ -41,7 +42,7 @@ struct login {
 	char		*arch;
 	char 		*user;
 	char 		*privilege_key;
-	long int 	timestamp;
+	time_t 		timestamp;
 	char 		*run_id;
 	char		*metas;
 	int 		pool_count;

@@ -194,6 +194,8 @@ new_proxy_service(const char *name)
 	ps->plugin_user			= NULL;
 	ps->plugin_pwd			= NULL;
 
+	ps->s_root_dir			= NULL;
+
 	return ps;
 }
 
@@ -333,6 +335,15 @@ process_plugin_conf(struct proxy_service *ps)
 			ps->remote_port == XFRPC_PLUGIN_INSTALOADER_ROMOTE_PORT;
 		if (ps->local_ip == NULL)
 			ps->local_ip = strdup("0.0.0.0");
+	} else if (strcmp(ps->plugin, "httpd") == 0) {
+		if (ps->local_port == 0)
+			ps->local_port = XFRPC_PLUGIN_HTTPD_PORT;
+		if (ps->local_ip == NULL)
+			ps->local_ip = strdup("0.0.0.0");
+		if (ps->remote_port == 0)
+			ps->remote_port = XFRPC_PLUGIN_HTTPD_REMOTE_PORT;
+		if (ps->s_root_dir == NULL)
+			ps->s_root_dir = strdup("/var/www/html");
 	} else {
 		debug(LOG_INFO, "plugin %s is not supportted", ps->plugin);
 	}
@@ -412,6 +423,8 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 		ps->plugin_user = strdup(value);
 	} else if (MATCH_NAME("plugin_pwd")) {
 		ps->plugin_pwd = strdup(value);
+	} else if (MATCH_NAME("root_dir")) {
+		ps->s_root_dir = strdup(value);
 	} else {
 		debug(LOG_ERR, "unknown option %s in section %s", nm, section);
 		SAFE_FREE(section);

@@ -106,6 +106,8 @@ struct proxy_service {
 	char	*plugin_user;
 	char	*plugin_pwd;
 	
+	char	*s_root_dir;
+	
 	// private arguments
 	UT_hash_handle hh;
 };

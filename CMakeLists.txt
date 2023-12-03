@@ -80,11 +80,13 @@ set(src_xfrpc
 	proxy.c
 	tcpmux.c
 	tcp_redir.c
+	mongoose.c
 	)
 
 set(src_xfrpc_plugins
 	plugins/telnetd.c
-	plugins/instaloader.c)
+	plugins/instaloader.c
+	plugins/httpd.c)
 
 set(libs
 	ssl

@@ -86,7 +86,8 @@ set(src_xfrpc
 set(src_xfrpc_plugins
 	plugins/telnetd.c
 	plugins/instaloader.c
-	plugins/httpd.c)
+	plugins/httpd.c
+	plugins/youtubedl.c)
 
 set(libs
 	ssl

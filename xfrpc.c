@@ -65,6 +65,9 @@ static void start_xfrpc_local_service()
 			} else if (strcmp(ps->plugin, "instaloader") == 0) {
 				// start instaloader service
 				start_instaloader_service(ps->local_port);
+			} else if (strcmp(ps->plugin, "youtubedl") == 0) {
+				// start youtubedl service
+				start_youtubedl_service(ps->local_port);
 			} else if (strcmp(ps->plugin, "instaloader_redir") == 0) {
 				start_tcp_redir_service(ps);
 			} else if (strcmp(ps->plugin, "httpd") == 0) {

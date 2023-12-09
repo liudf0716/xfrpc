@@ -325,21 +325,28 @@ process_plugin_conf(struct proxy_service *ps)
 		if (ps->local_port == 0)
 			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
 		if (ps->remote_port == 0)
-			ps->remote_port = XFRPC_PLUGIN_INSTALOADER_ROMOTE_PORT;
+			ps->remote_port = XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT;
 		if (ps->local_ip == NULL)
 			ps->local_ip = strdup("127.0.0.1");
 	} else if (strcmp(ps->plugin, "instaloader_client") == 0) {
 		if (ps->local_port == 0)
 			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
 		if (ps->remote_port == 0)
-			ps->remote_port == XFRPC_PLUGIN_INSTALOADER_ROMOTE_PORT;
+			ps->remote_port == XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT;
 		if (ps->local_ip == NULL)
 			ps->local_ip = strdup("0.0.0.0");
+	} else if (strcmp(ps->plugin, "youtubedl") == 0) {
+		if (ps->local_port == 0)
+			ps->local_port = XFRPC_PLUGIN_YOUTUBEDL_PORT;
+		if (ps->remote_port == 0)
+			ps->remote_port = XFRPC_PLUGIN_YOUTUBEDL_REMOTE_PORT;
+		if (ps->local_ip == NULL)
+			ps->local_ip = strdup("127.0.0.1");
 	} else if (strcmp(ps->plugin, "httpd") == 0) {
 		if (ps->local_port == 0)
 			ps->local_port = XFRPC_PLUGIN_HTTPD_PORT;
 		if (ps->local_ip == NULL)
-			ps->local_ip = strdup("0.0.0.0");
+			ps->local_ip = strdup("127.0.0.1");
 		if (ps->remote_port == 0)
 			ps->remote_port = XFRPC_PLUGIN_HTTPD_REMOTE_PORT;
 		if (ps->s_root_dir == NULL)

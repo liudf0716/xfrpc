@@ -322,15 +322,11 @@ new_proxy_resp_unmarshal(const char *jres)
 	assert(npr->proxy_name);
 
 	struct json_object *npr_error = NULL;
-	if (!json_object_object_get_ex(j_np_res, "error", &npr_error)) {
-		free(npr->run_id);
-		free(npr->proxy_name);
-		free(npr);
-		npr = NULL;
-		goto END_ERROR;
+	if (json_object_object_get_ex(j_np_res, "error", &npr_error)) {
+		npr->error = strdup(json_object_get_string(npr_error));
+		assert(npr->error);
 	}
-	npr->error = strdup(json_object_get_string(npr_error));
-	assert(npr->error);
+	
 
 END_ERROR:
 	json_object_put(j_np_res);

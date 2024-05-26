@@ -153,7 +153,8 @@ login_request_marshal(char **msg)
 	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, SAFE_JSON_STRING(lg->hostname));
 	JSON_MARSHAL_TYPE(j_login_req, "os", string, lg->os);
 	JSON_MARSHAL_TYPE(j_login_req, "arch", string, lg->arch);
-	JSON_MARSHAL_TYPE(j_login_req, "user", string, SAFE_JSON_STRING(lg->user));
+	if (lg->user)
+		JSON_MARSHAL_TYPE(j_login_req, "user", string, SAFE_JSON_STRING(lg->user));
 
 	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, SAFE_JSON_STRING(lg->privilege_key));
 	if (sizeof(time_t) == 4) {
@@ -161,9 +162,10 @@ login_request_marshal(char **msg)
 	} else {
 		JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
 	}
-	JSON_MARSHAL_TYPE(j_login_req, "run_id", string, SAFE_JSON_STRING(lg->run_id));
+	if (lg->run_id)
+		JSON_MARSHAL_TYPE(j_login_req, "run_id", string, SAFE_JSON_STRING(lg->run_id));
 	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
-	json_object_object_add(j_login_req, "metas", NULL);
+	//json_object_object_add(j_login_req, "metas", NULL);
 
 	const char *tmp = NULL;
 	tmp = json_object_to_json_string(j_login_req);
@@ -368,16 +370,10 @@ login_resp_unmarshal(const char *jres)
 	assert(lr->run_id);
 
 	struct json_object *l_error = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "error", &l_error)) {
-		free(lr->version);
-		free(lr->run_id);
-		free(lr);
-		lr = NULL;
-		goto END_ERROR;
+	if (json_object_object_get_ex(j_lg_res, "error", &l_error)) {
+		lr->error = strdup(json_object_get_string(l_error));
+		assert(lr->error);
 	}
-
-	lr->error = strdup(json_object_get_string(l_error));
-	assert(lr->error);
 
 END_ERROR:
 	json_object_put(j_lg_res);

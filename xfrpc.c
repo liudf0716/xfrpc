@@ -48,6 +48,7 @@
 #include "tcp_redir.h"
 #include "config.h"
 
+#include "plugins/youtubedl.h"
 #include "plugins/telnetd.h"
 #include "plugins/instaloader.h"
 #include "plugins/httpd.h"

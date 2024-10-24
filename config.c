@@ -241,8 +241,8 @@ validate_proxy(struct proxy_service *ps)
 			return 0;
 		}
 	} else if (strcmp(ps->proxy_type, "tcp") == 0 || strcmp(ps->proxy_type, "udp") == 0) {
-		if (ps->remote_port == 0 || ps->local_port == 0 || ps->local_ip == NULL) {
-			debug(LOG_ERR, "Proxy [%s] error: remote_port or local_port or local_ip not found", ps->proxy_name);
+		if (ps->local_port == 0 || ps->local_ip == NULL) {
+			debug(LOG_ERR, "Proxy [%s] error: local_port or local_ip not found", ps->proxy_name);
 			return 0;
 		}
 	} else if (strcmp(ps->proxy_type, "http") == 0 || strcmp(ps->proxy_type, "https") == 0) {

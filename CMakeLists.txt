@@ -58,6 +58,11 @@ if(ENABLE_SANITIZER AND NOT MSVC)
     endif()
 endif()
 
+find_package(ZLIB REQUIRED)
+if(NOT ZLIB_FOUND)
+  message(FATAL_ERROR "ZLIB not found!")
+endif(NOT ZLIB_FOUND)
+
 set(src_xfrpc
 	main.c
   	client.c

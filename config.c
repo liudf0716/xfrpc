@@ -332,7 +332,7 @@ process_plugin_conf(struct proxy_service *ps)
 		if (ps->local_port == 0)
 			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
 		if (ps->remote_port == 0)
-			ps->remote_port == XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT;
+			ps->remote_port = XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT;
 		if (ps->local_ip == NULL)
 			ps->local_ip = strdup("0.0.0.0");
 	} else if (strcmp(ps->plugin, "youtubedl") == 0) {

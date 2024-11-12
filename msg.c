@@ -27,7 +27,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <json-c/json.h>
-#include <openssl/md5.h>
+#include <openssl/evp.h>
 #include <time.h>
 #include <assert.h>
 #include <syslog.h>
@@ -58,25 +58,34 @@ const char msg_types[] = {TypeLogin,
 						  TypePong,
 						  TypeUDPPacket};
 
-char *
-calc_md5(const char *data, int datalen)
-{
-	unsigned char digest[16] = {0};
-	char *out = (char *)malloc(33);
-	assert(out);
+static void 
+calc_md5(const uint8_t *data, int datalen, uint8_t *digest) {
+    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    if (!mdctx) {
+        debug(LOG_ERR, "Failed to create MD5 context");
+        return;
+    }
 
-	MD5_CTX md5;
+    if (EVP_DigestInit_ex(mdctx, EVP_md5(), NULL) != 1) {
+        debug(LOG_ERR, "Failed to initialize MD5");
+        EVP_MD_CTX_free(mdctx);
+        return;
+    }
 
-	MD5_Init(&md5);
-	MD5_Update(&md5, data, datalen);
-	MD5_Final(digest, &md5);
+    if (EVP_DigestUpdate(mdctx, data, datalen) != 1) {
+        debug(LOG_ERR, "Failed to update MD5");
+        EVP_MD_CTX_free(mdctx);
+        return;
+    }
 
-	for (int n = 0; n < 16; ++n)
-	{
-		snprintf(&(out[n * 2]), 3, "%02x", (unsigned int)digest[n]);
-	}
+    unsigned int md_len = 0;
+    if (EVP_DigestFinal_ex(mdctx, digest, &md_len) != 1) {
+        debug(LOG_ERR, "Failed to finalize MD5");
+        EVP_MD_CTX_free(mdctx);
+        return;
+    }
 
-	return out;
+    EVP_MD_CTX_free(mdctx);
 }
 
 static void
@@ -119,14 +128,20 @@ new_work_conn()
 char *
 get_auth_key(const char *token, long int *timestamp)
 {
-	char seed[128] = {0};
 	*timestamp = time(NULL);
-	if (token)
-		snprintf(seed, 128, "%s%ld", token, *timestamp);
-	else
-		snprintf(seed, 128, "%ld", *timestamp);
+	char seed[128] = {0};
+	snprintf(seed, 128, "%s%ld", token ? token : "", *timestamp);
 
-	return calc_md5(seed, strlen(seed));
+	uint8_t digest[16] = {0};
+	char *auth_key = (char *)malloc(33);
+	assert(auth_key);
+	calc_md5((const uint8_t *)seed, strlen(seed), digest);
+
+	for (int i = 0; i < 16; i++)
+		snprintf(auth_key + i * 2, 3, "%02x", digest[i]);
+
+	auth_key[32] = '\0';
+	return auth_key;
 }
 
 size_t

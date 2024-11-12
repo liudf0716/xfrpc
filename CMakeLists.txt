@@ -106,7 +106,7 @@ set(SYSTEM_LIBS
 set(EXTERNAL_LIBS
     ssl
     crypto
-    ${LIBEVENT_LIBRARIES}
+    event
     ${JSON-C_LIBRARIES}
     ${ZLIB_LIBRARIES}
 )

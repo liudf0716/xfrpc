@@ -28,7 +28,6 @@
  * https://busybox.net/downloads/busybox-0.60.5.tar.bz2
  */
 
-#define _GNU_SOURCE
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -117,7 +116,7 @@ static struct tsession *sessions;
 static char *
 remove_iacs(struct tsession *ts, int *pnum_totty)
 {
-	unsigned char *ptr0 = ts->buf1 + ts->wridx1;
+	unsigned char *ptr0 = (unsigned char *)(ts->buf1 + ts->wridx1);
 	unsigned char *ptr = ptr0;
 	unsigned char *totty = ptr;
 	unsigned char *end = ptr + MIN(BUFSIZE - ts->wridx1, ts->size1);
@@ -239,6 +238,7 @@ getpty(char *line)
 			}
 		}
 	}
+	return -1;
 #endif
 }
 
@@ -474,7 +474,8 @@ simple_telnetd_thread(void *arg)
 		/* First check for and accept new sessions.  */
 		if (FD_ISSET(master_fd, &rdfdset))
 		{
-			int fd, salen;
+			int fd;
+			socklen_t salen;
 
 			salen = sizeof(sa);
 			if ((fd = accept(master_fd, (struct sockaddr *)&sa,

@@ -185,7 +185,7 @@ udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
     struct udp_packet *udp_pkt = (struct udp_packet *)malloc(sizeof(struct udp_packet));
     assert(udp_pkt != NULL);
     memset(udp_pkt, 0, sizeof(struct udp_packet));
-    udp_pkt->content = evbuffer_pullup(base64_output, -1);
+    udp_pkt->content = (char *)evbuffer_pullup(base64_output, -1);
     udp_pkt->raddr = (struct udp_addr *)malloc(sizeof(struct udp_addr));
     assert(udp_pkt->raddr != NULL);
     memset(udp_pkt->raddr, 0, sizeof(struct udp_addr));
@@ -204,7 +204,7 @@ udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	uint32_t nr = tmux_stream_write(partner, buf, len, &client->stream);
+	uint32_t nr = tmux_stream_write(partner, (uint8_t *)buf, len, &client->stream);
 	if (nr < len) {
 		debug(LOG_DEBUG, "stream_id [%d] len is %d tmux_stream_write %d data, disable read", client->stream.id, len, nr);
 		bufferevent_disable(bev, EV_READ);

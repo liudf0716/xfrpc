@@ -334,13 +334,26 @@ void tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id) {
  */
 void tcp_mux_send_data(struct bufferevent *bout, uint16_t flags,
                        uint32_t stream_id, uint32_t length) {
-    if (!tcp_mux_flag())
+    // Early return if TCP multiplexing is disabled
+    if (!tcp_mux_flag()) {
+        debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
+    }
 
+    // Validate input parameters
+    if (!bout) {
+        debug(LOG_ERR, "Invalid bufferevent for sending data");
+        return;
+    }
+
+    // Prepare and send header
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(DATA, flags, stream_id, length, &tmux_hdr);
-    bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
+    
+    if (bufferevent_write(bout, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+        debug(LOG_ERR, "Failed to send data header for stream %u", stream_id);
+    }
 }
 
 /**

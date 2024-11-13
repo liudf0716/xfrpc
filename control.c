@@ -703,19 +703,38 @@ start_base_connect()
 	bufferevent_setcb(main_ctl->connect_bev, recv_cb, NULL, connect_event_cb, NULL);
 }
 
-void 
-login()
-{
-	char *lg_msg = NULL;
-	int len = login_request_marshal(&lg_msg); //marshal login request
-	if ( !lg_msg ) {
-		debug(LOG_ERR, 
-			"error: login_request_marshal failed, it should never be happenned");
-		exit(0);
+static int prepare_login_message(char **msg_out, int *len_out) {
+	if (!msg_out || !len_out) {
+		debug(LOG_ERR, "Invalid output parameters");
+		return -1;
 	}
-	
-	send_msg_frp_server(NULL, TypeLogin, lg_msg, len, &main_ctl->stream);
-	SAFE_FREE(lg_msg);
+
+	int msg_len = login_request_marshal(msg_out);
+	if (msg_len <= 0 || !*msg_out) {
+		debug(LOG_ERR, "Failed to marshal login request");
+		return -1;
+	}
+
+	*len_out = msg_len;
+	return 0;
+}
+
+void login(void) {
+	char *login_msg = NULL;
+	int msg_len = 0;
+
+	// Prepare login message
+	if (prepare_login_message(&login_msg, &msg_len) != 0) {
+		debug(LOG_ERR, "Failed to prepare login message");
+		exit(1);
+	}
+
+	// Send login request
+	debug(LOG_DEBUG, "Sending login request: length=%d", msg_len);
+	send_msg_frp_server(NULL, TypeLogin, login_msg, msg_len, &main_ctl->stream);
+
+	// Cleanup
+	SAFE_FREE(login_msg);
 }
 
 static int prepare_message(const enum msg_type type,

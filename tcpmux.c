@@ -488,16 +488,29 @@ static uint16_t get_send_flags(struct tmux_stream *stream) {
  * 
  * @note Window size cannot exceed MAX_STREAM_WINDOW_SIZE
  */
+/**
+ * @brief Sends a window update message for stream flow control.
+ *
+ * Updates the receive window for a stream and sends a window update message
+ * if the delta exceeds half of the maximum window size or if there are flags to send.
+ *
+ * @param bout Buffered output event for sending data.
+ * @param stream Pointer to the tmux stream to update.
+ * @param length Current receive buffer length.
+ */
 void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, uint32_t length) {
-    uint32_t max_window = MAX_STREAM_WINDOW_SIZE;
-    uint32_t delta = max_window - length - stream->recv_window;
+    const uint32_t max_window = MAX_STREAM_WINDOW_SIZE;
+    const uint32_t half_max_window = max_window / 2;
+    uint32_t delta = max_window > (length + stream->recv_window) 
+                     ? max_window - length - stream->recv_window 
+                     : 0;
     uint16_t flags = get_send_flags(stream);
 
-    if (delta < max_window / 2 && flags == 0) {
+    if (delta < half_max_window && flags == 0) {
         return;
     }
 
-    stream->recv_window += delta;
+    stream->recv_window = MIN(stream->recv_window + delta, max_window);
     tcp_mux_send_win_update(bout, flags, stream->id, delta);
 }
 

@@ -373,14 +373,40 @@ void tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id) {
  * @param bout The buffer event to write the ping acknowledgment to.
  * @param ping_id The identifier of the ping request.
  */
+/**
+ * @brief Handles TCP multiplexer ping messages by sending an acknowledgment.
+ *
+ * This function responds to ping messages with a ping acknowledgment (ACK).
+ * It validates input parameters and TCP multiplexing status before sending
+ * the response.
+ *
+ * @param bout The bufferevent to write the ping acknowledgment to
+ * @param ping_id The ID of the ping message to acknowledge
+ *
+ * @note The function will silently return if TCP multiplexing is disabled
+ *       or if the bufferevent is invalid
+ */
 static void tcp_mux_handle_ping(struct bufferevent *bout, uint32_t ping_id) {
-    if (!tcp_mux_flag())
+    // Early return if TCP multiplexing is disabled
+    if (!tcp_mux_flag()) {
+        debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
+    }
 
+    // Validate bufferevent
+    if (!bout) {
+        debug(LOG_ERR, "Invalid bufferevent for ping response");
+        return;
+    }
+
+    // Prepare and send ping acknowledgment
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(PING, ACK, 0, ping_id, &tmux_hdr);
-    bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
+    
+    if (bufferevent_write(bout, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+        debug(LOG_ERR, "Failed to send ping acknowledgment");
+    }
 }
 
 /**

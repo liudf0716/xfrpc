@@ -393,13 +393,26 @@ static void tcp_mux_handle_ping(struct bufferevent *bout, uint32_t ping_id) {
  * @param reason The reason code to be included in the GO_AWAY message.
  */
 static void tcp_mux_send_go_away(struct bufferevent *bout, uint32_t reason) {
-    if (!tcp_mux_flag())
+    // Early return if TCP multiplexing is disabled or buffer event is invalid
+    if (!tcp_mux_flag() || !bout) {
+        debug(LOG_ERR, "Cannot send GO_AWAY: invalid state or parameters");
         return;
+    }
 
+    // Validate reason code
+    if (reason > INTERNAL_ERR) {
+        debug(LOG_WARNING, "Invalid GO_AWAY reason code: %u", reason);
+        reason = INTERNAL_ERR;
+    }
+
+    // Prepare and send header
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(GO_AWAY, 0, 0, reason, &tmux_hdr);
-    bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
+    
+    if (bufferevent_write(bout, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+        debug(LOG_ERR, "Failed to send GO_AWAY message");
+    }
 }
 
 /**

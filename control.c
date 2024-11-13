@@ -910,15 +910,32 @@ clear_main_control()
 		init_tmux_stream(&main_ctl->stream, get_next_session_id(), INIT);
 }
 
-void 
-close_main_control()
+void close_main_control()
 {
+	if (!main_ctl) {
+		debug(LOG_ERR, "main_ctl is NULL");
+		return;
+	}
+
+	// Clean up resources and state
 	clear_main_control();
 
-	event_base_dispatch(main_ctl->connect_base);
-	evdns_base_free(main_ctl->dnsbase, 0);
-	event_base_free(main_ctl->connect_base);
+	// Free event bases
+	if (main_ctl->connect_base) {
+		if (event_base_dispatch(main_ctl->connect_base) < 0) {
+			debug(LOG_ERR, "event_base_dispatch failed");
+		}
 
+		if (main_ctl->dnsbase) {
+			evdns_base_free(main_ctl->dnsbase, 0);
+			main_ctl->dnsbase = NULL;
+		}
+
+		event_base_free(main_ctl->connect_base);
+		main_ctl->connect_base = NULL;
+	}
+
+	// Free the main control structure
 	free_main_control();
 }
 

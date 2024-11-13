@@ -5,10 +5,6 @@
 #include <stdint.h>
 #include <openssl/evp.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* Function declarations remain unchanged for API compatibility */
 void fastpbkdf2_hmac_sha1(const uint8_t *pw, size_t npw,
                           const uint8_t *salt, size_t nsalt,
@@ -24,9 +20,5 @@ void fastpbkdf2_hmac_sha512(const uint8_t *pw, size_t npw,
                             const uint8_t *salt, size_t nsalt,
                             uint32_t iterations,
                             uint8_t *out, size_t nout);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

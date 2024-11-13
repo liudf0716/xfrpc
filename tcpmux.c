@@ -522,16 +522,18 @@ int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
     assert(ring->sz >= len);
     assert(data);
 
-    uint32_t i = 0;
-    while (i < len) {
-        data[i] = ring->data[ring->cur++];
-        if (ring->cur == RBUF_SIZE)
-            ring->cur = 0;
-        i++;
-        ring->sz--;
+    uint32_t remaining = len;
+    uint8_t *dst = data;
+
+    while (remaining > 0) {
+        uint32_t chunk = MIN(remaining, RBUF_SIZE - ring->cur);
+        memcpy(dst, &ring->data[ring->cur], chunk);
+        dst += chunk;
+        ring->cur = (ring->cur + chunk) % RBUF_SIZE;
+        ring->sz -= chunk;
+        remaining -= chunk;
     }
 
-    assert(i == len);
     return len;
 }
 

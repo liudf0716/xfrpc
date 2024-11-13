@@ -682,12 +682,34 @@ static int incoming_stream(uint32_t stream_id) {
  * @note The ping_id and flags are converted from network to host byte order
  *       before processing
  */
+/**
+ * @brief Handles TCP multiplexer ping messages
+ * 
+ * Processes incoming TCP multiplexer ping messages and sends appropriate responses.
+ * When a SYN flag is received in the ping message, it sends back a ping acknowledgment
+ * to maintain connection liveliness.
+ *
+ * @param tmux_hdr Pointer to the TCP multiplexer header containing ping information
+ *
+ * @note Only responds to pings with SYN flag set
+ * @note Ping ID is converted from network byte order before processing
+ */
 void handle_tcp_mux_ping(struct tcp_mux_header *tmux_hdr) {
+    if (!tmux_hdr) {
+        debug(LOG_ERR, "Invalid TCP MUX header");
+        return;
+    }
+
+    struct bufferevent *bout = NULL;
     uint16_t flags = ntohs(tmux_hdr->flags);
     uint32_t ping_id = ntohl(tmux_hdr->length);
 
+    // Only handle ping messages with SYN flag
     if ((flags & SYN) == SYN) {
-        struct bufferevent *bout = get_main_control()->connect_bev;
+        if (!(bout = get_main_control()->connect_bev)) {
+            debug(LOG_ERR, "No valid bufferevent for ping response");
+            return;
+        }
         tcp_mux_handle_ping(bout, ping_id);
     }
 }

@@ -820,24 +820,45 @@ start_login_frp_server(struct event_base *base)
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
 }
 
-void 
-send_new_proxy(struct proxy_service *ps)
-{
-	if (! ps) {
-		debug(LOG_ERR, "proxy service is invalid!");
+static void log_proxy_error(const char *msg, const char *proxy_name) {
+	debug(LOG_ERR, "%s%s%s", msg, 
+		  proxy_name ? ": " : "", 
+		  proxy_name ? proxy_name : "");
+}
+
+static int marshal_proxy_service(struct proxy_service *ps, char **msg_out) {
+	if (!ps || !msg_out) {
+		log_proxy_error("Invalid proxy service or output buffer", NULL);
+		return -1;
+	}
+
+	int len = new_proxy_service_marshal(ps, msg_out);
+	if (len <= 0 || !*msg_out) {
+		log_proxy_error("Failed to marshal proxy service", ps->proxy_name);
+		return -1;
+	}
+
+	return len;
+}
+
+void send_new_proxy(struct proxy_service *ps) {
+	if (!ps) {
+		log_proxy_error("Invalid proxy service", NULL);
 		return;
 	}
 
 	char *new_proxy_msg = NULL;
-	int len = new_proxy_service_marshal(ps, &new_proxy_msg);
-	if ( ! new_proxy_msg) {
-		debug(LOG_ERR, "proxy service request marshal failed");
+	int msg_len = marshal_proxy_service(ps, &new_proxy_msg);
+	if (msg_len < 0) {
 		return;
 	}
 
-	debug(LOG_DEBUG, "control proxy client: [Type %d : proxy_name %s : msg_len %d]", TypeNewProxy, ps->proxy_name, len);
+	debug(LOG_DEBUG, "Sending new proxy request: type=%d, name=%s, length=%d", 
+		  TypeNewProxy, ps->proxy_name, msg_len);
 
-	send_enc_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, len, &main_ctl->stream);
+	send_enc_msg_frp_server(NULL, TypeNewProxy, new_proxy_msg, msg_len, 
+						   &main_ctl->stream);
+
 	SAFE_FREE(new_proxy_msg);
 }
 

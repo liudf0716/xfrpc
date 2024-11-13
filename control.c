@@ -718,38 +718,73 @@ login()
 	SAFE_FREE(lg_msg);
 }
 
-void 
-send_msg_frp_server(struct bufferevent *bev, 
-			 const enum msg_type type, 
-			 const char *msg, 
-			 const size_t msg_len, 
-			 struct tmux_stream *stream)
+static int prepare_message(const enum msg_type type,
+						 const char *msg,
+						 const size_t msg_len,
+						 struct msg_hdr **msg_out,
+						 size_t *total_len)
 {
-	struct bufferevent *bout = NULL;
-	if (bev) {
-		bout = bev;
-	} else {
-		bout = main_ctl->connect_bev;
+	// Validate inputs
+	if (!msg || !msg_out || !total_len) {
+		debug(LOG_ERR, "Invalid input parameters");
+		return -1;
 	}
-	assert(bout);
 
-	
+	// Calculate total message length and allocate memory
+	*total_len = msg_len + sizeof(struct msg_hdr);
+	struct msg_hdr *req_msg = calloc(*total_len, 1);
+	if (!req_msg) {
+		debug(LOG_ERR, "Failed to allocate memory for message");
+		return -1;
+	}
 
-	debug(LOG_DEBUG, "send plain msg ----> [%c: %s]", type, msg);
-	
-	size_t len = msg_len + sizeof(struct msg_hdr);
-	struct msg_hdr *req_msg = calloc(len, 1);
-	assert(req_msg);
+	// Prepare message header and content 
 	req_msg->type = type;
 	req_msg->length = msg_hton((uint64_t)msg_len);
 	memcpy(req_msg->data, msg, msg_len);
-	
+
+	*msg_out = req_msg;
+	return 0;
+}
+
+void send_msg_frp_server(struct bufferevent *bev,
+						const enum msg_type type,
+						const char *msg,
+						const size_t msg_len,
+						struct tmux_stream *stream)
+{
+	// Get output bufferevent
+	struct bufferevent *bout = bev ? bev : main_ctl->connect_bev;
+	if (!bout) {
+		debug(LOG_ERR, "No valid bufferevent");
+		return;
+	}
+
+	// Log debug info
+	debug(LOG_DEBUG, "Sending message: type=%d, len=%zu", type, msg_len);
+	if (msg) {
+		debug(LOG_DEBUG, "Message content: %s", msg);
+	}
+
+	// Prepare message
+	struct msg_hdr *req_msg = NULL;
+	size_t total_len = 0;
+	if (prepare_message(type, msg, msg_len, &req_msg, &total_len) != 0) {
+		return;
+	}
+
+	// Send message based on mux configuration
 	struct common_conf *c_conf = get_common_config();
-	if (c_conf->tcp_mux)
-		tmux_stream_write(bout, (uint8_t *)req_msg, len, stream);
-	else
-		bufferevent_write(bout, (uint8_t *)req_msg, len);
-	
+	if (c_conf->tcp_mux) {
+		if (tmux_stream_write(bout, (uint8_t *)req_msg, total_len, stream) < 0) {
+			debug(LOG_ERR, "Failed to write message through TCP mux");
+		}
+	} else {
+		if (bufferevent_write(bout, (uint8_t *)req_msg, total_len) < 0) {
+			debug(LOG_ERR, "Failed to write message directly"); 
+		}
+	}
+
 	free(req_msg);
 }
 

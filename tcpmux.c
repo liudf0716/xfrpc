@@ -458,17 +458,21 @@ static int process_flags(uint16_t flags, struct tmux_stream *stream) {
 static uint16_t get_send_flags(struct tmux_stream *stream) {
     uint16_t flags = 0;
 
+    if (!stream) {
+        return flags;
+    }
+
     switch (stream->state) {
-    case INIT:
-        flags |= SYN;
-        stream->state = SYN_SEND;
-        break;
-    case SYN_RECEIVED:
-        flags |= ACK;
-        stream->state = ESTABLISHED;
-        break;
-    default:
-        break;
+        case INIT:
+            flags |= SYN;
+            stream->state = SYN_SEND;
+            break;
+        case SYN_RECEIVED:
+            flags |= ACK;
+            stream->state = ESTABLISHED;
+            break;
+        default:
+            break;
     }
 
     return flags;

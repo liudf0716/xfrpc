@@ -49,7 +49,8 @@ void del_stream(uint32_t id) {
 
     struct tmux_stream *stream = get_stream_by_id(id);
     if (stream)
-        HASH_DEL(all_stream, stream);
+        HASH_DEL(all_stream, stream); // no need to free stream, it will be freed
+                                      // when proxy client is freed
 }
 
 void clear_stream() {

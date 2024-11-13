@@ -177,33 +177,44 @@ int validate_tcp_mux_protocol(struct tcp_mux_header *tmux_hdr) {
 }
 
 /**
- * Encodes the TCP MUX header with the given parameters.
+ * @brief Encodes a TCP multiplexer header with the specified parameters
  *
- * @param type The type of the TCP MUX message.
- * @param flags The flags associated with the TCP MUX message.
- * @param stream_id The stream ID for the TCP MUX message.
- * @param length The length of the TCP MUX message payload.
- * @param tmux_hdr Pointer to the tcp_mux_header structure to be filled.
+ * This function fills a TCP multiplexer header structure with the provided values,
+ * performing necessary network byte order conversions for cross-platform compatibility.
+ *
+ * @param type The type of TCP multiplexer message (e.g., DATA, WINDOW_UPDATE)
+ * @param flags Control flags for the message
+ * @param stream_id Identifier for the stream this message belongs to
+ * @param length Length of the message payload
+ * @param tmux_hdr Pointer to header structure to be filled
+ *
+ * @pre tmux_hdr must not be NULL
+ * @pre type must be a valid tcp_mux_type enum value
  */
 void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags,
                     uint32_t stream_id, uint32_t length,
                     struct tcp_mux_header *tmux_hdr) {
-    assert(tmux_hdr);
+    // Validate input parameters
+    if (!tmux_hdr) {
+        debug(LOG_ERR, "NULL header pointer provided");
+        return;
+    }
+
+    if (type > GO_AWAY) {
+        debug(LOG_ERR, "Invalid TCP MUX type: %d", type);
+        return;
+    }
+
+    // Fill header fields with provided values
     tmux_hdr->version = proto_version;
     tmux_hdr->type = type;
+    
+    // Convert multi-byte fields to network byte order
     tmux_hdr->flags = htons(flags);
     tmux_hdr->stream_id = htonl(stream_id);
     tmux_hdr->length = length ? htonl(length) : 0;
 }
 
-/**
- * @brief Retrieves the TCP multiplexing flag from the common configuration.
- *
- * This function accesses the common configuration structure and returns the
- * value of the TCP multiplexing flag.
- *
- * @return The TCP multiplexing flag as a 32-bit unsigned integer.
- */
 /**
  * @brief Gets the TCP multiplexing configuration flag.
  *
@@ -234,15 +245,6 @@ void reset_session_id() {
 }
 
 /**
- * @brief Generates the next session ID.
- *
- * This function retrieves the current global session ID, increments it by 2,
- * and returns the original value. The global session ID is updated to ensure
- * that each call to this function returns a unique session ID.
- *
- * @return The next session ID.
- */
-/**
  * @brief Generates the next unique session ID.
  *
  * This function generates a monotonically increasing session ID by incrementing
@@ -258,17 +260,6 @@ uint32_t get_next_session_id() {
     return current_id;
 }
 
-/**
- * @brief Sends a TCP mux window update.
- *
- * This function constructs a TCP mux header for a window update and writes it
- * to the specified bufferevent output buffer.
- *
- * @param bout The bufferevent output buffer to write the window update to.
- * @param flags The TCP mux flags to include in the header.
- * @param stream_id The stream ID for which the window update is being sent.
- * @param delta The window size increment.
- */
 /**
  * @brief Sends a TCP multiplexer window update message
  *
@@ -308,15 +299,6 @@ static void tcp_mux_send_win_update(struct bufferevent *bout,
 }
 
 /**
- * Sends a window update with SYN flag for a given stream.
- *
- * This function checks if the TCP multiplexing flag is enabled. If it is,
- * it sends a window update with the SYN flag for the specified stream ID.
- *
- * @param bout The bufferevent to send the window update on.
- * @param stream_id The ID of the stream to send the window update for.
- */
-/**
  * @brief Sends a window update with SYN flag for a TCP multiplexed stream.
  *
  * This function sends a window update message with the SYN flag set for 
@@ -346,17 +328,6 @@ void tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id) {
     debug(LOG_DEBUG, "Sent SYN for stream %u", stream_id);
 }
 
-/**
- * @brief Sends a window update acknowledgment for a TCP multiplexed stream.
- *
- * This function sends a window update acknowledgment for a specified stream
- * if the TCP multiplexing flag is enabled. It calls the `tcp_mux_send_win_update`
- * function with the provided stream ID and a delta value of 0.
- *
- * @param bout Pointer to the bufferevent structure.
- * @param stream_id The ID of the stream for which the window update acknowledgment is sent.
- * @param delta The delta value for the window update (currently unused, set to 0).
- */
 /**
  * @brief Sends a window update acknowledgment for a TCP multiplexed stream.
  *
@@ -415,15 +386,6 @@ void tcp_mux_send_win_update_fin(struct bufferevent *bout, uint32_t stream_id) {
     debug(LOG_DEBUG, "Sent FIN for stream %u", stream_id);
 }
 
-/**
- * @brief Sends a window update with a reset flag for a TCP multiplexed stream.
- *
- * This function checks if the TCP multiplexing flag is enabled. If it is,
- * it sends a window update with the reset (RST) flag for the specified stream ID.
- *
- * @param bout Pointer to the bufferevent structure used for sending the update.
- * @param stream_id The ID of the stream for which the window update is being sent.
- */
 /**
  * @brief Sends a window update with RST flag for a TCP multiplexed stream
  *
@@ -492,16 +454,6 @@ void tcp_mux_send_data(struct bufferevent *bout, uint16_t flags,
 }
 
 /**
- * @brief Sends a ping message over a TCP connection.
- *
- * This function constructs a TCP mux header for a ping message and writes it
- * to the specified bufferevent. The ping message is only sent if the tcp_mux_flag
- * function returns true.
- *
- * @param bout A pointer to the bufferevent to write the ping message to.
- * @param ping_id The identifier for the ping message.
- */
-/**
  * @brief Sends a ping message over a TCP multiplexed connection
  *
  * This function constructs and sends a ping message with the SYN flag set
@@ -537,16 +489,6 @@ void tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id) {
     }
 }
 
-/**
- * @brief Handles a ping request in the TCP multiplexer.
- *
- * This function checks if the TCP multiplexer flag is set. If the flag is not set,
- * the function returns immediately. Otherwise, it prepares a TCP multiplexer header
- * for a ping acknowledgment and writes it to the provided buffer event.
- *
- * @param bout The buffer event to write the ping acknowledgment to.
- * @param ping_id The identifier of the ping request.
- */
 /**
  * @brief Handles TCP multiplexer ping messages by sending an acknowledgment.
  *
@@ -698,20 +640,6 @@ static uint16_t get_send_flags(struct tmux_stream *stream) {
     return flags;
 }
 
-/**
- * @brief Sends a window update message for stream flow control
- *
- * Updates the receive window for a stream and sends a window update message if needed.
- * Window update is sent when either:
- * - The window delta exceeds half of max window size
- * - There are other flags that need to be sent
- *
- * @param bout Buffered output event for sending data
- * @param stream Pointer to the tmux stream to update
- * @param length Current receive buffer length
- * 
- * @note Window size cannot exceed MAX_STREAM_WINDOW_SIZE
- */
 /**
  * @brief Sends a window update message for stream flow control.
  *

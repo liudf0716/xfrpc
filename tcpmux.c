@@ -243,13 +243,42 @@ uint32_t get_next_session_id() {
  * @param stream_id The stream ID for which the window update is being sent.
  * @param delta The window size increment.
  */
+/**
+ * @brief Sends a TCP multiplexer window update message
+ *
+ * Constructs and sends a window update message through the specified bufferevent.
+ * The message includes flags, stream ID and window size delta information.
+ *
+ * @param bout The bufferevent to write the window update to
+ * @param flags Control flags for the window update
+ * @param stream_id ID of the stream being updated
+ * @param delta Change in window size
+ *
+ * @note Function silently returns if bufferevent is invalid
+ */
 static void tcp_mux_send_win_update(struct bufferevent *bout,
-                                    enum tcp_mux_flag flags, uint32_t stream_id,
-                                    uint32_t delta) {
+                                   enum tcp_mux_flag flags,
+                                   uint32_t stream_id,
+                                   uint32_t delta) {
+    // Validate bufferevent
+    if (!bout) {
+        debug(LOG_ERR, "Invalid bufferevent for window update");
+        return;
+    }
+
+    // Prepare header
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(WINDOW_UPDATE, flags, stream_id, delta, &tmux_hdr);
-    bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
+
+    // Send window update
+    if (bufferevent_write(bout, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+        debug(LOG_ERR, "Failed to send window update for stream %u", stream_id);
+        return;
+    }
+
+    debug(LOG_DEBUG, "Sent window update: stream=%u, delta=%u, flags=%u",
+          stream_id, delta, flags);
 }
 
 /**

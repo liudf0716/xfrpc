@@ -353,14 +353,40 @@ void tcp_mux_send_data(struct bufferevent *bout, uint16_t flags,
  * @param bout A pointer to the bufferevent to write the ping message to.
  * @param ping_id The identifier for the ping message.
  */
+/**
+ * @brief Sends a ping message over a TCP multiplexed connection
+ *
+ * This function constructs and sends a ping message with the SYN flag set
+ * if TCP multiplexing is enabled. The ping message includes a unique ping ID
+ * for tracking responses.
+ *
+ * @param bout The bufferevent to send the ping through
+ * @param ping_id Unique identifier for this ping message
+ * 
+ * @note Function silently returns if TCP multiplexing is disabled
+ *       or if bufferevent is invalid
+ */
 void tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id) {
-    if (!tcp_mux_flag())
+    // Early return if TCP multiplexing is disabled
+    if (!tcp_mux_flag()) {
+        debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
+    }
 
+    // Validate bufferevent
+    if (!bout) {
+        debug(LOG_ERR, "Invalid bufferevent for ping");
+        return;
+    }
+
+    // Prepare and send ping message
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(PING, SYN, 0, ping_id, &tmux_hdr);
-    bufferevent_write(bout, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
+    
+    if (bufferevent_write(bout, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+        debug(LOG_ERR, "Failed to send ping message");
+    }
 }
 
 /**

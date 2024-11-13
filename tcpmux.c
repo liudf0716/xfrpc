@@ -37,12 +37,23 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-static uint8_t proto_version = 0;
-static uint8_t remote_go_away;
-static uint8_t local_go_away;
-static uint32_t g_session_id = 1;
-static struct tmux_stream *cur_stream = NULL;
-static struct tmux_stream *all_stream;
+/**
+ * @brief Protocol and state management variables
+ */
+static uint8_t proto_version = 0;     /* Protocol version number */
+static uint8_t remote_go_away = 0;    /* Flag indicating remote end wants to close */
+static uint8_t local_go_away = 0;     /* Flag indicating local end wants to close */
+
+/**
+ * @brief Session management variables
+ */
+static uint32_t g_session_id = 1;     /* Global session ID counter (starts at 1) */
+
+/**
+ * @brief Stream management variables
+ */
+static struct tmux_stream *cur_stream = NULL;  /* Currently active stream */
+static struct tmux_stream *all_stream = NULL;  /* Hash table of all streams */
 
 /**
  * @brief Adds a stream to the hash table of all streams.

@@ -741,15 +741,29 @@ void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr) {
  */
 uint32_t tmux_stream_read(struct bufferevent *bev, struct tmux_stream *stream,
                           uint32_t len) {
-    assert(stream != NULL);
-    if (stream->state != ESTABLISHED) {
-        debug(
-            LOG_WARNING,
-            "stream %d state is %d : not ESTABLISHED, discard its data len %d",
-            stream->id, stream->state, len);
+    // Validate input parameters
+    if (!bev || !stream || len == 0) {
+        debug(LOG_ERR, "Invalid parameters passed to tmux_stream_read");
+        return 0;
     }
 
-    return rx_ring_buffer_read(bev, &stream->rx_ring, len);
+    // Check stream state
+    if (stream->state != ESTABLISHED) {
+        debug(LOG_WARNING,
+              "Stream %d is in state %d (not ESTABLISHED). Reading %d bytes anyway.",
+              stream->id, stream->state, len);
+    }
+
+    // Perform the actual read operation
+    uint32_t bytes_read = rx_ring_buffer_read(bev, &stream->rx_ring, len);
+
+    // Log read operation result if debug is enabled
+    if (bytes_read < len) {
+        debug(LOG_DEBUG, "Stream %d: Read %u bytes (requested %u)",
+              stream->id, bytes_read, len);
+    }
+
+    return bytes_read;
 }
 
 /**

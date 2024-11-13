@@ -123,12 +123,17 @@ struct tmux_stream *get_cur_stream() {
 /**
  * @brief Sets the current tmux stream.
  *
- * This function assigns the provided tmux stream to the global variable `cur_stream`.
+ * Sets the global current stream pointer. This function performs validation
+ * to ensure we don't set an invalid stream pointer.
  *
- * @param stream Pointer to the tmux stream to be set as the current stream.
+ * @param stream Pointer to the tmux stream to set as current. Can be NULL to clear.
  */
-void set_cur_stream(struct tmux_stream *stream) { 
-    cur_stream = stream; 
+void set_cur_stream(struct tmux_stream *stream) {
+    // No validation needed since NULL is valid to clear current stream
+    cur_stream = stream;
+    
+    debug(LOG_DEBUG, "Current stream %s", 
+          stream ? "updated" : "cleared");
 }
 
 /**
@@ -142,18 +147,33 @@ void set_cur_stream(struct tmux_stream *stream) {
  * @param id The unique identifier for the stream.
  * @param state The initial state of the stream, specified by the tcp_mux_state enum.
  */
-void init_tmux_stream(struct tmux_stream *stream, uint32_t id,
-                      enum tcp_mux_state state) {
+void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_state state) {
+    // Validate input parameters
+    if (!stream) {
+        debug(LOG_ERR, "Invalid stream pointer");
+        return;
+    }
+
+    if (state > RESET) {
+        debug(LOG_ERR, "Invalid stream state: %d", state);
+        return;
+    }
+
+    // Initialize stream properties
     stream->id = id;
     stream->state = state;
     stream->recv_window = MAX_STREAM_WINDOW_SIZE;
     stream->send_window = MAX_STREAM_WINDOW_SIZE;
 
+    // Clear ring buffers
     memset(&stream->tx_ring, 0, sizeof(struct ring_buffer));
     memset(&stream->rx_ring, 0, sizeof(struct ring_buffer));
 
+    // Add stream to global tracking
     add_stream(stream);
-};
+    
+    debug(LOG_DEBUG, "Initialized stream %u with state %d", id, state);
+}
 
 /**
  * @brief Validates the TCP MUX protocol header.

@@ -560,51 +560,63 @@ int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
  * - Sends window update after processing
  */
 static int process_data(struct tmux_stream *stream, uint32_t length,
-                        uint16_t flags, void (*fn)(uint8_t *, int, void *),
+                        uint16_t flags, void (*handle_fn)(uint8_t *, int, void *),
                         void *param) {
-    if (!stream) {
+    if (!stream || !handle_fn) {
+        debug(LOG_ERR, "Invalid parameters in process_data");
         return 0;
     }
-    uint32_t id = stream->id;
 
-    if (!process_flags(flags, stream))
+    uint32_t stream_id = stream->id;
+
+    if (!process_flags(flags, stream)) {
+        debug(LOG_ERR, "Failed to process flags for stream %d", stream_id);
         return 0;
+    }
 
-    if (!get_stream_by_id(id)) {
+    if (!get_stream_by_id(stream_id)) {
+        debug(LOG_DEBUG, "Stream %d no longer exists", stream_id);
         return length;
     }
 
     if (length > stream->recv_window) {
-        debug(LOG_ERR, "receive window exceed (remain %d, recv %d)",
+        debug(LOG_ERR, "Receive window exceeded (available: %u, requested: %u)",
               stream->recv_window, length);
         return 0;
     }
 
     stream->recv_window -= length;
 
-    uint32_t nret = 0;
     struct proxy_client *pc = (struct proxy_client *)param;
-    if (!pc || (pc && !pc->local_proxy_bev && !is_socks5_proxy(pc->ps))) {
-        uint8_t *data = (uint8_t *)calloc(length, 1);
-        nret = rx_ring_buffer_pop(&stream->rx_ring, data, length);
-        fn(data, length, pc);
+    uint32_t bytes_processed = 0;
+
+    if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps))) {
+        uint8_t *data = calloc(length, sizeof(uint8_t));
+        if (!data) {
+            debug(LOG_ERR, "Memory allocation failed for data buffer");
+            return 0;
+        }
+
+        bytes_processed = rx_ring_buffer_pop(&stream->rx_ring, data, length);
+        handle_fn(data, bytes_processed, pc);
         free(data);
-    } else if (is_socks5_proxy(pc->ps)) {
-        // if pc's type is socks5, we should send data to socks5 client
-        nret = handle_ss5(pc, &stream->rx_ring, length);
-    } else {
-        nret =
-            tx_ring_buffer_write(pc->local_proxy_bev, &stream->rx_ring, length);
+    } 
+    else if (is_socks5_proxy(pc->ps)) {
+        bytes_processed = handle_ss5(pc, &stream->rx_ring, length);
+    } 
+    else {
+        bytes_processed = tx_ring_buffer_write(pc->local_proxy_bev, 
+                                              &stream->rx_ring, 
+                                              length);
     }
 
-    if (nret != length) {
-        debug(LOG_INFO,
-              "send data to local proxy not equal, nret %d, length %d", nret,
-              length);
+    if (bytes_processed != length) {
+        debug(LOG_INFO, "Incomplete data transfer - processed: %u, expected: %u",
+              bytes_processed, length);
     }
 
     struct bufferevent *bout = get_main_control()->connect_bev;
-    send_window_update(bout, stream, nret);
+    send_window_update(bout, stream, bytes_processed);
 
     return length;
 }

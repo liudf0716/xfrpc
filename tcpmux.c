@@ -775,40 +775,52 @@ uint32_t tmux_stream_read(struct bufferevent *bev, struct tmux_stream *stream,
  */
 int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
                           handle_data_fn_t fn) {
+    if (!tmux_hdr || !fn) {
+        return 0;
+    }
+
     uint32_t stream_id = ntohl(tmux_hdr->stream_id);
     uint16_t flags = ntohs(tmux_hdr->flags);
 
+    // Handle incoming SYN packets (unexpected for xfrpc client)
     if ((flags & SYN) == SYN) {
-        debug(LOG_INFO, "!!!! as xfrpc, it should not be here %d", stream_id);
-        if (!incoming_stream(stream_id))
-            return 0;
+        debug(LOG_INFO, "Unexpected SYN flag received for stream %d in xfrpc", stream_id);
+        return incoming_stream(stream_id) ? 0 : 0;
     }
 
+    // Validate stream exists
     struct tmux_stream *stream = get_stream_by_id(stream_id);
-
     if (!stream) {
+        debug(LOG_ERR, "Stream %d not found", stream_id);
         return 0;
     }
 
     struct proxy_client *pc = get_proxy_client(stream_id);
+    struct bufferevent *bout = get_main_control()->connect_bev;
 
+    // Handle window updates
     if (tmux_hdr->type == WINDOW_UPDATE) {
-        struct bufferevent *bev =
-            pc ? pc->local_proxy_bev : get_main_control()->connect_bev;
+        struct bufferevent *bev = pc ? 
+                                 pc->local_proxy_bev : 
+                                 get_main_control()->connect_bev;
+        
         if (!incr_send_window(bev, tmux_hdr, flags, stream)) {
-            struct bufferevent *bout = get_main_control()->connect_bev;
+            debug(LOG_ERR, "Protocol error while handling window update");
             tcp_mux_send_go_away(bout, PROTO_ERR);
         }
         return 0;
     }
 
-    struct bufferevent *bout = get_main_control()->connect_bev;
+    // Verify stream state
     if (stream->state != ESTABLISHED) {
+        debug(LOG_ERR, "Stream %d not in ESTABLISHED state", stream_id);
         return 0;
     }
 
+    // Process data
     int32_t length = ntohl(tmux_hdr->length);
     if (!process_data(stream, length, flags, fn, (void *)pc)) {
+        debug(LOG_ERR, "Protocol error while processing data");
         tcp_mux_send_go_away(bout, PROTO_ERR);
         return 0;
     }

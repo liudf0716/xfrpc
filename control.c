@@ -898,16 +898,37 @@ free_main_control()
 static void
 clear_main_control()
 {
-	assert(main_ctl);
-	if (main_ctl->ticker_ping) evtimer_del(main_ctl->ticker_ping);
-	if (main_ctl->tcp_mux_ping_event) evtimer_del(main_ctl->tcp_mux_ping_event);
+	// Sanity check
+	if (!main_ctl) {
+		debug(LOG_ERR, "main_ctl is NULL");
+		return;
+	}
+
+	// Clear timers
+	if (main_ctl->ticker_ping) {
+		evtimer_del(main_ctl->ticker_ping);
+		main_ctl->ticker_ping = NULL;
+	}
+
+	if (main_ctl->tcp_mux_ping_event) {
+		evtimer_del(main_ctl->tcp_mux_ping_event);
+		main_ctl->tcp_mux_ping_event = NULL;
+	}
+
+	// Clean up proxy clients and crypto context
 	clear_all_proxy_client();
 	free_evp_cipher_ctx();
+
+	// Reset state variables
 	set_client_status(0);
-	pong_time = 0;	
+	pong_time = 0;
 	is_login = 0;
-	if (get_common_config()->tcp_mux)
+
+	// Reinitialize multiplexer stream if TCP multiplexing is enabled
+	struct common_conf *conf = get_common_config();
+	if (conf && conf->tcp_mux) {
 		init_tmux_stream(&main_ctl->stream, get_next_session_id(), INIT);
+	}
 }
 
 void close_main_control()

@@ -898,36 +898,42 @@ free_main_control()
 static void
 clear_main_control()
 {
-	// Sanity check
+	// Validate main control exists
 	if (!main_ctl) {
-		debug(LOG_ERR, "main_ctl is NULL");
+		debug(LOG_ERR, "Cannot clear NULL main control");
 		return;
 	}
 
-	// Clear timers
+	// Clear event timers
 	if (main_ctl->ticker_ping) {
-		evtimer_del(main_ctl->ticker_ping);
+		if (evtimer_del(main_ctl->ticker_ping) < 0) {
+			debug(LOG_ERR, "Failed to delete ticker ping timer");
+		}
 		main_ctl->ticker_ping = NULL;
 	}
 
 	if (main_ctl->tcp_mux_ping_event) {
-		evtimer_del(main_ctl->tcp_mux_ping_event);
+		if (evtimer_del(main_ctl->tcp_mux_ping_event) < 0) {
+			debug(LOG_ERR, "Failed to delete TCP mux ping timer"); 
+		}
 		main_ctl->tcp_mux_ping_event = NULL;
 	}
 
-	// Clean up proxy clients and crypto context
+	// Reset connection state
+	set_client_status(0);
+	is_login = 0;
+	pong_time = 0;
+
+	// Clean up resources
 	clear_all_proxy_client();
 	free_evp_cipher_ctx();
 
-	// Reset state variables
-	set_client_status(0);
-	pong_time = 0;
-	is_login = 0;
-
-	// Reinitialize multiplexer stream if TCP multiplexing is enabled
+	// Reinitialize TCP multiplexing if enabled
 	struct common_conf *conf = get_common_config();
 	if (conf && conf->tcp_mux) {
-		init_tmux_stream(&main_ctl->stream, get_next_session_id(), INIT);
+		uint32_t session_id = get_next_session_id();
+		init_tmux_stream(&main_ctl->stream, session_id, INIT);
+		debug(LOG_DEBUG, "Reinitialized TCP mux stream with session ID %u", session_id);
 	}
 }
 

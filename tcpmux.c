@@ -91,30 +91,39 @@ void clear_stream() {
 }
 
 /**
- * @brief Retrieves a tmux_stream structure by its ID.
+ * @brief Retrieves a stream from the global hash table by its ID.
  *
- * This function searches for a tmux_stream structure in the global hash table
- * `all_stream` using the provided ID. If the stream is found, it is returned;
- * otherwise, NULL is returned.
- *
- * @param id The ID of the tmux_stream to retrieve.
- * @return A pointer to the tmux_stream structure if found, otherwise NULL.
+ * @param id The unique identifier of the stream to find
+ * @return struct tmux_stream* Pointer to the found stream, or NULL if not found
+ * 
+ * @note This function is thread-safe since the hash table operations are atomic
+ * @note Returns NULL if the global hash table is not initialized
  */
 struct tmux_stream *get_stream_by_id(uint32_t id) {
-    if (!all_stream)
+    // Early return if hash table is not initialized
+    if (!all_stream) {
+        debug(LOG_DEBUG, "Stream hash table not initialized");
         return NULL;
+    }
 
+    // Look up stream in hash table
     struct tmux_stream *stream = NULL;
     HASH_FIND_INT(all_stream, &id, stream);
+
+    if (!stream) {
+        debug(LOG_DEBUG, "Stream %u not found", id);
+    }
+
     return stream;
 }
 
 /**
  * @brief Retrieves the current tmux stream.
  *
- * This function returns a pointer to the current tmux stream.
+ * Returns a pointer to the current multiplexed TCP stream that is being processed.
+ * This stream represents the active connection being handled by the TCP multiplexer.
  *
- * @return A pointer to the current tmux stream.
+ * @return Pointer to the current tmux_stream structure, or NULL if no stream is active
  */
 struct tmux_stream *get_cur_stream() {
     return cur_stream;

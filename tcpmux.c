@@ -32,6 +32,10 @@
 #include "proxy.h"
 #include "tcpmux.h"
 
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 static uint8_t proto_version = 0;
 static uint8_t remote_go_away;
 static uint8_t local_go_away;
@@ -863,29 +867,38 @@ static int tx_ring_buffer_append(struct ring_buffer *ring, uint8_t *data,
  */
 uint32_t rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring,
                              uint32_t len) {
+    // Check if buffer is full
     if (ring->sz == RBUF_SIZE) {
         debug(LOG_ERR, "ring buffer is full");
         return 0;
     }
 
-    uint32_t cap = RBUF_SIZE - ring->sz;
-    if (len > cap) {
-        debug(LOG_INFO, "prepare read data [%d] out size ring capacity [%d]",
-              len, cap);
-        len = cap;
-    }
+    // Calculate available capacity and adjust length if needed
+    uint32_t available_space = RBUF_SIZE - ring->sz;
+    uint32_t bytes_to_read = MIN(len, available_space);
+    uint32_t bytes_read = 0;
 
-    for (int i = 0; i < len; i++) {
-        bufferevent_read(bev, &ring->data[ring->end++], 1);
-        if (ring->end == RBUF_SIZE)
-            ring->end = 0;
-        ring->sz++;
+    while (bytes_read < bytes_to_read) {
+        // Calculate contiguous space until buffer wrap
+        uint32_t contiguous_space = MIN(bytes_to_read - bytes_read, 
+                                      RBUF_SIZE - ring->end);
+        
+        // Read a block of contiguous data
+        uint32_t n = bufferevent_read(bev, 
+                                    &ring->data[ring->end], 
+                                    contiguous_space);
+        
+        ring->end = (ring->end + n) % RBUF_SIZE;
+        ring->sz += n;
+        bytes_read += n;
+
+        // Stop if we've caught up with read pointer
         if (ring->cur == ring->end) {
             break;
         }
     }
 
-    return len;
+    return bytes_read;
 }
 
 /**
@@ -907,32 +920,38 @@ uint32_t rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring,
  */
 uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring,
                               uint32_t len) {
+    // Check for empty buffer
     if (ring->sz == 0) {
         debug(LOG_ERR, "ring buffer is empty");
         return 0;
     }
 
-    if (len > ring->sz) {
-        debug(LOG_INFO, "prepare write data [%d] out size ring data [%d]", len,
-              ring->sz);
-        len = ring->sz;
-    }
+    // Adjust length if it exceeds available data
+    len = MIN(len, ring->sz);
 
-    uint32_t nwrite = len;
-    while (len > 0) {
-        bufferevent_write(bev, &ring->data[ring->cur++], 1);
-        len--;
-        ring->sz--;
-        ;
-        if (ring->cur == WBUF_SIZE)
-            ring->cur = 0;
+    uint32_t bytes_to_write = len;
+    uint32_t contiguous_bytes;
+
+    while (bytes_to_write > 0) {
+        // Calculate contiguous bytes available until buffer wrap or end
+        contiguous_bytes = MIN(bytes_to_write, WBUF_SIZE - ring->cur);
+        
+        // Write contiguous block of data
+        bufferevent_write(bev, &ring->data[ring->cur], contiguous_bytes);
+        
+        // Update ring buffer state
+        ring->cur = (ring->cur + contiguous_bytes) % WBUF_SIZE;
+        ring->sz -= contiguous_bytes;
+        bytes_to_write -= contiguous_bytes;
+
+        // Check if we've reached the end marker
         if (ring->cur == ring->end) {
             assert(ring->sz == 0);
             break;
         }
     }
 
-    return nwrite - len;
+    return len - bytes_to_write;
 }
 
 /**

@@ -16,9 +16,14 @@
 */
 
 /** @file control.c
-    @brief xfrp control protocol implemented
-    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
-*/
+ * @brief xfrpc main control protocol implementation
+ * @author Copyright (C) 2024 Dengfeng Liu <liudf0716@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by 
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
 
 #include <string.h>
 #include <stdlib.h>

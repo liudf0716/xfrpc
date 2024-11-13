@@ -881,11 +881,7 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
 
     // Handle window updates
     if (tmux_hdr->type == WINDOW_UPDATE) {
-        struct bufferevent *bev = pc ? 
-                                 pc->local_proxy_bev : 
-                                 get_main_control()->connect_bev;
-        
-        if (!incr_send_window(bev, tmux_hdr, flags, stream)) {
+        if (!incr_send_window(bout, tmux_hdr, flags, stream)) {
             debug(LOG_ERR, "Protocol error while handling window update");
             tcp_mux_send_go_away(bout, PROTO_ERR);
         }

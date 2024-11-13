@@ -709,19 +709,35 @@ void handle_tcp_mux_ping(struct tcp_mux_header *tmux_hdr) {
  * - Other codes: Logs unexpected error
  */
 void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr) {
+    if (!tmux_hdr) {
+        debug(LOG_ERR, "Invalid TCP MUX header");
+        return;
+    }
+
     uint32_t code = ntohl(tmux_hdr->length);
+    const char *error_msg = NULL;
+
+    // Map error codes to messages
     switch (code) {
-    case NORMAL:
-        remote_go_away = 1;
-        break;
-    case PROTO_ERR:
-        debug(LOG_ERR, "receive protocol error go away");
-        break;
-    case INTERNAL_ERR:
-        debug(LOG_ERR, "receive internal error go away");
-        break;
-    default:
-        debug(LOG_ERR, "receive unexpected go away");
+        case NORMAL:
+            remote_go_away = 1;
+            error_msg = "Normal shutdown requested";
+            break;
+        case PROTO_ERR:
+            error_msg = "Protocol error detected";
+            break;
+        case INTERNAL_ERR:
+            error_msg = "Internal error occurred";
+            break;
+        default:
+            error_msg = "Unexpected error code";
+    }
+
+    // Log the appropriate error message with the error code
+    if (code != NORMAL) {
+        debug(LOG_ERR, "GO_AWAY received: %s (code=%u)", error_msg, code);
+    } else {
+        debug(LOG_INFO, "GO_AWAY received: %s", error_msg);
     }
 }
 

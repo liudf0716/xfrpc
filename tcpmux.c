@@ -831,22 +831,40 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
  * 
  * @return Number of bytes actually appended to the ring buffer
  */
-static int tx_ring_buffer_append(struct ring_buffer *ring, uint8_t *data,
-                                 uint32_t len) {
-    uint32_t left = WBUF_SIZE - ring->sz;
-    assert(left >= len);
-    int i = 0;
-    for (; i < len; i++) {
-        ring->data[ring->end++] = data[i];
-        if (ring->end == WBUF_SIZE)
-            ring->end = 0;
-        ring->sz++;
+static int tx_ring_buffer_append(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
+    // Validate inputs and capacity
+    if (!ring || !data || len == 0) {
+        return 0;
+    }
+
+    uint32_t available_space = WBUF_SIZE - ring->sz;
+    if (available_space < len) {
+        return 0;
+    }
+
+    uint32_t bytes_written = 0;
+    while (bytes_written < len) {
+        // Calculate contiguous space until buffer wrap
+        uint32_t contiguous_space = MIN(len - bytes_written, 
+                                      WBUF_SIZE - ring->end);
+        
+        // Copy block of data
+        memcpy(&ring->data[ring->end], 
+               &data[bytes_written], 
+               contiguous_space);
+        
+        // Update ring buffer state
+        ring->end = (ring->end + contiguous_space) % WBUF_SIZE;
+        ring->sz += contiguous_space;
+        bytes_written += contiguous_space;
+
+        // Stop if we've caught up with read pointer
         if (ring->cur == ring->end) {
             break;
         }
     }
 
-    return i;
+    return bytes_written;
 }
 
 /**

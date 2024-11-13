@@ -23,6 +23,7 @@
 
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "client.h"
 #include "common.h"
@@ -413,31 +414,37 @@ static void tcp_mux_send_go_away(struct bufferevent *bout, uint32_t reason) {
  * @return Returns 1 on success, 0 on failure.
  */
 static int process_flags(uint16_t flags, struct tmux_stream *stream) {
-    uint32_t close_stream = 0;
-    if ((flags & ACK) == ACK) {
-        if (stream->state == SYN_SEND)
+    bool should_close = false;
+
+    if (flags & ACK) {
+        if (stream->state == SYN_SEND) {
             stream->state = ESTABLISHED;
-    } else if ((flags & FIN) == FIN) {
-        switch (stream->state) {
-        case SYN_SEND:
-        case SYN_RECEIVED:
-        case ESTABLISHED:
-            stream->state = REMOTE_CLOSE;
-            break;
-        case LOCAL_CLOSE:
-            stream->state = CLOSED;
-            close_stream = 1;
-            break;
-        default:
-            debug(LOG_ERR, "unexpected FIN flag in state %d", stream->state);
-            return 0; // Return 0 to indicate an error
         }
-    } else if ((flags & RST) == RST) {
-        stream->state = RESET;
-        close_stream = 1;
     }
 
-    if (close_stream) {
+    if (flags & FIN) {
+        switch (stream->state) {
+            case SYN_SEND:
+            case SYN_RECEIVED:
+            case ESTABLISHED:
+                stream->state = REMOTE_CLOSE;
+                break;
+            case LOCAL_CLOSE:
+                stream->state = CLOSED;
+                should_close = true;
+                break;
+            default:
+                debug(LOG_ERR, "unexpected FIN flag in state %d", stream->state);
+                return 0;
+        }
+    }
+
+    if (flags & RST) {
+        stream->state = RESET;
+        should_close = true;
+    }
+
+    if (should_close) {
         debug(LOG_DEBUG, "free stream %d", stream->id);
         del_proxy_client_by_stream_id(stream->id);
     }

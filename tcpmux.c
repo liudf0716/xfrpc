@@ -53,7 +53,23 @@ static struct tmux_stream *all_stream;
  * @param stream A pointer to the `tmux_stream` structure to be added.
  */
 void add_stream(struct tmux_stream *stream) {
+    // Validate input parameter
+    if (!stream) {
+        debug(LOG_ERR, "Cannot add NULL stream");
+        return;
+    }
+
+    // Check if stream already exists
+    struct tmux_stream *existing = NULL;
+    HASH_FIND_INT(all_stream, &stream->id, existing);
+    if (existing) {
+        debug(LOG_WARNING, "Stream %u already exists in hash table", stream->id);
+        return;
+    }
+
+    // Add stream to hash table
     HASH_ADD_INT(all_stream, id, stream);
+    debug(LOG_DEBUG, "Added stream %u to hash table", stream->id);
 }
 
 /**

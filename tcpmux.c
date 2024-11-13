@@ -77,17 +77,21 @@ void del_stream(uint32_t id) {
 }
 
 /**
- * @brief Clears the hash table of all streams and sets the pointer to NULL.
+ * @brief Clears all streams from the global hash table.
  *
- * This function checks if the global variable `all_stream` is not NULL. If it is not NULL,
- * it clears the hash table using `HASH_CLEAR` and then sets `all_stream` to NULL.
+ * This function performs a complete cleanup of the global stream hash table.
+ * It safely handles the case where the hash table is already empty.
+ * After clearing, the global pointer is set to NULL to prevent dangling references.
+ *
+ * @note This function should be called during shutdown or when a complete reset is needed.
+ * @note This is a destructive operation - all stream entries will be removed.
  */
-void clear_stream() {
-    if (!all_stream)
-        return;
-
-    HASH_CLEAR(hh, all_stream);
-    all_stream = NULL;
+void clear_stream(void) {
+    if (all_stream) {
+        HASH_CLEAR(hh, all_stream);
+        all_stream = NULL;
+        debug(LOG_DEBUG, "Cleared all streams from hash table");
+    }
 }
 
 /**

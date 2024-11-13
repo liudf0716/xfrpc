@@ -226,10 +226,20 @@ void reset_session_id() { g_session_id = 1; }
  *
  * @return The next session ID.
  */
+/**
+ * @brief Generates the next unique session ID.
+ *
+ * This function generates a monotonically increasing session ID by incrementing
+ * the global session ID counter by 2. This ensures each new session gets a unique
+ * odd-numbered ID, while even numbers are reserved for other purposes.
+ *
+ * @return The newly generated session ID
+ * 
+ * @note The function increments by 2 to maintain odd-numbered IDs
+ */
 uint32_t get_next_session_id() {
-    uint32_t id = g_session_id;
-    g_session_id += 2;
-    return id;
+    uint32_t current_id = __atomic_fetch_add(&g_session_id, 2, __ATOMIC_SEQ_CST);
+    return current_id;
 }
 
 /**

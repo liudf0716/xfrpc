@@ -261,11 +261,34 @@ static void tcp_mux_send_win_update(struct bufferevent *bout,
  * @param bout The bufferevent to send the window update on.
  * @param stream_id The ID of the stream to send the window update for.
  */
+/**
+ * @brief Sends a window update with SYN flag for a TCP multiplexed stream.
+ *
+ * This function sends a window update message with the SYN flag set for 
+ * a specified stream. The message is only sent if TCP multiplexing is enabled.
+ *
+ * @param bout The bufferevent to write the window update to
+ * @param stream_id The ID of the stream to send the update for
+ *
+ * @note Function silently returns if TCP multiplexing is disabled
+ *       or if bufferevent is invalid
+ */
 void tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id) {
-    if (!tcp_mux_flag())
+    // Early return if TCP multiplexing is disabled
+    if (!tcp_mux_flag()) {
+        debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
+    }
 
+    // Validate bufferevent
+    if (!bout) {
+        debug(LOG_ERR, "Invalid bufferevent for SYN");
+        return;
+    }
+
+    // Send window update with SYN flag
     tcp_mux_send_win_update(bout, SYN, stream_id, 0);
+    debug(LOG_DEBUG, "Sent SYN for stream %u", stream_id);
 }
 
 /**

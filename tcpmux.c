@@ -279,12 +279,35 @@ void tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id) {
  * @param stream_id The ID of the stream for which the window update acknowledgment is sent.
  * @param delta The delta value for the window update (currently unused, set to 0).
  */
+/**
+ * @brief Sends a window update acknowledgment for a TCP multiplexed stream.
+ *
+ * This function sends a window update acknowledgment message for a specified stream
+ * if TCP multiplexing is enabled. It includes validation checks and proper error handling.
+ *
+ * @param bout Pointer to the bufferevent structure to send the acknowledgment through
+ * @param stream_id The ID of the stream being acknowledged
+ * @param delta The window size delta (currently unused, kept for API compatibility)
+ *
+ * @note Function silently returns if TCP multiplexing is disabled or if bufferevent is invalid
+ */
 void tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id,
-                                 uint32_t delta) {
-    if (!tcp_mux_flag())
+                                uint32_t delta) {
+    // Early return if TCP multiplexing is disabled
+    if (!tcp_mux_flag()) {
+        debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
+    }
 
-    tcp_mux_send_win_update(bout, ZERO, stream_id, 0);
+    // Validate bufferevent
+    if (!bout) {
+        debug(LOG_ERR, "Invalid bufferevent for ACK");
+        return;
+    }
+
+    // Send window update with ACK flag
+    tcp_mux_send_win_update(bout, ACK, stream_id, 0);
+    debug(LOG_DEBUG, "Sent ACK for stream %u", stream_id);
 }
 
 /**

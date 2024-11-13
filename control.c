@@ -891,8 +891,10 @@ init_main_control()
 static void 
 free_main_control()
 {
-	SAFE_FREE(main_ctl);
-	main_ctl = NULL;
+	if (main_ctl) {
+		free(main_ctl);
+		main_ctl = NULL;
+	}
 }
 
 static void

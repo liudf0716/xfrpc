@@ -67,13 +67,25 @@ void add_stream(struct tmux_stream *stream) {
  * @param id The ID of the stream to be deleted.
  */
 void del_stream(uint32_t id) {
-    if (!all_stream)
+    // Early return if hash table is not initialized
+    if (!all_stream) {
+        debug(LOG_DEBUG, "Stream hash table not initialized");
         return;
+    }
 
-    struct tmux_stream *stream = get_stream_by_id(id);
-    if (stream)
-        HASH_DEL(all_stream, stream); // no need to free stream, it will be freed
-                                      // when proxy client is freed
+    // Find stream in hash table
+    struct tmux_stream *stream = NULL;
+    HASH_FIND_INT(all_stream, &id, stream);
+
+    // Delete stream if found
+    if (stream) {
+        HASH_DEL(all_stream, stream);
+        debug(LOG_DEBUG, "Stream %u removed from hash table", id);
+    } else {
+        debug(LOG_DEBUG, "Stream %u not found in hash table", id);
+    }
+    
+    // Note: Stream memory is freed when associated proxy client is freed
 }
 
 /**

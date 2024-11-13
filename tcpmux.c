@@ -215,7 +215,9 @@ static uint32_t tcp_mux_flag() {
  * This function sets the global session ID (g_session_id) to 1.
  * It is typically used to reinitialize the session ID counter.
  */
-void reset_session_id() { g_session_id = 1; }
+void reset_session_id() {
+    __atomic_store_n(&g_session_id, 1, __ATOMIC_SEQ_CST);
+}
 
 /**
  * @brief Generates the next session ID.

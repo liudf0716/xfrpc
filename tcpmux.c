@@ -626,23 +626,40 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
 static int incr_send_window(struct bufferevent *bev,
                             struct tcp_mux_header *tmux_hdr, uint16_t flags,
                             struct tmux_stream *stream) {
-    if (!stream) {
+    // Validate input parameters
+    if (!bev || !tmux_hdr || !stream) {
+        debug(LOG_ERR, "Invalid parameters in incr_send_window");
         return 0;
     }
-    uint32_t id = stream->id;
 
-    if (!process_flags(flags, stream))
+    // Save stream ID for later use
+    uint32_t stream_id = stream->id;
+
+    // Process control flags first
+    if (!process_flags(flags, stream)) {
+        debug(LOG_ERR, "Failed to process flags for stream %d", stream_id);
         return 0;
+    }
 
-    if (!get_stream_by_id(id)) {
+    // Verify stream still exists after flag processing
+    if (!get_stream_by_id(stream_id)) {
+        debug(LOG_DEBUG, "Stream %d no longer exists", stream_id);
         return 1;
     }
 
-    uint32_t length = ntohl(tmux_hdr->length);
+    // Get window increment size
+    uint32_t increment = ntohl(tmux_hdr->length);
 
-    if (stream->send_window == 0)
+    // Enable read events if window was previously full
+    if (stream->send_window == 0) {
+        debug(LOG_DEBUG, "Enabling read events for stream %d", stream_id);
         bufferevent_enable(bev, EV_READ);
-    stream->send_window += length;
+    }
+
+    // Update send window
+    stream->send_window += increment;
+    debug(LOG_DEBUG, "Stream %d send window increased by %u to %u", 
+          stream_id, increment, stream->send_window);
 
     return 1;
 }

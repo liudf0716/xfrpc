@@ -297,10 +297,21 @@ void tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id,
  * @param stream_id The ID of the stream for which the window update with FIN flag is sent.
  */
 void tcp_mux_send_win_update_fin(struct bufferevent *bout, uint32_t stream_id) {
-    if (!tcp_mux_flag())
+    // Early return if TCP multiplexing is disabled
+    if (!tcp_mux_flag()) {
+        debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
+    }
 
+    // Validate bufferevent
+    if (!bout) {
+        debug(LOG_ERR, "Invalid bufferevent for FIN");
+        return;
+    }
+
+    // Send window update with FIN flag
     tcp_mux_send_win_update(bout, FIN, stream_id, 0);
+    debug(LOG_DEBUG, "Sent FIN for stream %u", stream_id);
 }
 
 /**

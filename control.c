@@ -801,20 +801,34 @@ get_main_control()
 	return main_ctl;
 }
 
-void 
-start_login_frp_server(struct event_base *base)
-{
+static int init_frp_connection(struct bufferevent **bev_out, struct event_base *base) {
 	struct common_conf *c_conf = get_common_config();
+	if (!c_conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		return -1;
+	}
+
 	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
-		debug(LOG_DEBUG, 
-			"Connect server [%s:%d] failed", 
-			c_conf->server_addr, 
-			c_conf->server_port);
+		debug(LOG_ERR, "Failed to connect to server [%s:%d]", 
+			  c_conf->server_addr, c_conf->server_port);
+		return -1;
+	}
+
+	*bev_out = bev;
+	return 0;
+}
+
+void start_login_frp_server(struct event_base *base) 
+{
+	struct bufferevent *bev = NULL;
+	if (init_frp_connection(&bev, base) != 0) {
 		return;
 	}
 
-	debug(LOG_INFO, "Xfrpc login: connect server [%s:%d] ...", c_conf->server_addr, c_conf->server_port);
+	struct common_conf *c_conf = get_common_config();
+	debug(LOG_INFO, "Xfrpc login: connecting to server [%s:%d]...", 
+		  c_conf->server_addr, c_conf->server_port);
 
 	bufferevent_enable(bev, EV_WRITE|EV_READ);
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);

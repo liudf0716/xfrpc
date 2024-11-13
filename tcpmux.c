@@ -204,8 +204,22 @@ void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags,
  *
  * @return The TCP multiplexing flag as a 32-bit unsigned integer.
  */
+/**
+ * @brief Gets the TCP multiplexing configuration flag.
+ *
+ * Retrieves the TCP multiplexing flag from the common configuration.
+ * This flag determines whether TCP multiplexing is enabled for the
+ * current session.
+ *
+ * @return The TCP multiplexing flag value from configuration
+ *         Returns 0 if configuration is not available
+ */
 static uint32_t tcp_mux_flag() {
     struct common_conf *c_conf = get_common_config();
+    if (!c_conf) {
+        debug(LOG_ERR, "Failed to get common configuration");
+        return 0;
+    }
     return c_conf->tcp_mux;
 }
 

@@ -465,62 +465,113 @@ handle_control_work(const uint8_t *buf, int len, void *ctx)
 		free(frps_cmd);
 }
 
-static int
-handle_login_response(const uint8_t *buf, int len)
-{
-	struct msg_hdr *mhdr = (struct msg_hdr *)buf;
-	if (mhdr->type != TypeLoginResp) {
-		debug(LOG_ERR, "type incorrect: it should be login response, but %d", mhdr->type);
+static int validate_login_msg(const struct msg_hdr *mhdr) {
+	if (!mhdr || mhdr->type != TypeLoginResp) {
+		debug(LOG_ERR, "Invalid message type: expected %d, got %d", 
+			  TypeLoginResp, mhdr ? mhdr->type : -1);
 		return 0;
-	}	
-	
-	struct login_resp *lres = login_resp_unmarshal((const char *)mhdr->data); 
+	}
+	return 1;
+}
+
+static int process_login_response(const struct msg_hdr *mhdr) {
+	struct login_resp *lres = login_resp_unmarshal((const char *)mhdr->data);
 	if (!lres) {
+		debug(LOG_ERR, "Failed to unmarshal login response");
 		return 0;
 	}
 
-	if (!login_resp_check(lres)) {
-		debug(LOG_ERR, "login failed");	
-		free(lres);
-		return 0;
-	}
+	int success = login_resp_check(lres);
 	free(lres);
-	
-	is_login = 1;
 
-	int login_len = msg_hton(mhdr->length);
-	int ilen = len - login_len - sizeof(struct msg_hdr);
-	debug(LOG_ERR, "login success! login_len %d len %d ilen %d", login_len, len, ilen);
-	assert(ilen >= 0);
-	if (ilen <= 0)
-		return 1;
-	
-	// in case, libevent reveive continue packet together
-	struct common_conf 	*c_conf = get_common_config();
-	assert(c_conf->tcp_mux == 0);
-	uint8_t *enc_msg = mhdr->data + login_len; 
-	uint8_t *frps_cmd = NULL;
-	int nret = handle_enc_msg(enc_msg, ilen, &frps_cmd);
-	assert(nret > 0);
-	// start proxy services must first send
-	start_proxy_services();
-	set_client_status(1);
-	debug(LOG_DEBUG, "TypeReqWorkConn cmd, msg :%s", &frps_cmd[8]);
-	assert (frps_cmd[0] == TypeReqWorkConn);
-	new_client_connect();
+	if (!success) {
+		debug(LOG_ERR, "Login validation failed");
+		return 0;
+	}
 
 	return 1;
 }
 
-static void
-handle_frps_msg(uint8_t *buf, int len, void *ctx)
+static void handle_remaining_data(struct msg_hdr *mhdr, int login_len, int ilen) {
+	struct common_conf *c_conf = get_common_config();
+	if (!c_conf || c_conf->tcp_mux) {
+		return;
+	}
+
+	uint8_t *enc_msg = mhdr->data + login_len;
+	uint8_t *frps_cmd = NULL;
+	
+	int nret = handle_enc_msg(enc_msg, ilen, &frps_cmd);
+	if (nret <= 0 || !frps_cmd) {
+		debug(LOG_ERR, "Failed to handle encrypted message");
+		return;
+	}
+
+	if (frps_cmd[0] != TypeReqWorkConn) {
+		debug(LOG_ERR, "Unexpected message type: %d", frps_cmd[0]);
+		free(frps_cmd);
+		return;
+	}
+
+	start_proxy_services();
+	set_client_status(1);
+	new_client_connect();
+	
+	free(frps_cmd);
+}
+
+static int
+handle_login_response(const uint8_t *buf, int len)
 {
+	if (!buf || len <= 0) {
+		debug(LOG_ERR, "Invalid input parameters");
+		return 0;
+	}
+
+	struct msg_hdr *mhdr = (struct msg_hdr *)buf;
+	if (!validate_login_msg(mhdr)) {
+		return 0;
+	}
+
+	if (!process_login_response(mhdr)) {
+		return 0;
+	}
+
+	is_login = 1;
+	
+	int login_len = msg_hton(mhdr->length);
+	int remaining_len = len - login_len - sizeof(struct msg_hdr);
+	
+	debug(LOG_INFO, "Login successful - message length: %d, total length: %d, remaining: %d", 
+		  login_len, len, remaining_len);
+
+	if (remaining_len > 0) {
+		handle_remaining_data(mhdr, login_len, remaining_len);
+	}
+
+	return 1;
+}
+
+static void handle_frps_msg(uint8_t *buf, int len, void *ctx) 
+{
+	// Validate input parameters
+	if (!buf || len <= 0) {
+		debug(LOG_ERR, "Invalid message buffer or length");
+		return;
+	}
+
+	// Handle message based on login state
 	if (!is_login) {
-		// login response
-		handle_login_response(buf, len);
-	}else {
+		// Handle login response first
+		if (!handle_login_response(buf, len)) {
+			debug(LOG_ERR, "Login response handling failed");
+			return;
+		}
+	} else {
+		// Handle control messages after successful login
+		debug(LOG_DEBUG, "Processing control message: length=%d", len);
 		handle_control_work(buf, len, ctx);
-	}	
+	}
 }
 
 static struct tmux_stream abandon_stream;

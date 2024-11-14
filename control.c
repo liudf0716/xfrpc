@@ -119,33 +119,76 @@ client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-static void 
-new_client_connect()
-{
-	struct proxy_client *client = new_proxy_client();
-	struct common_conf *c_conf = get_common_config();
-	assert(c_conf);
-	client->base = main_ctl->connect_base;
-	
-	if (c_conf->tcp_mux) {
-		debug(LOG_DEBUG, "new client through tcp mux: %d", client->stream_id);
-		client->ctl_bev 	= main_ctl->connect_bev;
-		send_window_update(client->ctl_bev, &client->stream, 0);
-		new_work_connection(client->ctl_bev, &client->stream);
-		return;
+static int init_tcp_mux_client(struct proxy_client *client) {
+	if (!client || !client->ctl_bev) {
+		debug(LOG_ERR, "Invalid client for TCP mux initialization");
+		return -1;
 	}
 
-	struct bufferevent *bev = connect_server(client->base, c_conf->server_addr, c_conf->server_port);
+	debug(LOG_DEBUG, "New client through TCP mux: stream_id=%d", client->stream_id);
+	send_window_update(client->ctl_bev, &client->stream, 0);
+	new_work_connection(client->ctl_bev, &client->stream);
+	return 0;
+}
+
+static int init_direct_client(struct proxy_client *client, 
+							const char *server_addr, 
+							int server_port) {
+	struct bufferevent *bev = connect_server(client->base, server_addr, server_port);
 	if (!bev) {
-		debug(LOG_DEBUG, "Connect server [%s:%d] failed", c_conf->server_addr, c_conf->server_port);
-		return;
+		debug(LOG_ERR, "Failed to connect to server [%s:%d]", 
+			  server_addr, server_port);
+		return -1;
 	}
 
-	debug(LOG_INFO, "work connection: connect server [%s:%d] ......", c_conf->server_addr, c_conf->server_port);
+	debug(LOG_INFO, "Work connection: connecting to server [%s:%d]...", 
+		  server_addr, server_port);
 
 	client->ctl_bev = bev;
 	bufferevent_enable(bev, EV_WRITE);
 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
+	
+	return 0;
+}
+
+static void new_client_connect()
+{
+	// Create new proxy client
+	struct proxy_client *client = new_proxy_client();
+	if (!client) {
+		debug(LOG_ERR, "Failed to create new proxy client");
+		return;
+	}
+
+	// Get and validate common config
+	struct common_conf *c_conf = get_common_config();
+	if (!c_conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		free(client);
+		return;
+	}
+
+	// Initialize client base
+	client->base = main_ctl->connect_base;
+	if (!client->base) {
+		debug(LOG_ERR, "Invalid event base");
+		free(client);
+		return;
+	}
+
+	// Handle connection based on mux configuration
+	if (c_conf->tcp_mux) {
+		client->ctl_bev = main_ctl->connect_bev;
+		if (init_tcp_mux_client(client) != 0) {
+			free(client);
+			return;
+		}
+	} else {
+		if (init_direct_client(client, c_conf->server_addr, c_conf->server_port) != 0) {
+			free(client);
+			return;
+		}
+	}
 }
 
 static void start_proxy_services() 

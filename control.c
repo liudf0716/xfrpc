@@ -66,11 +66,23 @@ static void start_base_connect(void);
 static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
 
+/**
+ * Check if xfrpc client is connected to server
+ *
+ * @return true if connected, false otherwise
+ */
 static bool is_xfrpc_connected(void)
 {
 	return xfrpc_status;
 }
 
+/**
+ * Updates the global connection status flag for xfrpc.
+ * 
+ * @param is_connected Boolean flag indicating whether xfrpc is connected (true) or disconnected (false)
+ * 
+ * Sets the global xfrpc_status variable and logs the new connection state at debug level.
+ */
 static void set_xfrpc_status(bool is_connected)
 {
 	// Set global connection status flag 
@@ -78,6 +90,16 @@ static void set_xfrpc_status(bool is_connected)
 	debug(LOG_DEBUG, "xfrpc connection status set to: %s", is_connected ? "connected" : "disconnected");
 }
 
+/**
+ * Sets the work status of a proxy client.
+ * 
+ * @param client The proxy client structure to modify
+ * @param is_start_work Non-zero value to start work, zero to stop
+ * @return Returns 1 if client is set to work, 0 if client is set to stop or if invalid parameters
+ *
+ * This function updates the work_started flag of a proxy client. It performs validation
+ * to ensure the client and its proxy service exist before modifying the status.
+ */
 static int set_client_work_start(struct proxy_client *client, int is_start_work)
 {
 	if (!client || !client->ps) {
@@ -89,6 +111,20 @@ static int set_client_work_start(struct proxy_client *client, int is_start_work)
 	return client->work_started;
 }
 
+/**
+ * @brief Handles errors for proxy client connections
+ *
+ * This function handles errors that occur on the control connection to the server.
+ * It performs cleanup by:
+ * 1. Verifying and freeing mismatched control bufferevents
+ * 2. Logging the connection error details
+ * 3. Freeing the bufferevent
+ * 4. Removing the proxy client from tracking
+ *
+ * @param client The proxy client structure containing connection state
+ * @param bev The bufferevent that encountered an error
+ * @param c_conf Common configuration containing server connection details
+ */
 static void handle_client_error(struct proxy_client *client, struct bufferevent *bev, 
 				   const struct common_conf *c_conf)
 {
@@ -107,6 +143,18 @@ static void handle_client_error(struct proxy_client *client, struct bufferevent 
 	del_proxy_client_by_stream_id(client->stream_id);
 }
 
+/**
+ * @brief Handles the setup of a newly connected proxy client
+ *
+ * This function configures the bufferevent callbacks and initializes 
+ * the work connection for a newly connected proxy client. It:
+ * - Sets up read/write event callbacks for the bufferevent
+ * - Initializes a new work connection with the given bufferevent
+ * - Enables the proxy service status
+ *
+ * @param client Pointer to the proxy client structure
+ * @param bev Pointer to the bufferevent structure for this connection
+ */
 static void handle_client_connected(struct proxy_client *client, struct bufferevent *bev)
 {
 	// Setup callbacks and enable events
@@ -120,6 +168,23 @@ static void handle_client_connected(struct proxy_client *client, struct bufferev
 	debug(LOG_INFO, "Proxy service started successfully");
 }
 
+/**
+ * @brief Callback function for handling client connection events
+ * 
+ * This callback is triggered for connection-related events of a bufferevent. It handles:
+ * - Connection errors
+ * - EOF (End of File) conditions
+ * - Successful connections
+ * 
+ * The function performs validation of input parameters and retrieves common configuration
+ * before processing any events. If errors occur, appropriate error handling is performed.
+ *
+ * @param bev Pointer to the bufferevent structure that triggered the callback
+ * @param what Bit mask of events that triggered the callback (BEV_EVENT_*)
+ * @param ctx Context pointer containing the proxy client structure
+ * 
+ * @note The context (ctx) is expected to be a pointer to proxy_client structure
+ */
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	// Validate input parameters
@@ -147,6 +212,19 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 	}
 }
 
+/**
+ * @brief Initializes a TCP multiplexing client connection
+ *
+ * This function sets up a new TCP multiplexing client by:
+ * 1. Validating the client and control buffer event
+ * 2. Sending initial window update
+ * 3. Creating a new work connection
+ *
+ * @param client Pointer to the proxy client structure containing connection details
+ * @return 0 on success, -1 on failure
+ *
+ * @note Client must have valid proxy_client structure with initialized ctl_bev
+ */
 static int init_tcp_mux_client(struct proxy_client *client) {
 	if (!client || !client->ctl_bev) {
 		debug(LOG_ERR, "Invalid client for TCP mux initialization");
@@ -159,6 +237,22 @@ static int init_tcp_mux_client(struct proxy_client *client) {
 	return 0;
 }
 
+/**
+ * @brief Initializes a direct client connection to a server
+ * 
+ * This function establishes a direct connection to a specified server using the
+ * provided address and port. It creates a bufferevent for the connection and
+ * sets up the necessary callbacks.
+ *
+ * @param client Pointer to the proxy client structure
+ * @param server_addr Server address to connect to
+ * @param server_port Server port to connect to
+ *
+ * @return 0 on success, -1 on failure
+ *
+ * @note The function will log debug messages for both successful and failed
+ * connection attempts
+ */
 static int init_direct_client(struct proxy_client *client, 
 							const char *server_addr, 
 							int server_port) {
@@ -179,6 +273,23 @@ static int init_direct_client(struct proxy_client *client,
 	return 0;
 }
 
+/**
+ * @brief Creates and initializes a new proxy client connection
+ * 
+ * This function handles the creation of a new proxy client and establishes
+ * its connection. It performs the following steps:
+ * 1. Creates a new proxy client instance
+ * 2. Retrieves and validates common configuration
+ * 3. Initializes the client's event base
+ * 4. Sets up the connection based on TCP multiplexing configuration:
+ *    - If TCP mux is enabled, initializes multiplexed client
+ *    - If TCP mux is disabled, initializes direct client connection
+ * 
+ * The function includes proper error handling and cleanup for failed operations.
+ * 
+ * @note This function assumes the existence of a global main_ctl structure
+ * @note Memory is properly freed in case of initialization failures
+ */
 static void new_client_connect()
 {
 	// Create new proxy client
@@ -219,6 +330,21 @@ static void new_client_connect()
 	}
 }
 
+/**
+ * @brief Initializes and starts all configured proxy services
+ *
+ * This function retrieves all configured proxy services and initiates them by:
+ * 1. Getting the list of all configured proxy services
+ * 2. Iterating through each service
+ * 3. Validating each service
+ * 4. Skipping MSTSC type proxies
+ * 5. Sending new proxy requests for valid services
+ *
+ * If no proxy services are configured, the function logs a message and returns.
+ * Invalid proxy services encountered during iteration are logged and skipped.
+ *
+ * @note MSTSC proxy types are explicitly skipped during processing
+ */
 static void start_proxy_services() 
 {
 	// Get configured proxy services
@@ -251,6 +377,18 @@ static void start_proxy_services()
 	}
 }
 
+/**
+ * @brief Sends a ping message to the FRP server to maintain connection
+ *
+ * This function validates the bufferevent connection and sends an empty JSON
+ * ping message to the FRP server. The ping message helps keep the connection
+ * alive and verify connectivity.
+ *
+ * The message is encrypted before sending using the stream encryption context
+ * stored in main_ctl.
+ *
+ * @note Requires valid main_ctl and connect_bev to be initialized
+ */
 static void ping(void)
 {
 	// Validate bufferevent
@@ -270,6 +408,27 @@ static void ping(void)
 	debug(LOG_DEBUG, "Sent ping message");
 }
 
+/**
+ * @brief Creates and sends a new work connection request to the FRP server
+ *
+ * This function handles the creation of a new work connection by:
+ * 1. Creating a new work connection structure
+ * 2. Retrieving the run ID
+ * 3. Marshalling the work connection request
+ * 4. Sending the request to the FRP server
+ *
+ * @param bev The bufferevent structure for network communication
+ * @param stream The tmux stream structure containing stream information
+ *
+ * @note This function performs cleanup of allocated resources before returning
+ * @note The run ID must be initialized during login before calling this function
+ *
+ * Error conditions:
+ * - Invalid bufferevent parameter
+ * - Failed work connection creation
+ * - Missing run ID
+ * - Failed message marshalling
+ */
 static void new_work_connection(struct bufferevent *bev, struct tmux_stream *stream)
 {
 	// Validate input parameters
@@ -311,6 +470,29 @@ static void new_work_connection(struct bufferevent *bev, struct tmux_stream *str
 	SAFE_FREE(work_c);
 }
 
+/**
+ * Establishes a connection to a server using libevent bufferevent
+ *
+ * This function creates a bufferevent socket and connects it to a server specified
+ * by name and port. It handles both direct IP connections and hostname-based
+ * connections requiring DNS resolution.
+ *
+ * @param base      The event_base to be used for the connection
+ * @param name      The server address (IP or hostname)
+ * @param port      The port number to connect to
+ *
+ * @return         A pointer to the connected bufferevent structure on success,
+ *                NULL on failure
+ *
+ * The function will:
+ * - Validate input parameters
+ * - Create a new bufferevent socket
+ * - For IP addresses: Connect directly using the IP
+ * - For hostnames: Use DNS resolution if available
+ *
+ * @note Requires main_ctl->dnsbase to be initialized for hostname resolution
+ * @note The returned bufferevent must be freed by the caller when no longer needed
+ */
 struct bufferevent *connect_server(struct event_base *base, const char *name, const int port) 
 {
 	// Validate input parameters
@@ -359,6 +541,20 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 	return bev;
 }
 
+/**
+ * @brief Creates and initializes a UDP server connection using libevent
+ *
+ * This function sets up a UDP socket and creates a bufferevent for it with the following steps:
+ * 1. Creates a UDP socket
+ * 2. Makes the socket non-blocking
+ * 3. Creates a bufferevent for the socket with close-on-free option
+ *
+ * @param base Pointer to the event_base to be used for the bufferevent
+ * @return struct bufferevent* Pointer to the created bufferevent on success, NULL on failure
+ *
+ * @note The returned bufferevent must be freed by the caller when no longer needed
+ * @note The socket will be automatically closed when the bufferevent is freed
+ */
 struct bufferevent *connect_udp_server(struct event_base *base)
 {
 	// Validate input parameter
@@ -394,6 +590,19 @@ struct bufferevent *connect_udp_server(struct event_base *base)
 	return bev;
 }
 
+/**
+ * @brief Schedules a heartbeat timer event
+ *
+ * This function schedules a periodic heartbeat timer using the heartbeat interval
+ * specified in the common configuration. The timer is used to send periodic
+ * heartbeat messages to maintain the connection.
+ *
+ * @param timeout Pointer to the event structure to be scheduled
+ * 
+ * @note The heartbeat interval is read from the common configuration
+ * @note The function will log errors if the timer or config is invalid
+ * @note The timer is scheduled with microseconds set to 0
+ */
 static void schedule_heartbeat_timer(struct event *timeout) {
 	if (!timeout) {
 		debug(LOG_ERR, "Invalid timer event");
@@ -416,6 +625,19 @@ static void schedule_heartbeat_timer(struct event *timeout) {
 	}
 }
 
+/**
+ * Checks if the server connection has timed out based on the last pong response time.
+ * If a timeout is detected, it resets the session and restarts the control process.
+ *
+ * The function compares the time elapsed since the last pong response against the
+ * heartbeat timeout value from the common configuration. If the elapsed time exceeds
+ * the timeout threshold, it triggers a reconnection sequence.
+ *
+ * @param current_time The current system time to check against
+ * 
+ * @note Requires pong_time to be set by the pong handler
+ * @note Requires valid common configuration with heartbeat_timeout value
+ */
 static void check_server_timeout(time_t current_time) {
 	struct common_conf *conf = get_common_config();
 	if (!conf) {
@@ -438,6 +660,21 @@ static void check_server_timeout(time_t current_time) {
 	}
 }
 
+/**
+ * @brief Timer callback handler for heartbeat operations
+ *
+ * This function handles periodic heartbeat operations:
+ * 1. Sends ping to server if client is connected
+ * 2. Reschedules the next heartbeat timer
+ * 3. Checks for server timeout condition
+ *
+ * @param fd Socket file descriptor (unused)
+ * @param event Event type that triggered callback (unused) 
+ * @param arg User-provided callback argument (unused)
+ *
+ * @note The function uses global state to track connection status and timing
+ * @note If getting current time fails, the function returns early without timeout check
+ */
 static void heartbeat_handler(evutil_socket_t fd, short event, void *arg) {
 	// Send ping if client is connected
 	if (is_xfrpc_connected()) {
@@ -458,6 +695,20 @@ static void heartbeat_handler(evutil_socket_t fd, short event, void *arg) {
 	check_server_timeout(current_time);
 }
 
+/**
+ * Handles configuration for FTP proxy service by updating the remote data port
+ * of the main FTP proxy service.
+ *
+ * @param ps The proxy service containing FTP configuration
+ * @param npr The new proxy response containing remote port information
+ *
+ * @return 1 on successful configuration, 0 if main service not found or invalid port
+ *
+ * This function:
+ * 1. Looks up the main FTP proxy service using the configuration proxy name
+ * 2. Validates the remote port from the new proxy response
+ * 3. Updates the main service's remote data port if validation succeeds
+ */
 static int handle_ftp_configuration(struct proxy_service *ps, struct new_proxy_response *npr) 
 {
 	struct proxy_service *main_ps = get_proxy_service(ps->ftp_cfg_proxy_name);
@@ -477,6 +728,14 @@ static int handle_ftp_configuration(struct proxy_service *ps, struct new_proxy_r
 	return 1;
 }
 
+/**
+ * @brief Processes the raw response for a proxy service
+ *
+ * @param npr Pointer to the new proxy response structure
+ * @return int Returns status code:
+ *             0 on success
+ *             negative value on failure
+ */
 static int proxy_service_resp_raw(struct new_proxy_response *npr)
 {
 	// Validate input parameter
@@ -519,6 +778,15 @@ static int proxy_service_resp_raw(struct new_proxy_response *npr)
 	return 0;
 }
 
+/**
+ * @brief Handles encrypted message and decrypts it
+ *
+ * @param enc_msg Pointer to the encrypted message buffer
+ * @param ilen Length of the input encrypted message
+ * @param out Double pointer to store the decrypted output message
+ *
+ * @return int Returns status code indicating success or failure of decryption
+ */
 static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 {
 	// Validate input parameters
@@ -569,6 +837,17 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 	return dec_len;
 }
 
+/**
+ * @brief Handles the request for a work connection type
+ * 
+ * This function processes requests related to work connection types in the xfrpc
+ * system. It is intended to be used as a callback for handling specific connection
+ * type requests.
+ * 
+ * @param ctx Pointer to the context data for the work connection request
+ * 
+ * @note This function is static and only accessible within the current compilation unit
+ */
 static void handle_type_req_work_conn(void *ctx)
 {
 	if (!is_xfrpc_connected()) {
@@ -578,6 +857,16 @@ static void handle_type_req_work_conn(void *ctx)
 	new_client_connect();
 }
 
+/**
+ * @brief Handles the response message for a new proxy setup
+ *
+ * This function processes the response received after requesting a new proxy setup.
+ * It interprets the message header containing proxy setup response information.
+ *
+ * @param msg Pointer to the message header structure containing response data
+ *
+ * @note This function is for internal use within the control module
+ */
 static void handle_type_new_proxy_resp(struct msg_hdr *msg)
 {
 	struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
@@ -590,6 +879,16 @@ static void handle_type_new_proxy_resp(struct msg_hdr *msg)
 	SAFE_FREE(npr);
 }
 
+/**
+ * @brief Handles the start work connection message type
+ *
+ * @param msg Pointer to the message header structure
+ * @param len Length of the message
+ * @param ctx Pointer to context data
+ *
+ * This function processes messages of type 'start work connection'
+ * received from the frp server.
+ */
 static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
 {
 	struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data);
@@ -624,6 +923,16 @@ static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
 	SAFE_FREE(sr);
 }
 
+/**
+ * @brief Handles UDP packet types in message processing
+ *
+ * @param msg Pointer to the message header structure containing packet information
+ * @param ctx Pointer to context data needed for packet processing
+ *
+ * This function processes UDP type packets received in the message header.
+ * It performs the necessary handling and routing of UDP packets based on
+ * the message contents and context provided.
+ */
 static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
 {
 	struct udp_packet *udp = udp_packet_unmarshal((const char *)msg->data);
@@ -641,6 +950,16 @@ static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
 	SAFE_FREE(udp);
 }
 
+/**
+ * @brief Handles the control work based on received buffer data
+ *
+ * Processes control messages received in the buffer and performs
+ * corresponding control operations based on the message content.
+ *
+ * @param buf Pointer to the received data buffer
+ * @param len Length of the received data in bytes
+ * @param ctx Context pointer for additional data
+ */
 static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 {
 	uint8_t *frps_cmd = NULL;
@@ -690,6 +1009,12 @@ static int validate_login_msg(const struct msg_hdr *mhdr) {
 	return 1;
 }
 
+/**
+ * Processes the login response message from the server
+ * 
+ * @param mhdr Pointer to the message header structure containing login response
+ * @return Returns status code: 0 on success, negative value on failure
+ */
 static int process_login_response(const struct msg_hdr *mhdr) {
 	struct login_resp *lres = login_resp_unmarshal((const char *)mhdr->data);
 	if (!lres) {
@@ -708,6 +1033,17 @@ static int process_login_response(const struct msg_hdr *mhdr) {
 	return 1;
 }
 
+/**
+ * @brief Handles any remaining data after processing the message header
+ * 
+ * Processes remaining data from a message after the header has been handled.
+ * 
+ * @param mhdr Pointer to the message header structure
+ * @param login_len Length of the login data
+ * @param ilen Input length of the data
+ * 
+ * @note This function assumes the message header has already been validated
+ */
 static void handle_remaining_data(struct msg_hdr *mhdr, int login_len, int ilen) {
 	struct common_conf *c_conf = get_common_config();
 	if (!c_conf || c_conf->tcp_mux) {
@@ -736,8 +1072,20 @@ static void handle_remaining_data(struct msg_hdr *mhdr, int login_len, int ilen)
 	free(frps_cmd);
 }
 
-static int
-handle_login_response(const uint8_t *buf, int len)
+
+/**
+ * @brief Handles the response received after a login attempt
+ *
+ * @param buf Pointer to the buffer containing the login response data
+ * @param len Length of the response buffer in bytes
+ *
+ * @return Returns the result of processing the login response
+ *         (specific return values should be documented based on implementation)
+ *
+ * @note This function processes the server's response to a login request
+ *       in the xfrpc protocol
+ */
+static int handle_login_response(const uint8_t *buf, int len)
 {
 	if (!buf || len <= 0) {
 		debug(LOG_ERR, "Invalid input parameters");
@@ -768,6 +1116,16 @@ handle_login_response(const uint8_t *buf, int len)
 	return 1;
 }
 
+/**
+ * @brief Handles messages received from frps server
+ *
+ * @param buf Pointer to buffer containing the message
+ * @param len Length of the message in bytes
+ * @param ctx Context pointer for additional data
+ * 
+ * @details This function processes incoming messages from the frps (frp server)
+ *          and performs appropriate handling based on the message content
+ */
 static void handle_frps_msg(uint8_t *buf, int len, void *ctx) 
 {
 	// Validate input parameters
@@ -792,6 +1150,19 @@ static void handle_frps_msg(uint8_t *buf, int len, void *ctx)
 
 static struct tmux_stream abandon_stream;
 
+/**
+ * @brief Handles TCP multiplexing communication
+ *
+ * This function processes TCP multiplexing data received from the bufferevent.
+ *
+ * @param bev The bufferevent structure containing the TCP connection
+ * @param len Length of the data to be handled
+ * @param ctx Context pointer for additional data (can be NULL)
+ *
+ * @details This function is called when TCP multiplexing data needs to be 
+ * processed. It manages the communication between the client and server 
+ * in a multiplexed TCP connection.
+ */
 static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 {
 	static struct tcp_mux_header tmux_hdr;
@@ -887,6 +1258,17 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 	}
 }
 
+/**
+ * @brief Handles non-multiplexed data received from a buffered event
+ *
+ * @param bev The bufferevent structure containing the connection
+ * @param input The evbuffer containing the received data
+ * @param len Length of the data in the input buffer
+ * @param ctx Context pointer for additional data (can be NULL)
+ * 
+ * @details This function processes data received on a non-multiplexed connection.
+ *          It is called when data is available to be read from the bufferevent.
+ */
 static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int len, void *ctx)
 {
 	uint8_t *buf = calloc(len, 1);
@@ -897,6 +1279,15 @@ static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int 
 	SAFE_FREE(buf);
 }
 
+/**
+ * @brief Callback function for handling received data from a bufferevent
+ *
+ * @param bev The bufferevent structure that received the data
+ * @param ctx User-defined context pointer passed to the callback
+ *
+ * This function is called when data is received on the bufferevent.
+ * It processes incoming data and performs necessary handling operations.
+ */
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
@@ -914,6 +1305,17 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	}
 }
 
+/**
+ * @brief Handles connection failures for the xfrpc client
+ *
+ * This function implements the connection failure handling logic, including
+ * retry mechanisms and connection state management.
+ *
+ * @param c_conf Pointer to the common configuration structure
+ * @param retry_times Pointer to the number of retry attempts made
+ *
+ * @note This function modifies the retry_times parameter to track retry attempts
+ */
 static void handle_connection_failure(struct common_conf *c_conf, int *retry_times) {
 	debug(LOG_ERR, "Connection to server [%s:%d] failed: %s", 
 		  c_conf->server_addr, 
@@ -932,6 +1334,15 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
 	run_control();
 }
 
+/**
+ * @brief Handles successful connection events
+ *
+ * This function processes events when a connection has been successfully established
+ *
+ * @param bev Pointer to the buffer event structure representing the connection
+ * 
+ * @note This function is called internally by the event handling system
+ */
 static void handle_connection_success(struct bufferevent *bev) {
 	debug(LOG_INFO, "Successfully connected to xfrp server");
 	
@@ -943,6 +1354,18 @@ static void handle_connection_success(struct bufferevent *bev) {
 	keep_control_alive();
 }
 
+/**
+ * @brief Callback function for connection events in bufferevent
+ *
+ * This function handles connection events from a bufferevent socket. It is called
+ * when connection state changes occur, such as connect, disconnect, or error conditions.
+ *
+ * @param bev The bufferevent structure that triggered the event
+ * @param what Bitmask of the events that occurred (BEV_EVENT_* flags)
+ * @param ctx User-provided context data pointer
+ *
+ * @note This function is meant to be used as a callback with bufferevent_setcb()
+ */
 static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	static int retry_times = 0;
@@ -962,6 +1385,14 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
+/**
+ * Initializes the ping ticker for the control structure.
+ * The ping ticker is responsible for managing periodic ping operations
+ * to maintain connection health.
+ *
+ * @param ctl Pointer to the control structure
+ * @return 0 on success, negative value on failure
+ */
 static int init_ping_ticker(struct control *ctl) {
 	if (!ctl || !ctl->connect_base) {
 		debug(LOG_ERR, "Invalid control structure or event base");
@@ -978,6 +1409,14 @@ static int init_ping_ticker(struct control *ctl) {
 	return 0;
 }
 
+/**
+ * @brief Maintains the control connection to the server alive
+ * 
+ * This function is responsible for keeping the control connection 
+ * to the server active and preventing timeouts. It handles the 
+ * periodic sending of heartbeat messages to ensure the connection
+ * remains established.
+ */
 static void keep_control_alive() 
 {
 	debug(LOG_DEBUG, "Initializing control keepalive");
@@ -1002,6 +1441,11 @@ static void keep_control_alive()
 	debug(LOG_DEBUG, "Control keepalive initialized successfully");
 }
 
+/**
+ * @brief Initializes a server connection and sets up the bufferevent
+ * @param[out] bev_out Double pointer to bufferevent structure to be initialized
+ * @return int Returns 0 on success, negative value on failure
+ */
 static int init_server_connection(struct bufferevent **bev_out, 
 								struct event_base *base,
 								const char *server_addr, 
@@ -1030,6 +1474,15 @@ static int init_server_connection(struct bufferevent **bev_out,
 	return 0;
 }
 
+/**
+ * @brief Sets up callbacks for the server bufferevent
+ *
+ * This function configures the event callbacks for a server bufferevent structure.
+ * These callbacks handle reading, writing, and error events for the server connection.
+ *
+ * @param bev Pointer to the bufferevent structure to configure
+ * @return Returns 0 on success, -1 on failure
+ */
 static int setup_server_callbacks(struct bufferevent *bev)
 {
 	if (!bev) {
@@ -1042,6 +1495,15 @@ static int setup_server_callbacks(struct bufferevent *bev)
 	return 0;
 }
 
+/**
+ * @brief Initiates the base connection for the xfrpc client
+ * 
+ * Establishes initial connection setup required for the xfrpc (Fast Reverse Proxy Client)
+ * to operate. This function is called during startup phase to create necessary
+ * communication channels.
+ * 
+ * @note This function is static and can only be called from within the control.c file
+ */
 static void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
@@ -1065,6 +1527,17 @@ static void start_base_connect()
 	}
 }
 
+/**
+ * Prepares the login message for the frp protocol handshake.
+ * 
+ * This function constructs a login message that will be sent to the frp server
+ * during the initial connection handshake.
+ * 
+ * @param msg_out Pointer to a char pointer that will store the constructed message
+ * @param len_out Pointer to an integer that will store the length of the message
+ * 
+ * @return Returns 0 on success, negative value on failure
+ */
 static int prepare_login_message(char **msg_out, int *len_out) {
 	if (!msg_out || !len_out) {
 		debug(LOG_ERR, "Invalid output parameters");
@@ -1081,6 +1554,15 @@ static int prepare_login_message(char **msg_out, int *len_out) {
 	return 0;
 }
 
+/**
+ * @brief Handles the user login process in xfrpc
+ *
+ * This function manages the authentication process for users connecting
+ * to the xfrp client. It establishes a connection and performs the
+ * necessary login handshake with the server.
+ *
+ * @note This function does not take any parameters and does not return a value
+ */
 void login(void) {
 	char *login_msg = NULL;
 	int msg_len = 0;
@@ -1099,6 +1581,12 @@ void login(void) {
 	SAFE_FREE(login_msg);
 }
 
+/**
+ * @brief Prepares a message of the specified type for communication
+ *
+ * @param type The type of message to be prepared
+ * @return int Returns 0 on success, negative value on failure
+ */
 static int prepare_message(const enum msg_type type,
 						 const char *msg,
 						 const size_t msg_len,
@@ -1128,6 +1616,12 @@ static int prepare_message(const enum msg_type type,
 	return 0;
 }
 
+/**
+ * Sends a message to the FRP server through a buffered event.
+ * 
+ * @param bev Pointer to the bufferevent structure that represents the connection
+ *            to the FRP server for message transmission
+ */
 void send_msg_frp_server(struct bufferevent *bev,
 						const enum msg_type type,
 						const char *msg,
@@ -1169,6 +1663,13 @@ void send_msg_frp_server(struct bufferevent *bev,
 	free(req_msg);
 }
 
+/**
+ * @brief Prepares an encrypted message of specified type
+ * 
+ * @param type The type of message to be encrypted
+ * 
+ * @return int Returns 0 on success, negative value on error
+ */
 static int prepare_encrypted_message(const enum msg_type type,
 								   const char *msg,
 								   const size_t msg_len,
@@ -1209,6 +1710,18 @@ static int prepare_encrypted_message(const enum msg_type type,
 	return 0;
 }
 
+/**
+ * @brief Initializes the encoder for stream processing.
+ * 
+ * This function sets up the encoder for handling data stream encoding
+ * within the tmux stream context using a buffered event.
+ * 
+ * @param bout The buffered event output used for encoding.
+ * @param stream Pointer to the tmux stream structure to be initialized.
+ * 
+ * @return Returns an integer indicating the success (0) or failure (non-zero)
+ *         of the encoder initialization.
+ */
 static int initialize_encoder(struct bufferevent *bout, struct tmux_stream *stream)
 {
 	struct frp_coder *coder = init_main_encoder();
@@ -1232,6 +1745,14 @@ static int initialize_encoder(struct bufferevent *bout, struct tmux_stream *stre
 	return 0;
 }
 
+/**
+ * @brief Sends an encrypted message to the FRP server
+ *
+ * @param bev Pointer to the bufferevent structure used for network I/O
+ *
+ * This function handles the encryption and transmission of messages
+ * to the FRP (Fast Reverse Proxy) server through the provided bufferevent.
+ */
 void send_enc_msg_frp_server(struct bufferevent *bev,
 							const enum msg_type type,
 							const char *msg,
@@ -1278,6 +1799,14 @@ get_main_control()
 	return main_ctl;
 }
 
+/**
+ * Initializes a new FRP connection using libevent.
+ *
+ * @param bev_out Double pointer to the bufferevent structure that will be initialized
+ * @param base Pointer to the event_base structure used for event handling
+ *
+ * @return Returns an integer indicating success (0) or failure (non-zero)
+ */
 static int init_frp_connection(struct bufferevent **bev_out, struct event_base *base) {
 	struct common_conf *c_conf = get_common_config();
 	if (!c_conf) {
@@ -1296,6 +1825,16 @@ static int init_frp_connection(struct bufferevent **bev_out, struct event_base *
 	return 0;
 }
 
+/**
+ * @brief Initiates the login process to the FRP server
+ *
+ * This function starts the process of connecting and logging into the FRP (Fast Reverse Proxy) server.
+ * It sets up the necessary event handling in the libevent base for managing the connection.
+ *
+ * @param base Pointer to the event_base structure that handles event processing
+ *
+ * @note The event_base must be properly initialized before calling this function
+ */
 void start_login_frp_server(struct event_base *base) 
 {
 	struct bufferevent *bev = NULL;
@@ -1311,12 +1850,30 @@ void start_login_frp_server(struct event_base *base)
 	bufferevent_setcb(bev, NULL, NULL, connect_event_cb, NULL);
 }
 
+/**
+ * @brief Logs an error message related to a proxy
+ *
+ * @param msg The error message to be logged
+ * @param proxy_name The name of the proxy where the error occurred
+ */
 static void log_proxy_error(const char *msg, const char *proxy_name) {
 	debug(LOG_ERR, "%s%s%s", msg, 
 		  proxy_name ? ": " : "", 
 		  proxy_name ? proxy_name : "");
 }
 
+/**
+ * Marshals a proxy service structure into a string message format.
+ * 
+ * @param ps The proxy service structure to be marshaled
+ * @param msg_out Pointer to a char pointer where the resulting message will be stored
+ * @return Integer value indicating success (0) or failure (non-zero)
+ * 
+ * This function takes a proxy service structure and converts it into a string format
+ * suitable for transmission or storage. The resulting message is dynamically allocated
+ * and stored in the location pointed to by msg_out. The caller is responsible for
+ * freeing the allocated memory.
+ */
 static int marshal_proxy_service(struct proxy_service *ps, char **msg_out) {
 	if (!ps || !msg_out) {
 		log_proxy_error("Invalid proxy service or output buffer", NULL);
@@ -1332,6 +1889,16 @@ static int marshal_proxy_service(struct proxy_service *ps, char **msg_out) {
 	return len;
 }
 
+/**
+ * @brief Sends a new proxy service configuration to the frpc server
+ *
+ * @param ps Pointer to the proxy service structure containing configuration details
+ *           to be sent to the frpc server
+ *
+ * This function is responsible for sending newly created or updated proxy service
+ * configurations to the frpc server. The proxy service structure contains all
+ * necessary parameters and settings for the proxy configuration.
+ */
 void send_new_proxy(struct proxy_service *ps) {
 	if (!ps) {
 		log_proxy_error("Invalid proxy service", NULL);
@@ -1353,6 +1920,12 @@ void send_new_proxy(struct proxy_service *ps) {
 	SAFE_FREE(new_proxy_msg);
 }
 
+/**
+ * Initializes the event base for the control structure.
+ *
+ * @param ctl Pointer to control structure to be initialized
+ * @return Returns 0 on success, or a negative error code on failure 
+ */
 static int init_event_base(struct control *ctl)
 {
 	struct event_base *base = event_base_new();
@@ -1364,6 +1937,12 @@ static int init_event_base(struct control *ctl)
 	return 0;
 }
 
+/**
+ * @brief Initializes the DNS base for the control structure
+ * 
+ * @param ctl Pointer to the control structure
+ * @return int Returns 0 on success, -1 on failure
+ */
 static int init_dns_base(struct control *ctl)
 {
 	struct evdns_base *dnsbase = evdns_base_new(ctl->connect_base, 1);
@@ -1392,6 +1971,15 @@ static int init_dns_base(struct control *ctl)
 	return 0;
 }
 
+/**
+ * @brief Initializes the main control module of xfrpc
+ *
+ * This function sets up the primary control structures and resources
+ * required for xfrpc operation. It should be called once during
+ * program initialization before any other control operations.
+ *
+ * @return void
+ */
 void init_main_control()
 {
 	// Clean up existing control if present
@@ -1432,8 +2020,13 @@ void init_main_control()
 	}
 }
 
-static void 
-free_main_control()
+/**
+ * @brief Frees resources associated with the main control structure
+ *
+ * This function handles cleanup of the main control resources.
+ * It should be called when shutting down the application to prevent memory leaks.
+ */
+static void free_main_control()
 {
 	if (main_ctl) {
 		free(main_ctl);
@@ -1441,8 +2034,13 @@ free_main_control()
 	}
 }
 
-static void
-clear_main_control()
+/**
+ * @brief Clears the main control data structure and resets associated resources
+ * 
+ * This function frees and resets the main control structure, cleaning up any
+ * allocated resources and returning the control state to its initial state.
+ */
+static void clear_main_control()
 {
 	// Validate main control exists
 	if (!main_ctl) {
@@ -1483,6 +2081,14 @@ clear_main_control()
 	}
 }
 
+/**
+ * @brief Closes the main control of xfrpc
+ *
+ * This function is responsible for shutting down the main control functionality
+ * and cleaning up any associated resources.
+ *
+ * @return void
+ */
 void close_main_control()
 {
 	if (!main_ctl) {
@@ -1512,8 +2118,7 @@ void close_main_control()
 	free_main_control();
 }
 
-void 
-run_control() 
+void run_control() 
 {
 	start_base_connect();
 }

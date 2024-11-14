@@ -15,7 +15,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/** @file control.c
+/** 
+ * @file control.c
  * @brief xfrpc main control protocol implementation
  * @author Copyright (C) 2024 Dengfeng Liu <liudf0716@gmail.com>
  *
@@ -38,7 +39,7 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <time.h>
-
+#include <stdbool.h>
 
 #include "debug.h"
 #include "client.h"
@@ -46,7 +47,6 @@
 #include "config.h"
 #include "msg.h"
 #include "control.h"
-#include "uthash.h"
 #include "crypto.h"
 #include "utils.h"
 #include "common.h"
@@ -55,26 +55,27 @@
 #include "proxy.h"
 
 static struct control *main_ctl;
-static int client_connected = 0;
-static int is_login = 0;
-static time_t pong_time = 0;
+static bool xfrpc_status;
+static int is_login;
+static time_t pong_time;
 
 static void new_work_connection(struct bufferevent *bev, struct tmux_stream *stream);
 static void recv_cb(struct bufferevent *bev, void *ctx);
-static void clear_main_control();
-static void start_base_connect();
-static void keep_control_alive();
+static void clear_main_control(void);
+static void start_base_connect(void);
+static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
 
-static int is_client_connected(void)
+static bool is_xfrpc_connected(void)
 {
-	return client_connected;
+	return xfrpc_status;
 }
 
-static int set_client_status(int is_connected)
+static void set_xfrpc_status(bool is_connected)
 {
-	client_connected = (is_connected != 0);
-	return client_connected;
+	// Set global connection status flag 
+	xfrpc_status = is_connected;
+	debug(LOG_DEBUG, "xfrpc connection status set to: %s", is_connected ? "connected" : "disconnected");
 }
 
 static int set_client_work_start(struct proxy_client *client, int is_start_work)
@@ -114,7 +115,7 @@ static void handle_client_connected(struct proxy_client *client, struct bufferev
 
 	// Initialize work connection
 	new_work_connection(bev, &main_ctl->stream);
-	set_client_status(1);
+	set_xfrpc_status(true);
 
 	debug(LOG_INFO, "Proxy service started successfully");
 }
@@ -439,7 +440,7 @@ static void check_server_timeout(time_t current_time) {
 
 static void heartbeat_handler(evutil_socket_t fd, short event, void *arg) {
 	// Send ping if client is connected
-	if (is_client_connected()) {
+	if (is_xfrpc_connected()) {
 		debug(LOG_INFO, "Sending heartbeat ping to server");
 		ping();
 	}
@@ -570,9 +571,9 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 
 static void handle_type_req_work_conn(void *ctx)
 {
-	if (!is_client_connected()) {
+	if (!is_xfrpc_connected()) {
 		start_proxy_services();
-		set_client_status(1);
+		set_xfrpc_status(true);
 	}
 	new_client_connect();
 }
@@ -729,7 +730,7 @@ static void handle_remaining_data(struct msg_hdr *mhdr, int login_len, int ilen)
 	}
 
 	start_proxy_services();
-	set_client_status(1);
+	set_xfrpc_status(true);
 	new_client_connect();
 	
 	free(frps_cmd);
@@ -1465,7 +1466,7 @@ clear_main_control()
 	}
 
 	// Reset connection state
-	set_client_status(0);
+	set_xfrpc_status(false);
 	is_login = 0;
 	pong_time = 0;
 

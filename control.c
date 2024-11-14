@@ -174,43 +174,63 @@ start_proxy_services()
 	}
 }
 
-static void 
-ping()
+static void ping(void)
 {
-	struct bufferevent *bout = main_ctl->connect_bev;
-
-	if ( ! bout) {
-		debug(LOG_ERR, "bufferevent is not legal!");
+	// Validate bufferevent
+	if (!main_ctl || !main_ctl->connect_bev) {
+		debug(LOG_ERR, "Invalid bufferevent for ping"); 
 		return;
 	}
-	
-	char *ping_msg = "{}";
-	send_enc_msg_frp_server(bout, TypePing, ping_msg, strlen(ping_msg), &main_ctl->stream);
+
+	// Send empty ping message
+	const char *ping_msg = "{}";
+	send_enc_msg_frp_server(main_ctl->connect_bev, 
+						   TypePing, 
+						   ping_msg, 
+						   strlen(ping_msg), 
+						   &main_ctl->stream);
+
+	debug(LOG_DEBUG, "Sent ping message");
 }
 
-static void 
-new_work_connection(struct bufferevent *bev, struct tmux_stream *stream)
+static void new_work_connection(struct bufferevent *bev, struct tmux_stream *stream)
 {
-	assert(bev);
-	
-	/* send new work session regist request to frps*/
+	// Validate input parameters
+	if (!bev) {
+		debug(LOG_ERR, "Invalid bufferevent parameter");
+		return;
+	}
+
+	// Create new work connection
 	struct work_conn *work_c = new_work_conn();
+	if (!work_c) {
+		debug(LOG_ERR, "Failed to create new work connection");
+		return;
+	}
+
+	// Get and validate run ID
 	work_c->run_id = get_run_id();
-	if (! work_c->run_id) {
-		debug(LOG_ERR, "cannot found run ID, it should inited when login!");
+	if (!work_c->run_id) {
+		debug(LOG_ERR, "Run ID not found - must be initialized during login");
 		SAFE_FREE(work_c);
 		return;
 	}
-	char *new_work_conn_request_message = NULL;
-	int nret = new_work_conn_marshal(work_c, &new_work_conn_request_message);
-	if (0 == nret) {
-		debug(LOG_ERR, "new work connection request run_id marshal failed!");
+
+	// Marshal work connection request
+	char *work_conn_msg = NULL;
+	int msg_len = new_work_conn_marshal(work_c, &work_conn_msg);
+	if (msg_len <= 0 || !work_conn_msg) {
+		debug(LOG_ERR, "Failed to marshal work connection request");
+		SAFE_FREE(work_c);
 		return;
 	}
 
-	send_msg_frp_server(bev, TypeNewWorkConn, new_work_conn_request_message, nret, stream);
+	// Send work connection request
+	debug(LOG_DEBUG, "Sending new work connection request: length=%d", msg_len);
+	send_msg_frp_server(bev, TypeNewWorkConn, work_conn_msg, msg_len, stream);
 
-	SAFE_FREE(new_work_conn_request_message);
+	// Cleanup
+	SAFE_FREE(work_conn_msg);
 	SAFE_FREE(work_c);
 }
 

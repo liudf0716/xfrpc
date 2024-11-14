@@ -525,118 +525,126 @@ handle_frps_msg(uint8_t *buf, int len, void *ctx)
 
 static struct tmux_stream abandon_stream;
 
-// ctx: if recv_cb was called by common control, ctx == NULL
-//		else ctx == client struct
-static void 
-recv_cb(struct bufferevent *bev, void *ctx)
+static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
+{
+	static struct tcp_mux_header tmux_hdr;
+	static uint32_t stream_len = 0;
+
+	while (len > 0) {
+		struct tmux_stream *cur = get_cur_stream();
+		size_t nr = 0;
+
+		if (!cur) {
+			memset(&tmux_hdr, 0, sizeof(tmux_hdr));
+			uint8_t *data = (uint8_t *)&tmux_hdr;
+
+			if (len < sizeof(tmux_hdr)) {
+				debug(LOG_INFO, "len [%d] < sizeof tmux_hdr", len);
+				break;
+			}
+
+			nr = bufferevent_read(bev, data, sizeof(tmux_hdr));
+			assert(nr == sizeof(tmux_hdr));
+			assert(validate_tcp_mux_protocol(&tmux_hdr) > 0);
+			len -= nr;
+
+			if (tmux_hdr.type == DATA) {
+				uint32_t stream_id = ntohl(tmux_hdr.stream_id);
+				stream_len = ntohl(tmux_hdr.length);
+				cur = get_stream_by_id(stream_id);
+				if (!cur) {
+					debug(LOG_INFO, "cur is NULL stream_id is %d, stream_len is %d len is %d",
+						  stream_id, stream_len, len);
+					if (stream_len > 0)
+						cur = &abandon_stream;
+					else
+						continue;
+				}
+
+				if (len == 0) {
+					set_cur_stream(cur);
+					break;
+				}
+				if (len >= stream_len) {
+					nr = tmux_stream_read(bev, cur, stream_len);
+					assert(nr == stream_len);
+					len -= stream_len;
+				} else {
+					nr = tmux_stream_read(bev, cur, len);
+					stream_len -= len;
+					assert(nr == len);
+					set_cur_stream(cur);
+					len -= nr;
+					break;
+				}
+			}
+		} else {
+			assert(tmux_hdr.type == DATA);
+			if (len >= stream_len) {
+				nr = tmux_stream_read(bev, cur, stream_len);
+				assert(nr == stream_len);
+				len -= stream_len;
+			} else {
+				nr = tmux_stream_read(bev, cur, len);
+				stream_len -= len;
+				assert(nr == len);
+				len -= nr;
+				break;
+			}
+		}
+
+		if (cur == &abandon_stream) {
+			debug(LOG_INFO, "abandon stream data ...");
+			memset(cur, 0, sizeof(abandon_stream));
+			set_cur_stream(NULL);
+			continue;
+		}
+
+		switch (tmux_hdr.type) {
+		case DATA:
+		case WINDOW_UPDATE:
+			handle_tcp_mux_stream(&tmux_hdr, handle_frps_msg);
+			break;
+		case PING:
+			handle_tcp_mux_ping(&tmux_hdr);
+			break;
+		case GO_AWAY:
+			handle_tcp_mux_go_away(&tmux_hdr);
+			break;
+		default:
+			debug(LOG_ERR, "Unexpected tmux_hdr.type");
+			exit(-1);
+		}
+
+		set_cur_stream(NULL);
+	}
+}
+
+static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int len, void *ctx)
+{
+	uint8_t *buf = calloc(len, 1);
+	assert(buf);
+	evbuffer_remove(input, buf, len);
+
+	handle_frps_msg(buf, len, ctx);
+	SAFE_FREE(buf);
+}
+
+static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct evbuffer *input = bufferevent_get_input(bev);
 	int len = evbuffer_get_length(input);
 	if (len <= 0) {
-			return;
+		return;
 	}
 
-	struct common_conf 	*c_conf = get_common_config();
+	struct common_conf *c_conf = get_common_config();
+
 	if (c_conf->tcp_mux) {
-		static struct tcp_mux_header tmux_hdr;
-		static uint32_t stream_len = 0;
-		while (len > 0) {
-				struct tmux_stream *cur = get_cur_stream();
-				size_t nr = 0;
-				if (!cur) {
-					memset(&tmux_hdr, 0, sizeof(tmux_hdr));
-					uint8_t *data = (uint8_t *)&tmux_hdr;
-					if (len < sizeof(tmux_hdr)) {
-						debug(LOG_INFO, "len [%d] < sizeof tmux_hdr", len);
-						break;
-					} 
-					nr = bufferevent_read(bev, data, sizeof(tmux_hdr));
-					assert(nr == sizeof(tmux_hdr));
-					assert(validate_tcp_mux_protocol(&tmux_hdr) > 0);
-					len -= nr;
-					if (tmux_hdr.type == DATA) {
-						uint32_t stream_id = ntohl(tmux_hdr.stream_id);
-						stream_len = ntohl(tmux_hdr.length);
-						cur = get_stream_by_id(stream_id);
-						if (!cur) {
-							debug(LOG_INFO, "cur is NULL stream_id is %d, stream_len is %d len is %d", 
-										stream_id, stream_len, len);
-							if (stream_len > 0)
-								cur = &abandon_stream;
-							else
-								continue;
-						}
-
-						if (len == 0) {
-							set_cur_stream(cur);
-							break;
-						}
-						if (len >= stream_len) {
-							nr = tmux_stream_read(bev, cur, stream_len);
-							assert(nr == stream_len);
-							len -= stream_len;
-						} else {
-							nr = tmux_stream_read(bev, cur, len);
-							stream_len -= len;
-							assert(nr == len);
-							set_cur_stream(cur);
-							len -= nr;
-							break;	
-						} 
-					}
-				} else {
-					assert(tmux_hdr.type == DATA);
-					if (len >= stream_len ) {
-						nr = tmux_stream_read(bev, cur, stream_len);
-						assert(nr == stream_len);
-						len -= stream_len;
-					} else {
-						nr = tmux_stream_read(bev, cur, len);
-						stream_len -= len;
-						assert(nr == len);
-						len -= nr;
-						break;
-					}	
-				}
-				
-				if (cur == &abandon_stream) {
-					debug(LOG_INFO, "abandon stream data ...");
-					memset(cur , 0, sizeof(abandon_stream));
-					set_cur_stream(NULL);
-					continue;
-				}
-
-				switch(tmux_hdr.type) {
-				case DATA:
-				case WINDOW_UPDATE:
-				{
-					handle_tcp_mux_stream(&tmux_hdr, handle_frps_msg);
-					break;
-				}
-				case PING:
-					handle_tcp_mux_ping(&tmux_hdr);
-					break;
-				case GO_AWAY:
-					handle_tcp_mux_go_away(&tmux_hdr);
-					break;
-				default:
-					debug(LOG_ERR, "impossible here!!!!");
-					exit(-1);
-				}
-
-				set_cur_stream(NULL);
-		}
-	} else {	
-		uint8_t *buf = calloc(len, 1);
-		assert(buf);
-		evbuffer_remove(input, buf, len);
-
-		handle_frps_msg(buf, len, ctx);
-		SAFE_FREE(buf);
+		handle_tcp_mux(bev, len, ctx);
+	} else {
+		handle_non_mux(bev, input, len, ctx);
 	}
-		
-
-	return;
 }
 
 static void handle_connection_failure(struct common_conf *c_conf, int *retry_times) {

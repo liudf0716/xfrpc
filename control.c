@@ -358,109 +358,114 @@ handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 	return len;	
 }
 
-static void
-handle_control_work(const uint8_t *buf, int len, void *ctx)
+static void handle_type_req_work_conn(void *ctx)
+{
+	if (!is_client_connected()) {
+		start_proxy_services();
+		set_client_status(1);
+	}
+	new_client_connect();
+}
+
+static void handle_type_new_proxy_resp(struct msg_hdr *msg)
+{
+	struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
+	if (!npr) {
+		debug(LOG_ERR, "Failed to unmarshal new proxy response");
+		return;
+	}
+
+	proxy_service_resp_raw(npr);
+	SAFE_FREE(npr);
+}
+
+static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
+{
+	struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data);
+	if (!sr) {
+		debug(LOG_ERR, "Failed to unmarshal TypeStartWorkConn");
+		return;
+	}
+
+	struct proxy_service *ps = get_proxy_service(sr->proxy_name);
+	if (!ps) {
+		debug(LOG_ERR, "Proxy service [%s] not found for TypeStartWorkConn", sr->proxy_name);
+		SAFE_FREE(sr);
+		return;
+	}
+
+	assert(ctx);
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	client->ps = ps;
+
+	int remaining_len = len - sizeof(struct msg_hdr) - msg_hton(msg->length);
+	debug(LOG_DEBUG, "Proxy service [%s] [%s:%d] starting work connection. Remaining data length %d",
+		  sr->proxy_name, ps->local_ip, ps->local_port, remaining_len);
+
+	if (remaining_len > 0) {
+		client->data_tail_size = remaining_len;
+		client->data_tail = msg->data + msg_hton(msg->length);
+		debug(LOG_DEBUG, "Data tail is %s", client->data_tail);
+	}
+
+	start_xfrp_tunnel(client);
+	set_client_work_start(client, 1);
+	SAFE_FREE(sr);
+}
+
+static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
+{
+	struct udp_packet *udp = udp_packet_unmarshal((const char *)msg->data);
+	if (!udp) {
+		debug(LOG_ERR, "Failed to unmarshal TypeUDPPacket");
+		return;
+	}
+
+	debug(LOG_DEBUG, "Received UDP packet from server, content: %s", udp->content);
+	assert(ctx);
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	assert(client->ps);
+
+	handle_udp_packet(udp, client);
+	SAFE_FREE(udp);
+}
+
+static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 {
 	uint8_t *frps_cmd = NULL;
-	uint8_t cmd_type;
-	const uint8_t *enc_msg = buf;
 
-	if (!ctx) {	
-		//debug(LOG_DEBUG, "main control message");
-		handle_enc_msg(enc_msg, len, &frps_cmd);
+	if (!ctx) {
+		if (handle_enc_msg(buf, len, &frps_cmd) <= 0 || !frps_cmd) {
+			return;
+		}
 	} else {
-		//debug(LOG_DEBUG, "worker message");
 		frps_cmd = (uint8_t *)buf;
 	}
 
-	if (!frps_cmd)	
-		return; // only recv iv
-
 	struct msg_hdr *msg = (struct msg_hdr *)frps_cmd;
+	uint8_t cmd_type = msg->type;
 
-	cmd_type = msg->type;
-	switch(cmd_type) {
-	case TypeReqWorkConn: 
-	{
-		if (! is_client_connected()) {
-			start_proxy_services();
-			set_client_status(1);
-		}
-		new_client_connect();
+	switch (cmd_type) {
+	case TypeReqWorkConn:
+		handle_type_req_work_conn(ctx);
 		break;
-	}
 	case TypeNewProxyResp:
-	{
-		struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
-		if (npr == NULL) {
-			debug(LOG_ERR, "new proxy response buffer unmarshal faild!");
-			return;
-		}
-
-		proxy_service_resp_raw(npr);
-		SAFE_FREE(npr);
+		handle_type_new_proxy_resp(msg);
 		break;
-	}
 	case TypeStartWorkConn:
-	{
-		struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data); 
-		if (! sr) {
-			debug(LOG_ERR, 
-				"TypeStartWorkConn unmarshal failed, it should never be happend!");
-			break;
-		}
-
-		struct proxy_service *ps = get_proxy_service(sr->proxy_name);
-		if (! ps) {
-			debug(LOG_ERR, 
-				"TypeStartWorkConn requested proxy service [%s] not found, it should nerver be happend!", 
-				sr->proxy_name);
-			break;
-		}
-
-		assert(ctx);
-		struct proxy_client *client = ctx;
-		client->ps = ps;
-		int r_len = len - sizeof(struct msg_hdr) - msg_hton(msg->length); 
-		debug(LOG_DEBUG, 
-			"proxy service [%s] [%s:%d] start work connection. remain data length %d", 
-			sr->proxy_name, 
-			ps->local_ip, 
-			ps->local_port,
-			r_len);
-		if (r_len > 0) {
-			client->data_tail_size = r_len;
-			client->data_tail = msg->data + msg_hton(msg->length);
-			debug(LOG_DEBUG, "data_tail is %s", client->data_tail); 
-		}
-		start_xfrp_tunnel(client);
-		set_client_work_start(client, 1);
-
+		handle_type_start_work_conn(msg, len, ctx);
 		break;
-	}
 	case TypeUDPPacket:
-	{
-		struct udp_packet *udp = udp_packet_unmarshal((const char *)msg->data);
-		if (!udp) {
-			debug(LOG_ERR, "TypeUDPPacket unmarshal failed!");
-			break;
-		}
-		debug(LOG_DEBUG, "recv udp packet from server, content is %s", 
-			udp->content);
-		assert(ctx);
-		struct proxy_client *client = ctx;
-		assert(client->ps);
-		handle_udp_packet(udp, client);
-		SAFE_FREE(udp);
+		handle_type_udp_packet(msg, ctx);
 		break;
-	}
 	case TypePong:
 		pong_time = time(NULL);
 		break;
 	default:
-		debug(LOG_INFO, "command type dont support: ctx is %d", ctx?1:0);
+		debug(LOG_INFO, "Unsupported command type %d; ctx is %s", cmd_type, ctx ? "not NULL" : "NULL");
+		break;
 	}
-	
+
 	if (!ctx)
 		free(frps_cmd);
 }

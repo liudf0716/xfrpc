@@ -682,25 +682,67 @@ keep_control_alive()
 	set_ticker_ping_timer(main_ctl->ticker_ping);
 }
 
-static void 
-start_base_connect()
+static int init_server_connection(struct bufferevent **bev_out, 
+								struct event_base *base,
+								const char *server_addr, 
+								int server_port) 
 {
-	struct common_conf *c_conf = get_common_config();
-	if (main_ctl->connect_bev)
-		bufferevent_free(main_ctl->connect_bev);
-
-	main_ctl->connect_bev = connect_server(main_ctl->connect_base, 
-						c_conf->server_addr, 
-						c_conf->server_port);
-	if ( ! main_ctl->connect_bev) {
-		debug(LOG_ERR, "error: connect server [%s:%d] failed: [%d: %s]", 
-						c_conf->server_addr, c_conf->server_port, errno, strerror(errno));
-		exit(0);
+	if (!bev_out || !base || !server_addr) {
+		debug(LOG_ERR, "Invalid parameters for server connection");
+		return -1;
 	}
 
-	debug(LOG_INFO, "connect server [%s:%d]...", c_conf->server_addr, c_conf->server_port);
-	bufferevent_enable(main_ctl->connect_bev, EV_WRITE|EV_READ);
-	bufferevent_setcb(main_ctl->connect_bev, recv_cb, NULL, connect_event_cb, NULL);
+	// Free existing connection if any
+	if (*bev_out) {
+		bufferevent_free(*bev_out);
+		*bev_out = NULL;
+	}
+
+	// Create new connection
+	*bev_out = connect_server(base, server_addr, server_port);
+	if (!*bev_out) {
+		debug(LOG_ERR, "Failed to connect to server [%s:%d]: [%d: %s]",
+			  server_addr, server_port, errno, strerror(errno));
+		return -1;
+	}
+
+	debug(LOG_INFO, "Connecting to server [%s:%d]...", server_addr, server_port);
+	return 0;
+}
+
+static int setup_server_callbacks(struct bufferevent *bev)
+{
+	if (!bev) {
+		debug(LOG_ERR, "Invalid bufferevent for callback setup");
+		return -1;
+	}
+
+	bufferevent_enable(bev, EV_WRITE|EV_READ);
+	bufferevent_setcb(bev, recv_cb, NULL, connect_event_cb, NULL);
+	return 0;
+}
+
+static void start_base_connect()
+{
+	struct common_conf *c_conf = get_common_config();
+	if (!c_conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		exit(1);
+	}
+
+	// Initialize server connection
+	if (init_server_connection(&main_ctl->connect_bev,
+							 main_ctl->connect_base,
+							 c_conf->server_addr,
+							 c_conf->server_port) != 0) {
+		exit(1);
+	}
+
+	// Setup callbacks for the connection
+	if (setup_server_callbacks(main_ctl->connect_bev) != 0) {
+		bufferevent_free(main_ctl->connect_bev);
+		exit(1);
+	}
 }
 
 static int prepare_login_message(char **msg_out, int *len_out) {

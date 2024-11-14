@@ -669,17 +669,44 @@ connect_event_cb (struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-static void 
-keep_control_alive() 
+static int init_ping_ticker(struct control *ctl) {
+	if (!ctl || !ctl->connect_base) {
+		debug(LOG_ERR, "Invalid control structure or event base");
+		return -1;
+	}
+
+	struct event *ticker = evtimer_new(ctl->connect_base, hb_sender_cb, NULL);
+	if (!ticker) {
+		debug(LOG_ERR, "Failed to create ping ticker event");
+		return -1;
+	}
+
+	ctl->ticker_ping = ticker;
+	return 0;
+}
+
+static void keep_control_alive() 
 {
-	debug(LOG_DEBUG, "start keep_control_alive");
-	main_ctl->ticker_ping = evtimer_new(main_ctl->connect_base, hb_sender_cb, NULL);
-	if ( !main_ctl->ticker_ping) {
-		debug(LOG_ERR, "Ping Ticker init failed!");
+	debug(LOG_DEBUG, "Initializing control keepalive");
+
+	// Initialize ping ticker
+	if (init_ping_ticker(main_ctl) != 0) {
+		debug(LOG_ERR, "Failed to initialize control keepalive");
 		return;
 	}
+
+	// Set initial pong time
 	pong_time = time(NULL);
+	if (pong_time == (time_t)-1) {
+		debug(LOG_ERR, "Failed to get current time");
+		event_free(main_ctl->ticker_ping);
+		main_ctl->ticker_ping = NULL;
+		return;
+	}
+
+	// Start ticker timer
 	set_ticker_ping_timer(main_ctl->ticker_ping);
+	debug(LOG_DEBUG, "Control keepalive initialized successfully");
 }
 
 static int init_server_connection(struct bufferevent **bev_out, 

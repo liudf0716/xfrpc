@@ -1,40 +1,53 @@
-Contributing
-================================================================================
+# Contributing to xfrpc
 
-If you want to contribute to [xfrpc](https://github.com/liudf0716/xfrpc), please follow these simple rules:
+Thank you for considering contributing to [xfrpc](https://github.com/liudf0716/xfrpc)! Please follow these steps to submit your contributions:
 
-1. Press the fork button:
+## Steps to Contribute:
 
-    ![fork](http://oi58.tinypic.com/jj2trm.jpg)
+1. **Fork the Repository**  
+   Click the "Fork" button on the top right of the repository page to create a copy of the repository in your GitHub account.
 
-2. Clone the repository from your account with:
+2. **Clone Your Forked Repository**  
+   Clone the repository to your local machine using the following command:
+   - **Using HTTPS** (recommended for users who haven't set up SSH keys):
+     ```bash
+     git clone https://github.com/your_github_username/xfrpc.git
+     ```
+   - **Using SSH** (for users who have set up SSH keys with GitHub):
+     ```bash
+     git clone git@github.com:your_github_username/xfrpc.git
+     ```
 
-    ```
-    git clone git@github.com:your_github_username/xfrp.git
-    ```
+3. **Create a New Branch**  
+   Create a new branch for your feature or bug fix:
+   ```bash
+   git checkout -b "your-feature-name"
+   ```
 
-3. Create a new branch with:
+4. **Make Changes and Test**  
+   Implement your changes locally and test them thoroughly to ensure they work as expected.
 
-    ```
-    git checkout -b "xfrp-1-fix"
-    ```
-    You can name it however you want.
+5. **Update `contributors.md`**  
+   Add your name to the `contributors.md` file.
 
-4. Make your changes
+6. **Commit and Push Your Changes**  
+   Commit your changes with a sign-off and push them to your forked repository:
+   ```bash
+   git commit --signoff
+   git push origin your-feature-name
+   ```
 
-5. Don't forget to add yourself in `contributors.md`.
+7. **Create a Pull Request**  
+   Open a Pull Request (PR) from your forked repository to the main repository on GitHub and wait for the review process.
 
-6. Commit and push your changes, then make a pull request from Github.
+## Important Notes:
 
-    git commit --signoff  
-    git push 
-    
-7. Awaiting review, if accepted, merged!
+- **Sync with the Main Repository**: Keep your fork up to date by syncing it regularly with the upstream repository.
+  ```bash
+  git fetch upstream
+  git rebase upstream/master
+  ```
 
+- **Resolve Merge Conflicts**: If conflicts arise during rebase or merging, resolve them before submitting the PR.
 
-
-**IMPORTANT**
-
-Please, don't forget to update your fork. While you made your changes, the content of the `master` branch can change because other pull requests were merged and it can create conflicts. This is why you have to rebase on `master` every time before pushing your changes and check that your branch doesn't have any conflicts with `master`.
-
-Thank you.
+Thank you for contributing!

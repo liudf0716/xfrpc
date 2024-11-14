@@ -66,32 +66,25 @@ static void start_base_connect();
 static void keep_control_alive();
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
 
-static int 
-is_client_connected()
+static int is_client_connected(void)
 {
 	return client_connected;
 }
 
-static int 
-set_client_status(int is_connected)
+static int set_client_status(int is_connected)
 {
-	if (is_connected)
-		client_connected = 1;
-	else
-		client_connected = 0;
-
+	client_connected = (is_connected != 0);
 	return client_connected;
 }
 
-static int 
-set_client_work_start(struct proxy_client *client, int is_start_work)
+static int set_client_work_start(struct proxy_client *client, int is_start_work)
 {
-	assert(client->ps);
-	if (is_start_work) {
-		client->work_started = 1;
-	}else
-		client->work_started = 0;
+	if (!client || !client->ps) {
+		debug(LOG_ERR, "Invalid client or proxy service");
+		return 0;
+	}
 
+	client->work_started = (is_start_work != 0);
 	return client->work_started;
 }
 

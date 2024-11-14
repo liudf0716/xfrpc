@@ -33,10 +33,12 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <json-c/json.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <time.h>
+
 
 #include "debug.h"
 #include "client.h"
@@ -212,17 +214,51 @@ new_work_connection(struct bufferevent *bev, struct tmux_stream *stream)
 	SAFE_FREE(work_c);
 }
 
-struct bufferevent *
-connect_server(struct event_base *base, const char *name, const int port)
+struct bufferevent *connect_server(struct event_base *base, const char *name, const int port) 
 {
-	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
-	assert(bev);
+	// Validate input parameters
+	if (!base || !name || port <= 0) {
+		debug(LOG_ERR, "Invalid connection parameters: base=%p, name=%s, port=%d",
+			  base, name ? name : "NULL", port);
+		return NULL;
+	}
 
-	if (bufferevent_socket_connect_hostname(bev, main_ctl->dnsbase, 
-											AF_INET, name, port) < 0 ) {
+	// Create new bufferevent socket
+	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+	if (!bev) {
+		debug(LOG_ERR, "Failed to create new bufferevent socket");
+		return NULL;
+	}
+
+	// For IP addresses, connect directly without DNS
+	if (is_valid_ip_address(name)) {
+		struct sockaddr_in sin;
+		memset(&sin, 0, sizeof(sin));
+		sin.sin_family = AF_INET;
+		sin.sin_addr.s_addr = inet_addr(name);
+		sin.sin_port = htons(port);
+
+		if (bufferevent_socket_connect(bev, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+			debug(LOG_ERR, "Direct IP connection failed to %s:%d", name, port);
+			bufferevent_free(bev);
+			return NULL;
+		}
+	}
+	// Otherwise use DNS resolution
+	else if (main_ctl && main_ctl->dnsbase) {
+		if (bufferevent_socket_connect_hostname(bev, main_ctl->dnsbase, 
+											  AF_INET, name, port) < 0) {
+			debug(LOG_ERR, "DNS hostname connection failed to %s:%d", name, port);
+			bufferevent_free(bev);
+			return NULL;
+		}
+	}
+	else {
+		debug(LOG_ERR, "No DNS base available for hostname resolution");
 		bufferevent_free(bev);
 		return NULL;
 	}
+
 	return bev;
 }
 

@@ -253,37 +253,68 @@ connect_udp_server(struct event_base *base)
 	return bev;
 }
 
-static void 
-set_ticker_ping_timer(struct event *timeout)
-{
-	struct timeval tv;
-	struct common_conf *c_conf = get_common_config();
-	evutil_timerclear(&tv);
-	tv.tv_sec = c_conf->heartbeat_interval;
-	event_add(timeout, &tv);
-}
-
-static void 
-hb_sender_cb(evutil_socket_t fd, short event, void *arg)
-{
-	if (is_client_connected()) {
-		debug(LOG_INFO, "ping frps");
-		ping(NULL);
+static void schedule_heartbeat_timer(struct event *timeout) {
+	if (!timeout) {
+		debug(LOG_ERR, "Invalid timer event");
+		return;
 	}
 
-	set_ticker_ping_timer(main_ctl->ticker_ping);	
-	
-	struct common_conf 	*c_conf = get_common_config();
-	time_t current_time = time(NULL);
-	int interval = current_time - pong_time;
-	if (pong_time && interval > c_conf->heartbeat_timeout) {
-		debug(LOG_INFO, " interval [%d] greater than heartbeat_timeout [%d]", interval, c_conf->heartbeat_timeout);
+	struct common_conf *conf = get_common_config();
+	if (!conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		return;
+	}
+
+	struct timeval tv = {
+		.tv_sec = conf->heartbeat_interval,
+		.tv_usec = 0
+	};
+
+	if (event_add(timeout, &tv) < 0) {
+		debug(LOG_ERR, "Failed to schedule heartbeat timer");
+	}
+}
+
+static void check_server_timeout(time_t current_time) {
+	struct common_conf *conf = get_common_config();
+	if (!conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		return;
+	}
+
+	if (!pong_time) {
+		return;
+	}
+
+	int elapsed = current_time - pong_time;
+	if (elapsed > conf->heartbeat_timeout) {
+		debug(LOG_INFO, "Server timeout detected: elapsed=%d seconds, timeout=%d seconds", 
+			  elapsed, conf->heartbeat_timeout);
 
 		reset_session_id();
 		clear_main_control();
 		run_control();
+	}
+}
+
+static void heartbeat_handler(evutil_socket_t fd, short event, void *arg) {
+	// Send ping if client is connected
+	if (is_client_connected()) {
+		debug(LOG_INFO, "Sending heartbeat ping to server");
+		ping();
+	}
+
+	// Reschedule next heartbeat
+	schedule_heartbeat_timer(main_ctl->ticker_ping);
+
+	// Check for server timeout
+	time_t current_time = time(NULL);
+	if (current_time == (time_t)-1) {
+		debug(LOG_ERR, "Failed to get current time");
 		return;
 	}
+
+	check_server_timeout(current_time);
 }
 
 static int handle_ftp_configuration(struct proxy_service *ps, struct new_proxy_response *npr) 
@@ -796,7 +827,7 @@ static int init_ping_ticker(struct control *ctl) {
 		return -1;
 	}
 
-	struct event *ticker = evtimer_new(ctl->connect_base, hb_sender_cb, NULL);
+	struct event *ticker = evtimer_new(ctl->connect_base, heartbeat_handler, NULL);
 	if (!ticker) {
 		debug(LOG_ERR, "Failed to create ping ticker event");
 		return -1;
@@ -826,7 +857,7 @@ static void keep_control_alive()
 	}
 
 	// Start ticker timer
-	set_ticker_ping_timer(main_ctl->ticker_ping);
+	schedule_heartbeat_timer(main_ctl->ticker_ping);
 	debug(LOG_DEBUG, "Control keepalive initialized successfully");
 }
 

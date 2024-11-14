@@ -64,6 +64,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx);
 static void clear_main_control();
 static void start_base_connect();
 static void keep_control_alive();
+static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
 
 static int 
 is_client_connected()
@@ -94,28 +95,61 @@ set_client_work_start(struct proxy_client *client, int is_start_work)
 	return client->work_started;
 }
 
-static void 
-client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
+static void handle_client_error(struct proxy_client *client, struct bufferevent *bev, 
+				   const struct common_conf *c_conf)
 {
-	struct proxy_client *client = ctx;
-	assert(client);
-	struct common_conf 	*c_conf = get_common_config();
+	// Verify control bufferevent matches
+	if (client->ctl_bev != bev) {
+		debug(LOG_ERR, "Bufferevent mismatch - freeing existing control bufferevent");
+		bufferevent_free(client->ctl_bev);
+		client->ctl_bev = NULL;
+	}
 
+	debug(LOG_ERR, "Connection error to server [%s:%d]: %s", 
+		  c_conf->server_addr, c_conf->server_port, strerror(errno));
+
+	// Cleanup
+	bufferevent_free(bev);
+	del_proxy_client_by_stream_id(client->stream_id);
+}
+
+static void handle_client_connected(struct proxy_client *client, struct bufferevent *bev)
+{
+	// Setup callbacks and enable events
+	bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+	// Initialize work connection
+	new_work_connection(bev, &main_ctl->stream);
+	set_client_status(1);
+
+	debug(LOG_INFO, "Proxy service started successfully");
+}
+
+static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+	// Validate input parameters
+	if (!bev || !ctx) {
+		debug(LOG_ERR, "Invalid parameters: bev=%p, ctx=%p", bev, ctx);
+		return;
+	}
+
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	struct common_conf *c_conf = get_common_config();
+	if (!c_conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		return;
+	}
+
+	// Handle connection errors and EOF
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		if (client->ctl_bev != bev) {
-			debug(LOG_ERR, "Error: should be equal");
-			bufferevent_free(client->ctl_bev);
-			client->ctl_bev = NULL;
-		}
-		debug(LOG_ERR, "Proxy connect server [%s:%d] error: %s", c_conf->server_addr, c_conf->server_port, strerror(errno));
-		bufferevent_free(bev);
-		del_proxy_client_by_stream_id(client->stream_id);
-	} else if (what & BEV_EVENT_CONNECTED) {
-		bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
-		bufferevent_enable(bev, EV_READ|EV_WRITE);
-		new_work_connection(bev, &main_ctl->stream);
-		set_client_status(1);
-		debug(LOG_INFO, "proxy service start");
+		handle_client_error(client, bev, c_conf);
+		return;
+	}
+
+	// Handle successful connection
+	if (what & BEV_EVENT_CONNECTED) {
+		handle_client_connected(client, bev);
 	}
 }
 

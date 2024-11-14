@@ -331,31 +331,54 @@ proxy_service_resp_raw(struct new_proxy_response *npr)
 	return 0;
 }
 
-static int
-handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
+static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 {
-	if (ilen <= 0) {
-		debug(LOG_INFO, "enc_msg length should not be %d", ilen);
+	// Validate input parameters
+	if (!enc_msg || !out || ilen <= 0) {
+		debug(LOG_ERR, "Invalid input parameters: msg=%p, out=%p, length=%d", 
+			  enc_msg, out, ilen);
 		return -1;
 	}
 
+	// Initialize decoder if needed
 	const uint8_t *buf = enc_msg;
-	if ( !is_decoder_inited() && get_block_size() <= ilen) {
-		init_main_decoder(buf);
-		buf += get_block_size();
-		ilen -= get_block_size();
-		if (!ilen) {
-			// recv only iv
-			debug(LOG_DEBUG, "recv eas1238 iv data");
+	int remaining_len = ilen;
+
+	if (!is_decoder_inited()) {
+		int block_size = get_block_size();
+		if (remaining_len < block_size) {
+			debug(LOG_ERR, "Insufficient data for decoder initialization: need %d, got %d",
+				  block_size, remaining_len);
+			return -1;
+		}
+
+		if (!init_main_decoder(buf)) {
+			debug(LOG_ERR, "Failed to initialize decoder");
+			return -1;
+		}
+
+		buf += block_size;
+		remaining_len -= block_size;
+
+		// Check if we only received initialization vector
+		if (remaining_len == 0) {
+			debug(LOG_DEBUG, "Received only initialization vector data");
+			*out = NULL;
 			return 0;
-		}	
+		}
 	}
 
+	// Decrypt the message
 	uint8_t *dec_msg = NULL;
-	size_t len = decrypt_data(buf, ilen, get_main_decoder(), &dec_msg);
-	*out = dec_msg;
+	size_t dec_len = decrypt_data(buf, remaining_len, get_main_decoder(), &dec_msg);
+	
+	if (dec_len <= 0 || !dec_msg) {
+		debug(LOG_ERR, "Decryption failed");
+		return -1;
+	}
 
-	return len;	
+	*out = dec_msg;
+	return dec_len;
 }
 
 static void handle_type_req_work_conn(void *ctx)

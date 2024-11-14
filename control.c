@@ -226,30 +226,38 @@ connect_server(struct event_base *base, const char *name, const int port)
 	return bev;
 }
 
-struct bufferevent *
-connect_udp_server(struct event_base *base)
+struct bufferevent *connect_udp_server(struct event_base *base)
 {
+	// Validate input parameter
+	if (!base) {
+		debug(LOG_ERR, "Invalid event base parameter");
+		return NULL;
+	}
+
+	// Create UDP socket
 	evutil_socket_t fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (fd < 0) {
-		debug(LOG_ERR, "create udp socket failed!");
+		debug(LOG_ERR, "Failed to create UDP socket: %s", strerror(errno));
 		return NULL;
 	}
 
+	// Make socket non-blocking
 	if (evutil_make_socket_nonblocking(fd) < 0) {
-		debug(LOG_ERR, "make udp socket nonblocking failed!");
+		debug(LOG_ERR, "Failed to make UDP socket non-blocking: %s", strerror(errno));
 		evutil_closesocket(fd);
 		return NULL;
 	}
 
-	
-	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
-	assert(bev);
+	// Create bufferevent for UDP socket
+	struct bufferevent *bev = bufferevent_socket_new(base, fd, 
+													BEV_OPT_CLOSE_ON_FREE);
 	if (!bev) {
+		debug(LOG_ERR, "Failed to create UDP bufferevent: %s", strerror(errno));
 		evutil_closesocket(fd);
-		debug(LOG_ERR, "create udp bufferevent failed!");
 		return NULL;
 	}
 
+	debug(LOG_DEBUG, "UDP server connection initialized successfully");
 	return bev;
 }
 

@@ -148,28 +148,34 @@ new_client_connect()
 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
 }
 
-static void 
-start_proxy_services()
+static void start_proxy_services() 
 {
+	// Get configured proxy services
 	struct proxy_service *all_ps = get_all_proxy_services();
-	struct proxy_service *ps = NULL, *tmp = NULL;
-	
 	if (!all_ps) {
-		debug(LOG_INFO, "no proxy service configure by user");
+		debug(LOG_INFO, "No proxy services configured");
 		return;
 	}
 
-	debug(LOG_INFO, "Start xfrp proxy services ...");
-	
+	debug(LOG_INFO, "Starting xfrp proxy services...");
+
+	// Iterate through all proxy services
+	struct proxy_service *ps = NULL, *tmp = NULL;
 	HASH_ITER(hh, all_ps, ps, tmp) {
-		if(ps == NULL) {
-			debug(LOG_ERR, "proxy service is invalid!");
-			return;
-		}
-		if (strcmp(ps->proxy_type, "mstsc") == 0) {
-			debug(LOG_ERR, "no need to send mstsc service!");
+		// Validate proxy service
+		if (!ps) {
+			debug(LOG_ERR, "Invalid proxy service encountered");
 			continue;
 		}
+
+		// Skip MSTSC proxy type
+		if (ps->proxy_type && strcmp(ps->proxy_type, "mstsc") == 0) {
+			debug(LOG_DEBUG, "Skipping MSTSC service");
+			continue;
+		}
+
+		// Send new proxy request
+		debug(LOG_DEBUG, "Sending proxy service: %s", ps->proxy_name);
 		send_new_proxy(ps);
 	}
 }

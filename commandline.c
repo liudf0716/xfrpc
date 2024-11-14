@@ -1,28 +1,13 @@
 /* vim: set et sw=4 ts=4 sts=4 : */
-/********************************************************************\
- * This program is free software; you can redistribute it and/or    *
- * modify it under the terms of the GNU General Public License as   *
- * published by the Free Software Foundation; either version 2 of   *
- * the License, or (at your option) any later version.              *
- *                                                                  *
- * This program is distributed in the hope that it will be useful,  *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of   *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the    *
- * GNU General Public License for more details.                     *
- *                                                                  *
- * You should have received a copy of the GNU General Public License*
- * along with this program; if not, contact:                        *
- *                                                                  *
- * Free Software Foundation           Voice:  +1-617-542-5942       *
- * 59 Temple Place - Suite 330        Fax:    +1-617-542-2652       *
- * Boston, MA  02111-1307,  USA       gnu@gnu.org                   *
- *                                                                  *
-\********************************************************************/
+/*
+ * Copyright (C) 2022-2024 Liu Dengfeng <https://github.com/liudf0716>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by 
+ * the Free Software Foundation
+ */
 
-/** @file commandline.c
-    @brief Command line argument handling
-    @author Copyright (C) 2004 Philippe April <papril777@yahoo.com>
-*/
+/* Command line argument handling */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,169 +26,221 @@
 #include "version.h"
 #include "utils.h"
 
-typedef void signal_func (int);
+/* Type definitions */
+typedef void signal_func(int);
 
-static signal_func *set_signal_handler (int signo, signal_func * func);
+/* Function declarations */
+static signal_func *set_signal_handler(int signo, signal_func *func);
 static void usage(const char *appname);
 
-static int is_daemon = 1;
+/* Global configuration variables */
+static struct {
+    int is_daemon;
+    char *config_file;
+} g_config = {
+    .is_daemon = 1,
+    .config_file = NULL
+};
 
-static char *confile = NULL;
+/* Accessor macros/inline functions */
+#define IS_DAEMON() (g_config.is_daemon)
+#define GET_CONFIG_FILE() (g_config.config_file)
 
 /*
- * Fork a child process and then kill the parent so make the calling
- * program a daemon process.
+ * Creates a daemon process by performing the standard Unix double-fork.
+ * This detaches the process from the controlling terminal and runs it
+ * in the background.
+ * 
+ * Returns: void, but exits process on error
  */
-static void 
-makedaemon (void)
+static void makedaemon(void) 
 {
-	if (fork () != 0)
-			exit (0);
+    pid_t pid;
 
-	setsid ();
-	set_signal_handler (SIGHUP, SIG_IGN);
+    /* First fork */
+    pid = fork();
+    if (pid < 0) {
+        debug(LOG_ERR, "First fork failed: %m");
+        exit(1);
+    }
+    if (pid > 0) {
+        exit(0); /* Parent exits */
+    }
 
-	if (fork () != 0)
-			exit (0);
+    /* Child becomes session leader */
+    if (setsid() < 0) {
+        debug(LOG_ERR, "setsid failed: %m");
+        exit(1);
+    }
 
-	umask (0177);
+    /* Ignore HUP signals */
+    if (set_signal_handler(SIGHUP, SIG_IGN) == SIG_ERR) {
+        debug(LOG_ERR, "Could not ignore SIGHUP: %m");
+        exit(1);
+    }
 
-	close (0);
-	close (1);
-	close (2);
+    /* Second fork */
+    pid = fork();
+    if (pid < 0) {
+        debug(LOG_ERR, "Second fork failed: %m");
+        exit(1);
+    }
+    if (pid > 0) {
+        exit(0); /* First child exits */
+    }
+
+    /* Set restrictive file permissions */
+    umask(0177);
+
+    /* Close standard file descriptors */
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO); 
+    close(STDERR_FILENO);
 }
 
 /*
- * Pass a signal number and a signal handling function into this function
- * to handle signals sent to the process.
+ * Sets up a signal handler for a specified signal number.
+ *
+ * @param signo  The signal number to handle
+ * @param func   Pointer to the signal handling function
+ * @return       Previous signal handler, or SIG_ERR on error
  */
-static signal_func *
-set_signal_handler (int signo, signal_func * func)
-{
-        struct sigaction act, oact;
+static signal_func *set_signal_handler(int signo, signal_func *func) {
+    struct sigaction new_action, old_action;
 
-        act.sa_handler = func;
-        sigemptyset (&act.sa_mask);
-        act.sa_flags = 0;
-        if (signo == SIGALRM) {
-#ifdef SA_INTERRUPT
-                act.sa_flags |= SA_INTERRUPT;   /* SunOS 4.x */
-#endif
-        } else {
-#ifdef SA_RESTART
-                act.sa_flags |= SA_RESTART;     /* SVR4, 4.4BSD */
-#endif
-        }
+    /* Initialize the new signal action */
+    new_action.sa_handler = func;
+    sigemptyset(&new_action.sa_mask);
+    new_action.sa_flags = SA_RESTART;  /* Linux default behavior */
 
-        if (sigaction (signo, &act, &oact) < 0)
-                return SIG_ERR;
+    /* Install the signal handler */
+    if (sigaction(signo, &new_action, &old_action) < 0) {
+        return SIG_ERR;
+    }
 
-        return oact.sa_handler;
+    return old_action.sa_handler;
 }
 
 int 
 get_daemon_status()
 {
-	return is_daemon;
+    return IS_DAEMON();
 }
 
-/** @internal
- * @brief Print usage
+/**
+ * Displays program usage information
  *
- * Prints usage, called when xfrpc is run with -h or with an unknown option
+ * Prints a formatted help message showing all available command-line options
+ * and their descriptions.
+ *
+ * @param appname Name of the application executable
  */
-static void
-usage(const char *appname)
+static void usage(const char *appname)
 {
-    fprintf(stdout, "Usage: %s [options]\n", appname);
-    fprintf(stdout, "\n");
-    fprintf(stdout, "options:\n");
-    fprintf(stdout, "  -c [filename] Use this config file\n");
-    fprintf(stdout, "  -f            Run in foreground\n");
-    fprintf(stdout, "  -d <level>    Debug level\n");
-    fprintf(stdout, "  -h            Print usage\n");
-    fprintf(stdout, "  -v            Print version information\n");
-    fprintf(stdout, "  -r            Print run id of client\n");
+    static const struct {
+        const char *option;
+        const char *description;
+    } options[] = {
+        {"-c [filename]", "Specify config file to use"},
+        {"-f",           "Run in foreground (don't daemonize)"},
+        {"-d <level>",   "Set debug level"},
+        {"-h",           "Display this help message"},
+        {"-v",           "Display version information"},
+        {"-r",           "Display client run ID"}
+    };
+
+    fprintf(stdout, "Usage: %s [options]\n\n", appname);
+    fprintf(stdout, "Options:\n");
+
+    for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); i++) {
+        fprintf(stdout, "  %-14s %s\n", 
+                options[i].option, 
+                options[i].description);
+    }
+    
     fprintf(stdout, "\n");
 }
 
-/** Uses getopt() to parse the command line and set configuration values
- * also populates restartargv
+/**
+ * Parses command line arguments and initializes configuration
+ *
+ * @param argc  Number of command line arguments
+ * @param argv  Array of command line argument strings
  */
-void
-parse_commandline(int argc, char **argv)
+void parse_commandline(int argc, char **argv)
 {
     int c;
-	int flag = 0;
-	
-    while (-1 != (c = getopt(argc, argv, "c:hfd:sw:vrx:i:a:"))) {
+    int config_specified = 0;
 
-
+    while (-1 != (c = getopt(argc, argv, "c:hfd:vr"))) {
         switch (c) {
-
-        case 'h':
-            usage(argv[0]);
-            exit(1);
-            break;
-
-        case 'c':
-            if (optarg) {
-				confile = strdup(optarg); //never free it
-                assert(confile);
-				flag = 1;
-            }
-            break;
-
-        case 'f':
-            is_daemon = 0;
-            debugconf.log_stderr = 1;
-            break;
-
-        case 'd':
-            if (optarg) {
-                debugconf.debuglevel = atoi(optarg);
-            }
-            break;
-
-        case 'v':
-            fprintf(stdout, "version: " VERSION "\n");
-            exit(1);
-            break;
-        
-        case 'r':
-            {
-                char ifname[16] = {0};
-            	if(get_net_ifname(ifname, 16)){
-            		debug(LOG_ERR, "error: get device sign ifname failed!");
-            		exit(0);
-            	}
-
-            	char if_mac[64] = {0};
-            	if(get_net_mac(ifname, if_mac, sizeof(if_mac))) {
-            		debug(LOG_ERR, "error: Hard ware MAC address of [%s] get failed!", ifname);
-            		exit(0);
-            	}
-
-                fprintf(stdout, "run ID:%s\n", if_mac);
-                exit(1);
+            case 'h':
+                usage(argv[0]);
+                exit(0);
                 break;
-            }
-        default:
-            usage(argv[0]);
-            exit(1);
-            break;
 
+            case 'c':
+                if (optarg) {
+                    g_config.config_file = strdup(optarg);
+                    if (!g_config.config_file) {
+                        debug(LOG_ERR, "Failed to allocate memory for config file path");
+                        exit(1);
+                    }
+                    config_specified = 1;
+                }
+                break;
+
+            case 'f':
+                g_config.is_daemon = 0;
+                debugconf.log_stderr = 1;
+                break;
+
+            case 'd':
+                if (optarg) {
+                    debugconf.debuglevel = atoi(optarg);
+                }
+                break;
+
+            case 'v':
+                fprintf(stdout, "version: " VERSION "\n");
+                exit(0);
+                break;
+
+            case 'r':
+                {
+                    char ifname[16] = {0};
+                    char if_mac[64] = {0};
+
+                    if (get_net_ifname(ifname, sizeof(ifname)) != 0) {
+                        debug(LOG_ERR, "Failed to get network interface name");
+                        exit(1);
+                    }
+
+                    if (get_net_mac(ifname, if_mac, sizeof(if_mac)) != 0) {
+                        debug(LOG_ERR, "Failed to get MAC address for interface %s", ifname);
+                        exit(1);
+                    }
+
+                    fprintf(stdout, "run ID: %s\n", if_mac);
+                    exit(0);
+                }
+                break;
+
+            default:
+                usage(argv[0]);
+                exit(1);
         }
     }
-	
-	if (!flag) {
-		usage(argv[0]);
-		exit(0);
-	}
-	
-	load_config(confile);
-	
-	if (is_daemon) {
-		makedaemon();
-	}
+
+    if (!config_specified) {
+        fprintf(stderr, "Error: Config file must be specified with -c option\n");
+        usage(argv[0]);
+        exit(1);
+    }
+
+    load_config(g_config.config_file);
+
+    if (g_config.is_daemon) {
+        makedaemon();
+    }
 }

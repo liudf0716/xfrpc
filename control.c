@@ -286,46 +286,62 @@ hb_sender_cb(evutil_socket_t fd, short event, void *arg)
 	}
 }
 
-// return: 0: raw succeed 1: raw failed
-static int 
-proxy_service_resp_raw(struct new_proxy_response *npr)
+static int handle_ftp_configuration(struct proxy_service *ps, struct new_proxy_response *npr) 
 {
+	struct proxy_service *main_ps = get_proxy_service(ps->ftp_cfg_proxy_name);
+	if (!main_ps) {
+		debug(LOG_ERR, "Main FTP proxy service '%s' not found", ps->ftp_cfg_proxy_name);
+		return 0;
+	}
+
+	debug(LOG_DEBUG, "Found main FTP proxy service '%s'", main_ps->proxy_name);
+
+	if (npr->remote_port <= 0) {
+		debug(LOG_ERR, "Invalid FTP remote data port: %d", npr->remote_port);
+		return 0;
+	}
+
+	main_ps->remote_data_port = npr->remote_port;
+	return 1;
+}
+
+static int proxy_service_resp_raw(struct new_proxy_response *npr)
+{
+	// Validate input parameter
+	if (!npr) {
+		debug(LOG_ERR, "Invalid new proxy response parameter");
+		return 1;
+	}
+
+	// Check for error response
 	if (npr->error && strlen(npr->error) > 2) {
-		debug(LOG_ERR, "error: new proxy response error_field:%s", npr->error);
+		debug(LOG_ERR, "New proxy response error: %s", npr->error);
 		return 1;
 	}
 	
-	if ((! npr->proxy_name) || (strlen(npr->proxy_name) <= 0)) {
-		debug(LOG_ERR, "error: new proxy response proxy name unmarshal failed!");
+	// Validate proxy name
+	if (!npr->proxy_name || strlen(npr->proxy_name) == 0) {
+		debug(LOG_ERR, "Invalid or empty proxy name in response");
 		return 1;
 	}
 
-	struct proxy_service *ps = NULL;
-	ps = get_proxy_service(npr->proxy_name);
-	if (! ps) {
-		debug(LOG_ERR, "error: proxy_name responsed by TypeNewProxyResp not found!");
+	// Get proxy service
+	struct proxy_service *ps = get_proxy_service(npr->proxy_name);
+	if (!ps) {
+		debug(LOG_ERR, "Proxy service '%s' not found", npr->proxy_name);
 		return 1;
 	}
 
-	if (! ps->proxy_type) {
-		debug(LOG_ERR, "error: proxy_type is NULL, it should be never happend!");
+	if (!ps->proxy_type) {
+		debug(LOG_ERR, "Proxy type is NULL for service '%s'", npr->proxy_name);
 		return 1;
 	}
 
+	// Handle FTP configuration if present
 	if (ps->ftp_cfg_proxy_name) {
-		struct proxy_service *main_ps = get_proxy_service(ps->ftp_cfg_proxy_name);
-		if (main_ps) {
-			debug(LOG_DEBUG, "find main ftp proxy service name [%s]", main_ps->proxy_name);
-		} else {
-			debug(LOG_ERR, "error: cannot find main ftp proxy service!");
+		if (!handle_ftp_configuration(ps, npr)) {
 			return 1;
 		}
-
-		if (npr->remote_port <= 0) {
-			debug(LOG_ERR, "error: ftp remote_data_port [%d] that request from server is invalid!", npr->remote_port);
-			return 1;
-		}
-		main_ps->remote_data_port = npr->remote_port;
 	}
 
 	return 0;

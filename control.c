@@ -639,33 +639,51 @@ recv_cb(struct bufferevent *bev, void *ctx)
 	return;
 }
 
-static void 
-connect_event_cb (struct bufferevent *bev, short what, void *ctx)
+static void handle_connection_failure(struct common_conf *c_conf, int *retry_times) {
+	debug(LOG_ERR, "Connection to server [%s:%d] failed: %s", 
+		  c_conf->server_addr, 
+		  c_conf->server_port,
+		  strerror(errno));
+
+	(*retry_times)++;
+	if (*retry_times >= MAX_RETRY_TIMES) {
+		debug(LOG_INFO, "Maximum retry attempts (%d) reached", MAX_RETRY_TIMES);
+	}
+
+	sleep(RETRY_DELAY_SECONDS);
+	
+	reset_session_id();
+	clear_main_control();
+	run_control();
+}
+
+static void handle_connection_success(struct bufferevent *bev) {
+	debug(LOG_INFO, "Successfully connected to xfrp server");
+	
+	// Initialize window and login
+	send_window_update(bev, &main_ctl->stream, 0);
+	login();
+	
+	// Setup keepalive mechanism
+	keep_control_alive();
+}
+
+static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-	struct common_conf 	*c_conf = get_common_config();
-	static int retry_times = 1;
+	static int retry_times = 0;
+	struct common_conf *c_conf = get_common_config();
+	
+	if (!c_conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		return;
+	}
+
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		if (retry_times >= 100) {
-			debug(LOG_INFO, 
-				"have retry connect to xfrp server for %d times, exit?", 
-				retry_times);
-		}
-		sleep(2);
-		retry_times++;
-		debug(LOG_ERR, "error: connect server [%s:%d] failed %s", 
-				c_conf->server_addr, 
-				c_conf->server_port,
-				strerror(errno));
-		reset_session_id();
-		clear_main_control();
-		run_control();
-	} else if (what & BEV_EVENT_CONNECTED) {
-		debug(LOG_DEBUG, "xfrp server connected");
+		handle_connection_failure(c_conf, &retry_times);
+	} 
+	else if (what & BEV_EVENT_CONNECTED) {
 		retry_times = 0;
-		send_window_update(bev, &main_ctl->stream, 0);
-		login();
-		
-		keep_control_alive();
+		handle_connection_success(bev);
 	}
 }
 

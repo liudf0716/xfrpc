@@ -466,65 +466,85 @@ control_response_free(struct control_response *res)
 	SAFE_FREE(res);
 }
 
-// marshal udp packet msg
-int 
-new_udp_packet_marshal(const struct udp_packet *udp, char **msg)
-{
-	// parse struct udp_packet to json
+/**
+ * Creates a JSON object representation of a UDP address structure.
+ *
+ * @param addr Pointer to the UDP address structure to be converted to JSON
+ * @return struct json_object* A pointer to the created JSON object representing the UDP address,
+ *                            or NULL if creation fails
+ */
+static struct json_object *create_udp_addr_json(const struct udp_addr *addr) {
+	if (!addr) {
+		struct json_object *empty = json_object_new_object();
+		assert(empty);
+		return empty;
+	}
+
+	struct json_object *j_addr = json_object_new_object();
+	if (!j_addr) return NULL;
+
+	// Add IP
+	struct json_object *j_ip = json_object_new_string(addr->addr);
+	assert(j_ip);
+	json_object_object_add(j_addr, "IP", j_ip);
+
+	// Add Port
+	struct json_object *j_port = json_object_new_int(addr->port);
+	assert(j_port);
+	json_object_object_add(j_addr, "Port", j_port);
+
+	// Add Zone (empty string if not specified)
+	struct json_object *j_zone = json_object_new_string("");
+	assert(j_zone);
+	json_object_object_add(j_addr, "Zone", j_zone);
+
+	return j_addr;
+}
+
+/**
+ * Marshals a UDP packet structure into a serialized message format.
+ *
+ * @param udp  Pointer to the UDP packet structure to be marshalled
+ * @param msg  Pointer to a char pointer that will store the serialized message.
+ *             The caller is responsible for freeing this memory.
+ * 
+ * @return     Returns 0 on success, negative value on error
+ */
+int new_udp_packet_marshal(const struct udp_packet *udp, char **msg) {
+	if (!udp || !msg) return -1;
+
+	// Create main JSON object
 	struct json_object *j_udp = json_object_new_object();
-	assert(j_udp);
+	if (!j_udp) return -1;
 
-	struct json_object *content = json_object_new_string(udp->content);
-	assert(content);
-	json_object_object_add(j_udp, "c", content);
-
-	if (udp->laddr) {
-		// laddr is a struct, parse it to json object and add to j_udp
-		struct json_object *j_laddr = json_object_new_object();
-		assert(j_laddr);
-		struct json_object *j_laddr_addr = json_object_new_string(udp->laddr->addr);
-		assert(j_laddr_addr);
-		json_object_object_add(j_laddr, "IP", j_laddr_addr);
-		struct json_object *j_laddr_port = json_object_new_int(udp->laddr->port);
-		assert(j_laddr_port);
-		json_object_object_add(j_laddr, "Port", j_laddr_port);
-		json_object_object_add(j_udp, "l", j_laddr);
-		json_object *j_laddr_zone = json_object_new_string("");
-		assert(j_laddr_zone);
-		json_object_object_add(j_laddr, "Zone", j_laddr_zone);
-	} else {
-		// laddr is NULL, add null to j_udp
-		struct json_object *j_laddr = json_object_new_object();
-		assert(j_laddr);
-		json_object_object_add(j_udp, "l", j_laddr);
+	// Add content
+	if (udp->content) {
+		struct json_object *content = json_object_new_string(udp->content);
+		assert(content);
+		json_object_object_add(j_udp, "c", content);
 	}
 
-	if (udp->raddr) {
-		// raddr is a struct, parse it to json object and add to j_udp
-		struct json_object *j_raddr = json_object_new_object();
-		assert(j_raddr);
-		struct json_object *j_raddr_addr = json_object_new_string(udp->raddr->addr);
-		assert(j_raddr_addr);
-		json_object_object_add(j_raddr, "IP", j_raddr_addr);
-		struct json_object *j_raddr_port = json_object_new_int(udp->raddr->port);
-		assert(j_raddr_port);
-		json_object_object_add(j_raddr, "Port", j_raddr_port);
-		json_object_object_add(j_udp, "r", j_raddr);
-		json_object *j_raddr_zone = json_object_new_string("");
-		assert(j_raddr_zone);
-		json_object_object_add(j_raddr, "Zone", j_raddr_zone);
-	} else {
-		// raddr is NULL, add null to j_udp
-		struct json_object *j_raddr = json_object_new_object();
-		assert(j_raddr);
-		json_object_object_add(j_udp, "r", j_raddr);
+	// Add local address
+	struct json_object *j_laddr = create_udp_addr_json(udp->laddr);
+	assert(j_laddr);
+	json_object_object_add(j_udp, "l", j_laddr);
+
+	// Add remote address
+	struct json_object *j_raddr = create_udp_addr_json(udp->raddr);
+	assert(j_raddr);
+	json_object_object_add(j_udp, "r", j_raddr);
+
+	// Convert to string
+	const char *json_str = json_object_to_json_string(j_udp);
+	if (!json_str) {
+		json_object_put(j_udp);
+		return -1;
 	}
 
-	// convert json to string msg
-	*msg = strdup(json_object_to_json_string(j_udp));
+	*msg = strdup(json_str);
 	assert(*msg);
-	json_object_put(j_udp);
 
+	json_object_put(j_udp);
 	return 0;
 }
 

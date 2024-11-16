@@ -223,17 +223,43 @@ start_xfrp_tunnel(struct proxy_client *client)
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
 }
 
-int 
-send_client_data_tail(struct proxy_client *client)
+/**
+ * @brief Sends any remaining data in the client's data tail buffer
+ *
+ * @param client Pointer to proxy client containing data to be sent
+ * @return int Number of bytes written, -1 on error
+ */
+int send_client_data_tail(struct proxy_client *client)
 {
-	int send_l = 0;
-	if (client->data_tail && client->data_tail_size && client->local_proxy_bev) {
-		send_l = bufferevent_write(client->local_proxy_bev, client->data_tail, client->data_tail_size);
-		client->data_tail = NULL;
-		client->data_tail_size = 0;
+	// Validate input parameters
+	if (!client) {
+		debug(LOG_ERR, "Invalid proxy client pointer");
+		return -1;
 	}
 
-	return send_l;
+	// Check if there's any data to send
+	if (!client->data_tail || client->data_tail_size == 0) {
+		debug(LOG_DEBUG, "No data tail to send");
+		return 0;
+	}
+
+	// Verify bufferevent is available
+	if (!client->local_proxy_bev) {
+		debug(LOG_ERR, "Invalid local proxy bufferevent");
+		return -1;
+	}
+
+	// Write data to buffer
+	int bytes_written = bufferevent_write(client->local_proxy_bev, 
+										client->data_tail, 
+										client->data_tail_size);
+
+	// Free the data tail buffer
+	free(client->data_tail);
+	client->data_tail = NULL;
+	client->data_tail_size = 0;
+
+	return bytes_written;
 }
 
 /**

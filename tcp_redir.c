@@ -25,41 +25,84 @@
 #include "utils.h"
 #include "tcp_redir.h"
 
-
-// define a struct for tcp_redir which include proxy_service and event_base
+/**
+ * @brief Structure for TCP redirection service
+ */
 struct tcp_redir_service {
-    struct event_base *base;
-    struct proxy_service *ps;
-    struct sockaddr_in server_addr;
-};             
+    struct event_base *base;        /**< libevent base for event handling */
+    struct proxy_service *ps;       /**< proxy service configuration */ 
+    struct sockaddr_in server_addr; /**< server address information */
+};
 
 static struct bufferevent *current_bev = NULL; // Global variable to hold the current connection
 
-// define a callback function for read event
+/**
+ * @brief Read callback function for handling incoming data
+ *
+ * This callback function is triggered when data is received on the local connection.
+ * It reads the data from the input buffer and writes it to the output buffer.
+ *
+ * @param bev The bufferevent that triggered the callback
+ * @param arg The partner bufferevent
+ */
 static void read_cb(struct bufferevent *bev, void *arg)
 {
+    if (!bev || !arg) {
+        debug(LOG_ERR, "Invalid bufferevent parameters");
+        return;
+    }
+
     struct bufferevent *bev_out = (struct bufferevent *)arg;
     struct evbuffer *input = bufferevent_get_input(bev);
     struct evbuffer *output = bufferevent_get_output(bev_out);
-    evbuffer_add_buffer(output, input);
+
+    if (!input || !output) {
+        debug(LOG_ERR, "Failed to get buffers");
+        return;
+    }
+
+    size_t len = evbuffer_get_length(input);
+    if (len > 0) {
+        if (evbuffer_add_buffer(output, input) < 0) {
+            debug(LOG_ERR, "Failed to transfer buffer data");
+            return;
+        }
+        debug(LOG_DEBUG, "Transferred %zu bytes", len);
+    }
 }
 
-// define a callback function for event event
+/**
+ * @brief Event callback function for handling bufferevent state changes
+ *
+ * @param bev The bufferevent that triggered the callback
+ * @param events The events that occurred
+ * @param arg The partner bufferevent
+ */
 static void event_cb(struct bufferevent *bev, short events, void *arg)
 {
-    struct bufferevent *partner = (struct bufferevent *)arg;
+    struct bufferevent *partner = arg;
+    
+    if (!bev || !partner) {
+        debug(LOG_ERR, "Invalid bufferevent parameters");
+        return;
+    }
+
     if (events & BEV_EVENT_CONNECTED) {
-        debug(LOG_INFO, "connected");
-    } else if (events & BEV_EVENT_ERROR) {
-        debug(LOG_ERR, "connection error");
-        bufferevent_free(bev);
-        bufferevent_free(partner);
-        current_bev = NULL;
-    } else if (events & BEV_EVENT_EOF) {
-        debug(LOG_INFO, "connection closed");
-        bufferevent_free(bev);
-        bufferevent_free(partner);
-        current_bev = NULL;
+        debug(LOG_INFO, "Connection established successfully");
+        return;
+    }
+
+    if (events & (BEV_EVENT_ERROR | BEV_EVENT_EOF)) {
+        const char *msg = (events & BEV_EVENT_ERROR) ? 
+                         "Connection error occurred" : 
+                         "Connection closed by peer";
+        debug(LOG_INFO, "%s", msg);
+
+        if (current_bev) {
+            bufferevent_free(bev);
+            bufferevent_free(partner);
+            current_bev = NULL;
+        }
     }
 }
 

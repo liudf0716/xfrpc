@@ -168,71 +168,123 @@ is_decoder_inited()
 	return d != NULL;
 }
 
-// key_ret buffer len must be 16
-// the result should be free after using
+/**
+ * @brief Generates an encryption key using PBKDF2-HMAC-SHA1
+ *
+ * This function derives a cryptographic key from a token and salt using
+ * PBKDF2-HMAC-SHA1 with 64 iterations. The key length is fixed at 16 bytes
+ * for AES-128.
+ *
+ * @param token The input token used as the password
+ * @param token_len Length of the token
+ * @param salt The salt value used in key derivation
+ * @param key Buffer to store the generated key (must be at least block_size bytes)
+ * @param block_size Size of the key to generate (should be 16 for AES-128)
+ * @return Pointer to the generated key (same as key parameter)
+ */
 unsigned char *
-encrypt_key(const char *token, size_t token_len, const char *salt, uint8_t *key, size_t block_size) 
+encrypt_key(const char *token, size_t token_len, const char *salt, 
+			uint8_t *key, size_t block_size) 
 {
-	unsigned char *key_ret = key;
-	fastpbkdf2_hmac_sha1((void *)token, 
-						token_len, (void *)salt, 
-						strlen(salt), 
-						64, 
-						(void *)key_ret, 
-						block_size);
-	return key_ret;
-}
-
-// the result should be free after using
-unsigned char *
-encrypt_iv(unsigned char *iv_buf, size_t iv_len)
-{
-	if (iv_len < block_size || iv_buf == NULL) {
+	if (!token || !salt || !key || block_size != 16) {
 		return NULL;
 	}
 
-	srand((unsigned int) time(NULL));
-	for(size_t i=0; i<iv_len; i++) {
-		iv_buf[i] = (rand() % 254 ) + 1;
+	fastpbkdf2_hmac_sha1((void *)token, 
+						 token_len, 
+						 (void *)salt, 
+						 strlen(salt), 
+						 64,            // Number of iterations 
+						 (void *)key, 
+						 block_size);
+	return key;
+}
+
+/**
+ * @brief Generates a random initialization vector (IV)
+ *
+ * This function creates a cryptographically secure IV by generating
+ * random bytes between 1 and 255. The IV is used for AES-128-CFB
+ * encryption.
+ *
+ * @param iv_buf Buffer to store the generated IV
+ * @param iv_len Length of the IV to generate (must be >= block_size)
+ * @return Pointer to the generated IV buffer, or NULL if parameters are invalid
+ */
+unsigned char *
+encrypt_iv(unsigned char *iv_buf, size_t iv_len)
+{
+	if (!iv_buf || iv_len < block_size) {
+		return NULL;
+	}
+
+	srand((unsigned int)time(NULL));
+	for (size_t i = 0; i < iv_len; i++) {
+		iv_buf[i] = (rand() % 254) + 1;  // Generate values between 1 and 255
 	}
 
 	return iv_buf;
 }
 
-// using aes-128-cfb and nopadding
-size_t 
-encrypt_data(const uint8_t *src_data, size_t srclen, struct frp_coder *encoder, unsigned char **ret)
+/**
+ * @brief Encrypts data using AES-128-CFB cipher
+ *
+ * This function encrypts data using AES-128-CFB cipher mode with no padding.
+ * It uses a persistent EVP_CIPHER_CTX context (enc_ctx) for better performance
+ * across multiple calls.
+ *
+ * @param src_data Pointer to the source data buffer to encrypt
+ * @param srclen Length of the source data
+ * @param encoder Pointer to the frp_coder structure containing key and IV
+ * @param ret Address where the pointer to encrypted data will be stored
+ * @return The length of the encrypted data, or 0 if encryption fails
+ */
+size_t encrypt_data(const uint8_t *src_data, size_t srclen, 
+				   struct frp_coder *encoder, uint8_t **ret)
 {
-	uint8_t *intext = (uint8_t *)src_data;
-	assert(intext);
-	assert(encoder);
-	struct frp_coder *c = encoder;
 	int outlen = 0, tmplen = 0;
 	uint8_t *outbuf = NULL;
-	assert(c);
+	EVP_CIPHER_CTX *ctx = NULL;
+	
+	// Input validation
+	if (!src_data || !encoder || !ret) {
+		debug(LOG_ERR, "Invalid input parameters");
+		return 0;
+	}
 
-	outbuf = calloc(srclen, 1);
-	assert(outbuf);
+	// Allocate output buffer
+	outbuf = calloc(srclen + 1, 1);
+	if (!outbuf) {
+		debug(LOG_ERR, "Failed to allocate output buffer");
+		return 0;
+	}
 	*ret = outbuf;
 
+	// Initialize or reuse encryption context
 	if (!enc_ctx) {
 		enc_ctx = EVP_CIPHER_CTX_new();
-		EVP_EncryptInit_ex(enc_ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+		if (!enc_ctx) {
+			debug(LOG_ERR, "Failed to create cipher context");
+			return 0;
+		}
+		EVP_EncryptInit_ex(enc_ctx, EVP_aes_128_cfb(), NULL, 
+						  encoder->key, encoder->iv);
 	}
-	EVP_CIPHER_CTX *ctx = enc_ctx;
+	ctx = enc_ctx;
 
-	if(!EVP_EncryptUpdate(ctx, outbuf, &tmplen, intext, (int)srclen)) {
+	// Perform encryption
+	if (!EVP_EncryptUpdate(ctx, outbuf, &tmplen, src_data, srclen)) {
 		debug(LOG_ERR, "EVP_EncryptUpdate error!");
-		goto E_END;
+		return 0;
 	}
-	outlen += tmplen;
-	if(!EVP_EncryptFinal_ex(ctx, outbuf+tmplen, &tmplen)) {
-		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
-		goto E_END;
-	}
+	outlen = tmplen;
 
+	if (!EVP_EncryptFinal_ex(ctx, outbuf + outlen, &tmplen)) {
+		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
+		return 0;
+	}
 	outlen += tmplen;
-E_END:
+
 	return outlen;
 }
 

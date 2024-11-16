@@ -306,54 +306,70 @@ add_user_and_set_password(const char *username, const char *password)
     return 0;
 }
 
-static void
-process_plugin_conf(struct proxy_service *ps) 
+// Common defaults structure
+static struct plugin_defaults {
+	const char *name;
+	int local_port;
+	int remote_port;
+	const char *local_ip;
+} plugins[] = {
+	{"telnetd", XFRPC_PLUGIN_TELNETD_PORT, 0, "127.0.0.1"},
+	{"instaloader", XFRPC_PLUGIN_INSTALOADER_PORT, XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT, "127.0.0.1"},
+	{"instaloader_client", XFRPC_PLUGIN_INSTALOADER_PORT, XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT, "0.0.0.0"},
+	{"youtubedl", XFRPC_PLUGIN_YOUTUBEDL_PORT, XFRPC_PLUGIN_YOUTUBEDL_REMOTE_PORT, "127.0.0.1"},
+	{"httpd", XFRPC_PLUGIN_HTTPD_PORT, XFRPC_PLUGIN_HTTPD_REMOTE_PORT, "127.0.0.1"},
+	{NULL, 0, 0, NULL}
+};
+
+/**
+ * @brief Process plugin-specific configuration settings
+ *
+ * @param ps Pointer to proxy service structure containing plugin configuration
+ * 
+ * This function handles configuration for supported plugins:
+ * - telnetd: Telnet daemon plugin
+ * - instaloader: Instagram downloader service
+ * - instaloader_client: Instagram downloader client
+ * - youtubedl: YouTube downloader service
+ * - httpd: HTTP server plugin
+ *
+ * For each plugin it sets default values for:
+ * - Local port
+ * - Remote port (if applicable) 
+ * - Local IP address
+ * - Additional plugin-specific settings
+ *
+ * @note Will exit early if ps is NULL or no plugin is specified
+ */
+static void process_plugin_conf(struct proxy_service *ps) 
 {
 	if (!ps || !ps->plugin)
 		return;
 
-	if (strcmp(ps->plugin, "telnetd") == 0) {
-		if (ps->local_port == 0)
-			ps->local_port = XFRPC_PLUGIN_TELNETD_PORT;
-		if (ps->local_ip == NULL)
-			ps->local_ip = strdup("127.0.0.1");
+	// Find matching plugin configuration
+	for (int i = 0; plugins[i].name != NULL; i++) {
+		if (strcmp(ps->plugin, plugins[i].name) == 0) {
+			if (ps->local_port == 0)
+				ps->local_port = plugins[i].local_port;
+			if (ps->local_ip == NULL)
+				ps->local_ip = strdup(plugins[i].local_ip);
+			if (plugins[i].remote_port && ps->remote_port == 0)
+				ps->remote_port = plugins[i].remote_port;
 
-		if (ps->plugin_user !=NULL && ps->plugin_pwd != NULL) {
-			add_user_and_set_password (ps->plugin_user, ps->plugin_pwd);
+			// Plugin-specific additional configuration
+			if (strcmp(plugins[i].name, "telnetd") == 0) {
+				if (ps->plugin_user && ps->plugin_pwd) {
+					add_user_and_set_password(ps->plugin_user, ps->plugin_pwd);
+				}
+			} else if (strcmp(plugins[i].name, "httpd") == 0) {
+				if (ps->s_root_dir == NULL)
+					ps->s_root_dir = strdup("/var/www/html");
+			}
+			return;
 		}
-	} else if (strcmp(ps->plugin, "instaloader") == 0) {
-		if (ps->local_port == 0)
-			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
-		if (ps->remote_port == 0)
-			ps->remote_port = XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT;
-		if (ps->local_ip == NULL)
-			ps->local_ip = strdup("127.0.0.1");
-	} else if (strcmp(ps->plugin, "instaloader_client") == 0) {
-		if (ps->local_port == 0)
-			ps->local_port = XFRPC_PLUGIN_INSTALOADER_PORT;
-		if (ps->remote_port == 0)
-			ps->remote_port = XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT;
-		if (ps->local_ip == NULL)
-			ps->local_ip = strdup("0.0.0.0");
-	} else if (strcmp(ps->plugin, "youtubedl") == 0) {
-		if (ps->local_port == 0)
-			ps->local_port = XFRPC_PLUGIN_YOUTUBEDL_PORT;
-		if (ps->remote_port == 0)
-			ps->remote_port = XFRPC_PLUGIN_YOUTUBEDL_REMOTE_PORT;
-		if (ps->local_ip == NULL)
-			ps->local_ip = strdup("127.0.0.1");
-	} else if (strcmp(ps->plugin, "httpd") == 0) {
-		if (ps->local_port == 0)
-			ps->local_port = XFRPC_PLUGIN_HTTPD_PORT;
-		if (ps->local_ip == NULL)
-			ps->local_ip = strdup("127.0.0.1");
-		if (ps->remote_port == 0)
-			ps->remote_port = XFRPC_PLUGIN_HTTPD_REMOTE_PORT;
-		if (ps->s_root_dir == NULL)
-			ps->s_root_dir = strdup("/var/www/html");
-	} else {
-		debug(LOG_INFO, "plugin %s is not supportted", ps->plugin);
 	}
+
+	debug(LOG_INFO, "plugin %s is not supported", ps->plugin);
 }
 
 /**
@@ -371,8 +387,7 @@ process_plugin_conf(struct proxy_service *ps)
  * - Plugin configurations
  * - Group settings
  */
-static int 
-proxy_service_handler(void *user, const char *sect, const char *nm, const char *value)
+static int proxy_service_handler(void *user, const char *sect, const char *nm, const char *value)
 {
 	// Skip common section
 	if (strcmp(sect, "common") == 0) {

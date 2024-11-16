@@ -545,83 +545,89 @@ udp_packet_free(struct udp_packet *udp)
 	SAFE_FREE(udp);
 }
 
-// unmarshal udp packet msg
-struct udp_packet *
-udp_packet_unmarshal(const char *msg)
-{
-	struct json_object *j_udp = json_tokener_parse(msg);
-	if (j_udp == NULL)
-		return NULL;
-	struct udp_packet *udp = calloc(sizeof(struct udp_packet), 1);
-	assert(udp);
 
+/**
+ * @brief Parses a JSON object to create a UDP address structure
+ * 
+ * @param j_addr JSON object containing UDP address information
+ * @return struct udp_addr* Pointer to newly allocated UDP address structure,
+ *         or NULL if parsing fails or memory allocation fails
+ *
+ * @note The caller is responsible for freeing the returned structure
+ */
+static struct udp_addr *parse_udp_addr(struct json_object *j_addr) {
+	if (!j_addr) return NULL;
+
+	struct json_object *j_ip = NULL, *j_port = NULL, *j_zone = NULL;
+	if (!json_object_object_get_ex(j_addr, "IP", &j_ip) ||
+		!json_object_object_get_ex(j_addr, "Port", &j_port) ||
+		!json_object_object_get_ex(j_addr, "Zone", &j_zone)) {
+		return NULL;
+	}
+
+	struct udp_addr *addr = calloc(1, sizeof(struct udp_addr));
+	if (!addr) return NULL;
+
+	addr->addr = strdup(json_object_get_string(j_ip));
+	addr->zone = strdup(json_object_get_string(j_zone));
+	addr->port = json_object_get_int(j_port);
+
+	if (!addr->addr || !addr->zone) {
+		SAFE_FREE(addr->addr);
+		SAFE_FREE(addr->zone);
+		SAFE_FREE(addr);
+		return NULL;
+	}
+
+	return addr;
+}
+
+/**
+ * Unmarshal a UDP packet from a string message.
+ * 
+ * @param msg     The string message containing the UDP packet data to unmarshal.
+ * @return        Pointer to the unmarshaled UDP packet structure, or NULL if error occurs.
+ */
+struct udp_packet *udp_packet_unmarshal(const char *msg) {
+	if (!msg) return NULL;
+
+	struct json_object *j_udp = json_tokener_parse(msg);
+	if (!j_udp) return NULL;
+
+	struct udp_packet *udp = calloc(1, sizeof(struct udp_packet));
+	if (!udp) {
+		json_object_put(j_udp);
+		return NULL;
+	}
+
+	// Parse content
 	struct json_object *j_content = NULL;
 	if (!json_object_object_get_ex(j_udp, "c", &j_content)) {
-		goto END_ERROR;
+		goto error;
 	}
-	
 	udp->content = strdup(json_object_get_string(j_content));
-	assert(udp->content);
+	if (!udp->content) goto error;
 
+	// Parse local address
 	struct json_object *j_laddr = NULL;
 	if (!json_object_object_get_ex(j_udp, "l", &j_laddr)) {
-		goto END_ERROR;
+		goto error;
 	}
-	
-	struct json_object *j_laddr_ip = NULL;
-	if (!json_object_object_get_ex(j_laddr, "IP", &j_laddr_ip)) {
-		goto END_ERROR;
-	}
-	struct json_object *j_laddr_port = NULL;
-	if (!json_object_object_get_ex(j_laddr, "Port", &j_laddr_port)) {
-		goto END_ERROR;
-	}
-	
-	struct json_object *j_laddr_zone = NULL;
-	if (!json_object_object_get_ex(j_laddr, "Zone", &j_laddr_zone)) {
-		goto END_ERROR;
-	}
-	
-	udp->laddr = calloc(sizeof(struct udp_addr), 1);
-	assert(udp->laddr);
-	udp->laddr->addr = strdup(json_object_get_string(j_laddr_ip));
-	assert(udp->laddr->addr);
-	udp->laddr->port = json_object_get_int(j_laddr_port);
-	udp->laddr->zone = strdup(json_object_get_string(j_laddr_zone));
-	assert(udp->laddr->zone);
+	udp->laddr = parse_udp_addr(j_laddr);
+	if (!udp->laddr) goto error;
 
+	// Parse remote address
 	struct json_object *j_raddr = NULL;
 	if (!json_object_object_get_ex(j_udp, "r", &j_raddr)) {
-		goto END_ERROR;
+		goto error;
 	}
-	
-	struct json_object *j_raddr_ip = NULL;
-	if (!json_object_object_get_ex(j_raddr, "IP", &j_raddr_ip)) {
-		goto END_ERROR;
-	}
-	
-	struct json_object *j_raddr_port = NULL;
-	if (!json_object_object_get_ex(j_raddr, "Port", &j_raddr_port)) {
-		goto END_ERROR;
-	}
-		
-	struct json_object *j_raddr_zone = NULL;
-	if (!json_object_object_get_ex(j_raddr, "Zone", &j_raddr_zone)) {
-		goto END_ERROR;
-	}
-		
-	udp->raddr = calloc(sizeof(struct udp_addr), 1);
-	assert(udp->raddr);
-	udp->raddr->addr = strdup(json_object_get_string(j_raddr_ip));
-	assert(udp->raddr->addr);
-	udp->raddr->port = json_object_get_int(j_raddr_port);
-	udp->raddr->zone = strdup(json_object_get_string(j_raddr_zone));
-	assert(udp->raddr->zone);
+	udp->raddr = parse_udp_addr(j_raddr);
+	if (!udp->raddr) goto error;
 
 	json_object_put(j_udp);
 	return udp;
 
-END_ERROR:
+error:
 	json_object_put(j_udp);
 	udp_packet_free(udp);
 	return NULL;

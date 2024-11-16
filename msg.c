@@ -114,31 +114,70 @@ fill_custom_domains(struct json_object *j_ctl_req, const char *custom_domains)
 	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
 }
 
-struct work_conn *
-new_work_conn()
+/**
+ * @brief Creates a new work connection structure
+ *
+ * Allocates and initializes a new work connection structure with NULL run_id.
+ *
+ * @return struct work_conn* Pointer to newly allocated work connection structure,
+ *         or NULL if memory allocation fails
+ */
+struct work_conn *new_work_conn()
 {
 	struct work_conn *work_c = calloc(1, sizeof(struct work_conn));
-	assert(work_c);
-	if (work_c)
-		work_c->run_id = NULL;
-
+	if (!work_c) {
+		debug(LOG_ERR, "Failed to allocate work connection");
+		return NULL;
+	}
+	
+	work_c->run_id = NULL;
 	return work_c;
 }
 
-char *
-get_auth_key(const char *token, long int *timestamp)
+/**
+ * @brief Generates an authentication key from a token and timestamp
+ *
+ * @param token Input token string, can be NULL
+ * @param timestamp Pointer to store the current timestamp
+ * @return char* Generated auth key string or NULL on failure. Caller must free.
+ *
+ * The function:
+ * 1. Gets current timestamp
+ * 2. Creates seed by concatenating token and timestamp
+ * 3. Calculates MD5 hash of seed
+ * 4. Converts hash to hex string
+ */
+char *get_auth_key(const char *token, long int *timestamp) 
 {
-	*timestamp = time(NULL);
-	char seed[128] = {0};
-	snprintf(seed, 128, "%s%ld", token ? token : "", *timestamp);
+	if (!timestamp) {
+		return NULL;
+	}
 
+	// Get current timestamp
+	*timestamp = time(NULL);
+
+	// Create seed string
+	char seed[128] = {0};
+	int ret = snprintf(seed, sizeof(seed), "%s%ld", 
+					  token ? token : "", *timestamp);
+	if (ret < 0 || ret >= sizeof(seed)) {
+		return NULL;
+	}
+
+	// Calculate MD5 hash
 	uint8_t digest[16] = {0};
-	char *auth_key = (char *)malloc(33);
-	assert(auth_key);
 	calc_md5((const uint8_t *)seed, strlen(seed), digest);
 
-	for (int i = 0; i < 16; i++)
+	// Allocate auth key buffer
+	char *auth_key = malloc(33); // 32 hex chars + null terminator
+	if (!auth_key) {
+		return NULL;
+	}
+
+	// Convert hash to hex string
+	for (int i = 0; i < 16; i++) {
 		snprintf(auth_key + i * 2, 3, "%02x", digest[i]);
+	}
 
 	auth_key[32] = '\0';
 	return auth_key;

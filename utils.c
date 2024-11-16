@@ -20,24 +20,40 @@
 
 #include "utils.h"
 
-// s_sleep using select instead of sleep
-// s: second, u: usec 10^6usec = 1s
+/**
+ * High precision sleep function using select
+ * 
+ * This function provides a more precise sleep mechanism than standard sleep()
+ * by using select() system call. It can sleep for specified seconds and microseconds.
+ *
+ * @param s Number of seconds to sleep
+ * @param u Number of microseconds to sleep (1 second = 1,000,000 microseconds)
+ */
 void s_sleep(unsigned int s, unsigned int u)
 {
 	struct timeval timeout;
-
 	timeout.tv_sec = s;
 	timeout.tv_usec = u;
 	select(0, NULL, NULL, NULL, &timeout);
 }
 
-// is_valid_ip_address:
-// return 0:ip address illegal
+/**
+ * Validates IPv4 address string format
+ * 
+ * This function checks if the given string represents a valid IPv4 address
+ * in dotted decimal notation (e.g., "192.168.1.1").
+ *
+ * @param ip_address String containing the IP address to validate
+ * @return 1 if address is valid, 0 if invalid
+ */
 int is_valid_ip_address(const char *ip_address) 
 {
-    struct sockaddr_in sa;
-    int result = inet_pton(AF_INET, ip_address, &(sa.sin_addr));
-	return result;
+	if (!ip_address) {
+		return 0;
+	}
+	
+	struct sockaddr_in sa;
+	return inet_pton(AF_INET, ip_address, &(sa.sin_addr));
 }
 
 /**

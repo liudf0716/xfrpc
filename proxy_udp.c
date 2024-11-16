@@ -110,34 +110,85 @@ static int base64_decode(const char *src, int srclen, uint8_t *dst)
     return out - dst;
 }
 
-static void
-evutil_base64_decode(struct evbuffer *src, struct evbuffer *dst)
+#define UDP_MAX_PACKET_SIZE 1500
+#define BASE64_ENCODE_SIZE(x) ((((x) + 2) / 3) * 4 + 1)
+
+/**
+ * @brief Decodes base64 encoded data from a source buffer to a destination buffer
+ *
+ * @param src Source evbuffer containing the base64 encoded data
+ * @param dst Destination evbuffer where the decoded data will be stored
+ * @return int Returns 0 on success, -1 on failure
+ */
+static int evutil_base64_decode(struct evbuffer *src, struct evbuffer *dst)
 {
-    uint8_t dbuff[1500] = {0};
-    size_t len = evbuffer_get_length(src);
-    char *buf = (char *)malloc(len);
-    assert(buf != NULL);
-    memset(buf, 0, len);
-    evbuffer_remove(src, buf, len);
-    int decode_len = base64_decode(buf, len, dbuff);
-    assert(decode_len > 0 && decode_len < 1500);
-    evbuffer_add(dst, dbuff, decode_len);
-    free(buf);
+    if (!src || !dst) return -1;
+
+    size_t src_len = evbuffer_get_length(src);
+    if (src_len == 0) return 0;
+
+    char *src_buf = malloc(src_len);
+    if (!src_buf) return -1;
+
+    uint8_t *decode_buf = malloc(src_len); // Base64 decode is always smaller than input
+    if (!decode_buf) {
+        free(src_buf);
+        return -1;
+    }
+
+    evbuffer_remove(src, src_buf, src_len);
+    int decode_len = base64_decode(src_buf, src_len, decode_buf);
+    
+    if (decode_len > 0 && decode_len <= UDP_MAX_PACKET_SIZE) {
+        evbuffer_add(dst, decode_buf, decode_len);
+    }
+
+    free(src_buf);
+    free(decode_buf);
+    
+    return decode_len;
 }
 
-static void
-evutil_base64_encode(struct evbuffer *src, struct evbuffer *dst)
+/**
+ * @brief Encodes data from a source buffer to base64 format in a destination buffer
+ *
+ * @param src Source evbuffer containing data to be encoded
+ * @param dst Destination evbuffer where the base64 encoded data will be stored
+ * @return int Returns 0 on success, -1 on failure
+ *
+ * This function takes the contents of the source evbuffer, performs base64 encoding
+ * on the data, and stores the resulting encoded data in the destination evbuffer.
+ * The function uses the libevent evbuffer structure for buffer management.
+ */
+static int evutil_base64_encode(struct evbuffer *src, struct evbuffer *dst)
 {
-    char ebuff[2048] = {0}; // 2048 is enough for base64 encode
-    size_t len = evbuffer_get_length(src);
-    uint8_t *buf = (uint8_t *)malloc(len);
-    assert(buf != NULL);
-    memset(buf, 0, len);
-    evbuffer_remove(src, buf, len);
-    int encode_len = base64_encode(buf, len, ebuff);
-    assert(encode_len > 0 && encode_len < 2048);
-    evbuffer_add(dst, ebuff, encode_len);
-    free(buf);
+    if (!src || !dst) return -1;
+
+    size_t src_len = evbuffer_get_length(src);
+    if (src_len == 0) return 0;
+    if (src_len > UDP_MAX_PACKET_SIZE) return -1;
+
+    uint8_t *src_buf = malloc(src_len);
+    if (!src_buf) return -1;
+
+    size_t encode_buf_len = BASE64_ENCODE_SIZE(src_len);
+    char *encode_buf = malloc(encode_buf_len);
+    if (!encode_buf) {
+        free(src_buf);
+        return -1;
+    }
+
+    evbuffer_remove(src, src_buf, src_len);
+    int encode_len = base64_encode(src_buf, src_len, encode_buf);
+    
+    if (encode_len > 0) {
+        evbuffer_add(dst, encode_buf, encode_len);
+    }
+
+    free(src_buf);
+    free(encode_buf);
+    
+    return encode_len;
 }
 
 void 

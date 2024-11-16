@@ -39,11 +39,38 @@
 #include "common.h"
 #include "debug.h"
 
+/** 
+ * Default salt value used for key derivation
+ */
 static const char *default_salt = "frp";
+
+/**
+ * Block size in bytes for AES-128 encryption (16 bytes = 128 bits)
+ */
 static const size_t block_size = 16;
+
+/**
+ * Global encoder instance used for encryption operations
+ * Initialized by init_main_encoder()
+ */
 static struct frp_coder *main_encoder = NULL;
+
+/**
+ * Global decoder instance used for decryption operations
+ * Initialized by init_main_decoder()
+ */
 static struct frp_coder *main_decoder = NULL;
+
+/**
+ * Persistent encryption context for improved performance
+ * Reused across multiple encrypt_data() calls
+ */
 static EVP_CIPHER_CTX *enc_ctx = NULL;
+
+/**
+ * Persistent decryption context for improved performance
+ * Reused across multiple decrypt_data() calls
+ */
 static EVP_CIPHER_CTX *dec_ctx = NULL;
 
 /**

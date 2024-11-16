@@ -263,50 +263,93 @@ cleanup:
     if (decoded_output) evbuffer_free(decoded_output);
 }
 
-void 
-udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
+/**
+ * @brief Callback function for handling UDP proxy client-to-server data transfer
+ *
+ * This function processes UDP data received from a client, encodes it in base64,
+ * packages it into a UDP packet structure, and forwards it to the server.
+ * The data is sent either directly or through TCP multiplexing depending on configuration.
+ *
+ * The process includes:
+ * 1. Base64 encoding of received data
+ * 2. Creating and populating UDP packet structure
+ * 3. Marshalling packet to JSON format
+ * 4. Sending data to server based on TCP multiplexing configuration
+ *
+ * @param bev Bufferevent structure containing the received data
+ * @param ctx Context pointer containing proxy client information
+ *
+ * @note The function handles memory cleanup for all allocated resources
+ * @note The function will return early if client parameters are invalid or memory allocation fails
+ */
+void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
-    struct common_conf  *c_conf = get_common_config();
-	struct proxy_client *client = (struct proxy_client *)ctx;
-	assert(client);
-	struct bufferevent *partner = client->ctl_bev;
-	assert(partner);
-	struct evbuffer *src = bufferevent_get_input(bev);
+    struct proxy_client *client = (struct proxy_client *)ctx;
+    if (!client || !client->ctl_bev || !client->ps) {
+        debug(LOG_ERR, "Invalid client parameters");
+        return;
+    }
 
-	// encode src to base64
+    struct evbuffer *src = bufferevent_get_input(bev);
     struct evbuffer *base64_output = evbuffer_new();
-    evutil_base64_encode(src, base64_output);
-    evbuffer_free(src);
+    if (!base64_output) {
+        debug(LOG_ERR, "Failed to create base64 output buffer");
+        return;
+    }
 
-    // convert base64_output to udp_packet and json marshal
-    struct udp_packet *udp_pkt = (struct udp_packet *)malloc(sizeof(struct udp_packet));
-    assert(udp_pkt != NULL);
-    memset(udp_pkt, 0, sizeof(struct udp_packet));
+    // Encode data to base64
+    if (evutil_base64_encode(src, base64_output) < 0) {
+        debug(LOG_ERR, "Base64 encoding failed");
+        evbuffer_free(base64_output);
+        return;
+    }
+
+    // Create and populate UDP packet structure
+    struct udp_packet *udp_pkt = calloc(1, sizeof(struct udp_packet));
+    struct udp_addr *raddr = calloc(1, sizeof(struct udp_addr));
+    if (!udp_pkt || !raddr) {
+        debug(LOG_ERR, "Memory allocation failed");
+        goto cleanup;
+    }
+
     udp_pkt->content = (char *)evbuffer_pullup(base64_output, -1);
-    udp_pkt->raddr = (struct udp_addr *)malloc(sizeof(struct udp_addr));
-    assert(udp_pkt->raddr != NULL);
-    memset(udp_pkt->raddr, 0, sizeof(struct udp_addr));
-    udp_pkt->raddr->addr = client->ps->local_ip;
-    udp_pkt->raddr->port = client->ps->local_port;
-    char *buf = NULL;
-    new_udp_packet_marshal(udp_pkt, &buf);
-    size_t len = strlen(buf);
-    free(udp_pkt->raddr);
-    free(udp_pkt);
+    udp_pkt->raddr = raddr;
+    raddr->addr = client->ps->local_ip;
+    raddr->port = client->ps->local_port;
 
+    // Marshal UDP packet to JSON
+    char *json_buf = NULL;
+    if (new_udp_packet_marshal(udp_pkt, &json_buf) < 0 || !json_buf) {
+        debug(LOG_ERR, "UDP packet marshalling failed");
+        goto cleanup;
+    }
+
+    size_t json_len = strlen(json_buf);
+    struct common_conf *c_conf = get_common_config();
+
+    // Send data based on TCP multiplexing configuration
     if (!c_conf->tcp_mux) {
-		struct evbuffer *dst = bufferevent_get_output(partner);
-		evbuffer_add(dst, buf, len);
-        free(buf);
-		return;
-	}
+        struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+        if (evbuffer_add(dst, json_buf, json_len) < 0) {
+            debug(LOG_ERR, "Failed to add data to output buffer");
+        }
+    } else {
+        uint32_t written = tmux_stream_write(client->ctl_bev, 
+                                           (uint8_t *)json_buf, 
+                                           json_len, 
+                                           &client->stream);
+        if (written < json_len) {
+            debug(LOG_DEBUG, "Partial write on stream %d: %u/%zu bytes", 
+                  client->stream.id, written, json_len);
+            bufferevent_disable(bev, EV_READ);
+        }
+    }
 
-	uint32_t nr = tmux_stream_write(partner, (uint8_t *)buf, len, &client->stream);
-	if (nr < len) {
-		debug(LOG_DEBUG, "stream_id [%d] len is %d tmux_stream_write %d data, disable read", client->stream.id, len, nr);
-		bufferevent_disable(bev, EV_READ);
-	}
-	free(buf);
+cleanup:
+    free(json_buf);
+    free(raddr);
+    free(udp_pkt);
+    evbuffer_free(base64_output);
 }
 
 void 

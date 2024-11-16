@@ -479,19 +479,36 @@ common_handler(void *user, const char *section, const char *name, const char *va
 	return 1;
 }
 
-static void 
-init_common_conf(struct common_conf *config)
-{
-	if (!config)
+/**
+ * @brief Initializes common configuration with default values
+ *
+ * @param config Pointer to common_conf structure to initialize
+ *
+ * Default values set:
+ * - server_addr: "0.0.0.0"
+ * - server_port: 7000 
+ * - heartbeat_interval: 30 seconds
+ * - heartbeat_timeout: 90 seconds
+ * - tcp_mux: enabled (1)
+ * - is_router: disabled (0)
+ *
+ * @note Exits program if memory allocation fails (via assert)
+ * @note Does nothing if config pointer is NULL
+ */
+static void init_common_conf(struct common_conf *config) {
+	if (!config) {
 		return;
-	
-	config->server_addr			= strdup("0.0.0.0");
+	}
+
+	// Set default values
+	config->server_addr = strdup("127.0.0.1");
 	assert(config->server_addr);
-	config->server_port			= 7000;
-	config->heartbeat_interval 	= 30;
-	config->heartbeat_timeout	= 90;
-	config->tcp_mux				= 1;
-	config->is_router			= 0;
+	
+	config->server_port = 7000;
+	config->heartbeat_interval = 30;
+	config->heartbeat_timeout = 90;
+	config->tcp_mux = 1;
+	config->is_router = 0;
 }
 
 /**

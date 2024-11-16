@@ -84,41 +84,73 @@ free_evp_cipher_ctx()
 	}
 }
 
-size_t 
-get_block_size()
+/**
+ * @brief Returns the cipher block size
+ *
+ * This function returns the block size used for AES encryption/decryption.
+ * Currently fixed at 16 bytes for AES-128.
+ *
+ * @return Size of the encryption block in bytes
+ */
+size_t get_block_size()
 {
 	return block_size;
 }
 
-struct frp_coder *
-new_coder(const char *token, const char *salt)
+/**
+ * @brief Creates a new frp_coder instance
+ *
+ * This function allocates and initializes a new frp_coder structure with the
+ * specified token and salt. It generates the encryption key and IV automatically.
+ *
+ * @param token Authentication token (will use empty string if NULL)
+ * @param salt Salt value for key derivation
+ * @return Pointer to new frp_coder instance, or NULL on allocation failure
+ */
+struct frp_coder *new_coder(const char *token, const char *salt)
 {
 	struct frp_coder *enc = calloc(sizeof(struct frp_coder), 1);
-	assert(enc);
+	if (!enc) return NULL;
 
-	enc->token = token ? strdup(token):strdup("\0");
-	enc->salt = strdup(salt);
+	enc->token = token ? strdup(token) : strdup("");
+	enc->salt = salt ? strdup(salt) : NULL;
+	
+	if (!enc->token || !enc->salt) {
+		free_frp_coder(enc);
+		return NULL;
+	}
+
 	encrypt_key(enc->token, strlen(enc->token), enc->salt, enc->key, block_size);
 	encrypt_iv(enc->iv, block_size);
 	return enc;
 }
 
-struct frp_coder *
-clone_coder(const struct frp_coder *coder)
+/**
+ * @brief Creates a deep copy of a frp_coder instance
+ *
+ * This function creates a new frp_coder structure with identical contents
+ * to the source coder, including new copies of the token and salt strings.
+ *
+ * @param coder Source frp_coder to clone
+ * @return Pointer to cloned frp_coder instance, or NULL on allocation failure
+ */
+struct frp_coder *clone_coder(const struct frp_coder *coder)
 {
-	assert(coder);
+	if (!coder) return NULL;
+
 	struct frp_coder *enc = calloc(sizeof(struct frp_coder), 1);
+	if (!enc) return NULL;
+
 	memcpy(enc, coder, sizeof(*coder));
 	enc->token = strdup(coder->token);
-	enc->salt 	= strdup(coder->salt);
+	enc->salt = strdup(coder->salt);
+
+	if (!enc->token || !enc->salt) {
+		free_frp_coder(enc);
+		return NULL;
+	}
 
 	return enc;
-}
-
-size_t 
-get_encrypt_block_size()
-{
-	return block_size;
 }
 
 /**

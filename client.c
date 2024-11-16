@@ -236,25 +236,62 @@ send_client_data_tail(struct proxy_client *client)
 	return send_l;
 }
 
+/**
+ * @brief Frees resources associated with a proxy client
+ * 
+ * @param client Pointer to proxy client to be freed
+ * @note If client is NULL, function returns silently
+ */
 static void 
 free_proxy_client(struct proxy_client *client)
 {
-	debug(LOG_DEBUG, "free client %d", client->stream_id);
-	if (client->local_proxy_bev) bufferevent_free(client->local_proxy_bev);
+	if (!client) {
+		debug(LOG_DEBUG, "Attempted to free NULL proxy client");
+		return;
+	}
+
+	debug(LOG_DEBUG, "Freeing proxy client with stream ID: %d", client->stream_id);
+
+	if (client->local_proxy_bev) {
+		bufferevent_free(client->local_proxy_bev);
+		client->local_proxy_bev = NULL;
+	}
+
+	// Free any data tail if it exists
+	if (client->data_tail) {
+		free(client->data_tail);
+		client->data_tail = NULL;
+		client->data_tail_size = 0;
+	}
+
 	free(client);
 }
 
-static void 
+/**
+ * @brief Removes a proxy client from the global hash table and frees its resources
+ * 
+ * @param client Pointer to proxy client to be deleted
+ * @return 0 on success, -1 on failure
+ */
+static int
 del_proxy_client(struct proxy_client *client)
 {
-	if (!client || !all_pc ) {
-		debug(LOG_INFO, "all_pc or client is NULL");
-		return;
+	if (!client) {
+		debug(LOG_INFO, "Cannot delete NULL proxy client");
+		return -1;
 	}
 	
-	HASH_DEL(all_pc, client);
+	if (!all_pc) {
+		debug(LOG_INFO, "Global proxy client table is NULL");
+		return -1;
+	}
+
+	debug(LOG_DEBUG, "Deleting proxy client with stream ID: %d", client->stream_id);
 	
+	HASH_DEL(all_pc, client);
 	free_proxy_client(client);
+	
+	return 0;
 }
 
 /**

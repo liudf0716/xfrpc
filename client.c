@@ -274,29 +274,67 @@ get_proxy_client(uint32_t sid)
 	return pc;
 }
 
+/**
+ * @brief Creates and initializes a new proxy client
+ * 
+ * @return struct proxy_client* Pointer to newly created proxy client, NULL if allocation fails
+ */
 struct proxy_client *
-new_proxy_client()
+new_proxy_client() 
 {
-	struct proxy_client *client = calloc(1, sizeof(struct proxy_client));
-	assert(client);
-	client->stream_id   = get_next_session_id();
+	struct proxy_client *client = NULL;
+	
+	// Allocate memory for new client
+	client = calloc(1, sizeof(struct proxy_client));
+	if (!client) {
+		debug(LOG_ERR, "Failed to allocate memory for proxy client");
+		return NULL;
+	}
+
+	// Initialize client fields
+	client->stream_id = get_next_session_id();
+	
+	// Initialize stream
 	init_tmux_stream(&client->stream, client->stream_id, INIT);
+
+	// Add to hash table
 	HASH_ADD_INT(all_pc, stream_id, client);
+	debug(LOG_DEBUG, "Created new proxy client with stream ID: %d", client->stream_id);
 	
 	return client;
 }
 
-void
-clear_all_proxy_client()
+
+/**
+ * @brief Clears and releases all proxy client resources
+ * 
+ * Frees all memory allocated for proxy clients and resets related data structures.
+ * This function should be called during cleanup or shutdown to prevent memory leaks.
+ */
+void clear_all_proxy_client()
 {
+	// Clear stream state first
 	clear_stream();
 
-	if (!all_pc) return;	
-
-	struct proxy_client *client, *tmp;
-	HASH_ITER(hh, all_pc, client, tmp) {
-		HASH_DEL(all_pc, client);
-		free_proxy_client(client);
+	// Early return if no proxy clients exist
+	if (!all_pc) {
+		debug(LOG_DEBUG, "No proxy clients to clear");
+		return;
 	}
+
+	struct proxy_client *current = NULL;
+	struct proxy_client *temp = NULL;
+
+	// Iterate through all proxy clients and free them
+	HASH_ITER(hh, all_pc, current, temp) {
+		if (current) {
+			HASH_DEL(all_pc, current);
+			free_proxy_client(current);
+		}
+	}
+
+	// Ensure the hash table pointer is nulled
 	all_pc = NULL;
+
+	debug(LOG_DEBUG, "All proxy clients cleared successfully");
 }

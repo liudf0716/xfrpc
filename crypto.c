@@ -142,30 +142,54 @@ init_main_decoder(const uint8_t *iv)
 	return main_decoder;
 }
 
-struct frp_coder *
-get_main_encoder() 
+/**
+ * @brief Returns the main encoder instance
+ *
+ * This function provides access to the global main encoder used for encryption.
+ *
+ * @return Pointer to the main encoder instance, or NULL if not initialized
+ */
+struct frp_coder *get_main_encoder() 
 {
 	return main_encoder;
 }
 
-struct frp_coder *
-get_main_decoder()
+/**
+ * @brief Returns the main decoder instance
+ *
+ * This function provides access to the global main decoder used for decryption.
+ *
+ * @return Pointer to the main decoder instance, or NULL if not initialized
+ */
+struct frp_coder *get_main_decoder()
 {
 	return main_decoder;
 }
 
-int 
-is_encoder_inited()
+/**
+ * @brief Checks if the main encoder is initialized
+ *
+ * This function verifies whether the main encoder has been properly initialized
+ * and is ready for use.
+ *
+ * @return 1 if encoder is initialized, 0 otherwise
+ */
+int is_encoder_inited()
 {
-	struct frp_coder *e = get_main_encoder();
-	return e != NULL;
+	return get_main_encoder() != NULL;
 }
 
-int 
-is_decoder_inited()
+/**
+ * @brief Checks if the main decoder is initialized
+ *
+ * This function verifies whether the main decoder has been properly initialized
+ * and is ready for use.
+ *
+ * @return 1 if decoder is initialized, 0 otherwise
+ */
+int is_decoder_inited()
 {
-	struct frp_coder *d = get_main_decoder();
-	return d != NULL;
+	return get_main_decoder() != NULL;
 }
 
 /**
@@ -182,8 +206,7 @@ is_decoder_inited()
  * @param block_size Size of the key to generate (should be 16 for AES-128)
  * @return Pointer to the generated key (same as key parameter)
  */
-unsigned char *
-encrypt_key(const char *token, size_t token_len, const char *salt, 
+unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt, 
 			uint8_t *key, size_t block_size) 
 {
 	if (!token || !salt || !key || block_size != 16) {
@@ -211,8 +234,7 @@ encrypt_key(const char *token, size_t token_len, const char *salt,
  * @param iv_len Length of the IV to generate (must be >= block_size)
  * @return Pointer to the generated IV buffer, or NULL if parameters are invalid
  */
-unsigned char *
-encrypt_iv(unsigned char *iv_buf, size_t iv_len)
+unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 {
 	if (!iv_buf || iv_len < block_size) {
 		return NULL;

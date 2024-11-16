@@ -99,40 +99,45 @@ xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-int 
-is_ftp_proxy(const struct proxy_service *ps)
-{
-	if (! ps || ! ps->proxy_type)
+/**
+ * @brief Check if proxy service is of a specific type
+ * @param ps Pointer to proxy service structure
+ * @param type String representing the proxy type to check
+ * @param extra_check Additional condition to verify (pass 1 to ignore)
+ * @return 1 if matches, 0 otherwise
+ */
+static int is_proxy_type(const struct proxy_service *ps, const char *type, int extra_check) {
+	if (!ps || !ps->proxy_type) {
 		return 0;
-
-	if (0 == strcmp(ps->proxy_type, "ftp") && ps->remote_data_port > 0)
-		return 1;
-
-	return 0;
+	}
+	return (strcmp(ps->proxy_type, type) == 0) && extra_check;
 }
 
-int
-is_socks5_proxy(const struct proxy_service *ps)
-{
-	if (! ps || ! ps->proxy_type)
-		return 0;
-
-	if (0 == strcmp(ps->proxy_type, "socks5"))
-		return 1;
-
-	return 0;
+/**
+ * @brief Check if proxy service is FTP type
+ * @param ps Pointer to proxy service structure
+ * @return 1 if FTP proxy, 0 otherwise
+ */
+int is_ftp_proxy(const struct proxy_service *ps) {
+	return is_proxy_type(ps, "ftp", ps->remote_data_port > 0);
 }
 
-int
-is_udp_proxy (const struct proxy_service *ps)
-{
-	if (! ps || ! ps->proxy_type)
-		return 0;
+/**
+ * @brief Check if proxy service is SOCKS5 type
+ * @param ps Pointer to proxy service structure
+ * @return 1 if SOCKS5 proxy, 0 otherwise
+ */
+int is_socks5_proxy(const struct proxy_service *ps) {
+	return is_proxy_type(ps, "socks5", 1);
+}
 
-	if (0 == strcmp(ps->proxy_type, "udp"))
-		return 1;
-
-	return 0;
+/**
+ * @brief Check if proxy service is UDP type
+ * @param ps Pointer to proxy service structure
+ * @return 1 if UDP proxy, 0 otherwise
+ */
+int is_udp_proxy(const struct proxy_service *ps) {
+	return is_proxy_type(ps, "udp", 1);
 }
 
 /**

@@ -452,30 +452,54 @@ proxy_service_handler(void *user, const char *sect, const char *nm, const char *
 	return 1;
 }
 
-static int 
-common_handler(void *user, const char *section, const char *name, const char *value)
+/**
+ * @brief Handles parsing of the common section configuration parameters
+ *
+ * @param user Pointer to the common_conf structure to populate
+ * @param section Current section name being parsed
+ * @param name Parameter name being parsed
+ * @param value Parameter value being parsed
+ * @return int Returns 1 if parameter was handled, 0 otherwise
+ *
+ * This function processes the following common configuration parameters:
+ * - server_addr: Server address to connect to
+ * - server_port: Server port number
+ * - heartbeat_interval: Interval between heartbeat messages
+ * - heartbeat_timeout: Timeout for heartbeat responses
+ * - token: Authentication token
+ * - tcp_mux: TCP multiplexing flag
+ *
+ * @note Uses assert() to verify memory allocations
+ */
+static int common_handler(void *user, const char *section, const char *name, const char *value)
 {
 	struct common_conf *config = (struct common_conf *)user;
 	
 	#define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+	
 	if (MATCH("common", "server_addr")) {
 		SAFE_FREE(config->server_addr);
 		config->server_addr = strdup(value);
 		assert(config->server_addr);
-	} else if (MATCH("common", "server_port")) {
+	} 
+	else if (MATCH("common", "server_port")) {
 		config->server_port = atoi(value);
-	} else if (MATCH("common", "heartbeat_interval")) {
+	}
+	else if (MATCH("common", "heartbeat_interval")) {
 		config->heartbeat_interval = atoi(value);
-	} else if (MATCH("common", "heartbeat_timeout")) {
+	}
+	else if (MATCH("common", "heartbeat_timeout")) {
 		config->heartbeat_timeout = atoi(value);
-	} else if (MATCH("common", "token")) {
+	}
+	else if (MATCH("common", "token")) {
 		SAFE_FREE(config->auth_token);
 		config->auth_token = strdup(value);
 		assert(config->auth_token);
-	} else if (MATCH("common", "tcp_mux")) {
-		config->tcp_mux = atoi(value);
-		config->tcp_mux = !!config->tcp_mux;
 	}
+	else if (MATCH("common", "tcp_mux")) {
+		config->tcp_mux = !!atoi(value); // Convert to boolean
+	}
+	
 	return 1;
 }
 

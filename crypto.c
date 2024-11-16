@@ -46,16 +46,29 @@ static struct frp_coder *main_decoder = NULL;
 static EVP_CIPHER_CTX *enc_ctx = NULL;
 static EVP_CIPHER_CTX *dec_ctx = NULL;
 
-static void
-free_frp_coder(struct frp_coder *coder)
+/**
+ * @brief Frees all resources associated with a frp_coder structure
+ *
+ * This helper function safely deallocates the memory used by a frp_coder
+ * structure and its members (salt and token).
+ *
+ * @param coder Pointer to the frp_coder structure to be freed
+ */
+static void free_frp_coder(struct frp_coder *coder)
 {
-	free(coder->salt);
-	free(coder->token);
-	free(coder);
+	if (!coder) return;
+	SAFE_FREE(coder->salt);
+	SAFE_FREE(coder->token);
+	SAFE_FREE(coder);
 }
 
-static void
-free_all_frp_coder()
+/**
+ * @brief Frees both main encoder and decoder instances
+ *
+ * This helper function releases the memory used by the global main_encoder
+ * and main_decoder instances.
+ */
+static void free_all_frp_coders(void)
 {
 	if (main_encoder) {
 		free_frp_coder(main_encoder);
@@ -68,10 +81,17 @@ free_all_frp_coder()
 	}
 }
 
-void 
-free_evp_cipher_ctx() 
+/**
+ * @brief Cleans up all encryption/decryption resources
+ *
+ * This function performs complete cleanup of all crypto-related resources:
+ * - Frees the main encoder and decoder
+ * - Releases the encryption and decryption contexts
+ * Should be called before program termination.
+ */
+void free_crypto_resources(void)
 {
-	free_all_frp_coder();
+	free_all_frp_coders();
 
 	if (enc_ctx) {
 		EVP_CIPHER_CTX_free(enc_ctx);

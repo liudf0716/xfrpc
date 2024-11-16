@@ -50,52 +50,89 @@
 
 static struct proxy_client 	*all_pc = NULL;
 
-static void
-xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
-{
+/**
+ * @brief Event callback for worker connection events
+ * 
+ * @param bev Bufferevent that triggered the callback
+ * @param what Type of event that occurred
+ * @param ctx Context pointer (unused)
+ */
+static void xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx) {
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		debug(LOG_DEBUG, "working connection closed!");
+		debug(LOG_DEBUG, "Working connection closed");
 		bufferevent_free(bev);
 	}
 }
 
-void 
-xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx)
-{
+/**
+ * @brief Handles post-connection data sending for proxy clients
+ * 
+ * @param client Proxy client to handle
+ * @return int 0 on success, -1 on failure
+ */
+static int handle_post_connection_data(struct proxy_client *client) {
+	if (!client) return -1;
+
+	if (client->data_tail_size > 0) {
+		debug(LOG_DEBUG, "Sending pending client data");
+		return send_client_data_tail(client);
+	} else if (is_socks5_proxy(client->ps)) {
+		struct ring_buffer *rb = &client->stream.rx_ring;
+		if (rb->sz > 0) {
+			tx_ring_buffer_write(client->local_proxy_bev, rb, rb->sz);
+		}
+		client->state = SOCKS5_ESTABLISHED;
+		return 0;
+	}
+	return 0;
+}
+
+/**
+ * @brief Handles proxy client disconnection
+ * 
+ * @param client Proxy client that disconnected
+ * @param bev Bufferevent associated with the connection
+ * @param error_msg Error message to log
+ */
+static void handle_proxy_disconnect(struct proxy_client *client, 
+								  struct bufferevent *bev, 
+								  const char *error_msg) {
+	if (!client || !client->ps) return;
+
+	debug(LOG_DEBUG, "Proxy close connection %s - stream_id %d: %s",
+		  error_msg, client->stream_id, strerror(errno));
+
+	if (tmux_stream_close(client->ctl_bev, &client->stream)) {
+		bufferevent_free(bev);
+		client->local_proxy_bev = NULL;
+	}
+}
+
+/**
+ * @brief Event callback for proxy connection events
+ * 
+ * @param bev Bufferevent that triggered the callback
+ * @param what Type of event that occurred
+ * @param ctx Context pointer (proxy client)
+ */
+void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 	struct proxy_client *client = ctx;
-	assert(client);
+	if (!client) {
+		debug(LOG_ERR, "Invalid proxy client context");
+		return;
+	}
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		if (0 == strcmp(client->ps->proxy_type, "tcp"))
-			debug(LOG_DEBUG, "xfrpc tcp proxy close connect server [%s:%d] stream_id %d: %s", 
-							client->ps->local_ip, client->ps->local_port, 
-							client->stream_id, strerror(errno));
-		else if (0 == strcmp(client->ps->proxy_type, "socks5"))
-			debug(LOG_DEBUG, "xfrpc socks5 proxy close connect [%d:%d]  stream_id %d: %s", 
-							client->remote_addr.type, client->remote_addr.port,
-							client->stream_id, strerror(errno));
-		else
-			debug(LOG_DEBUG, "xfrpc proxy close connect server [%s:%d] stream_id %d: %s", 
-							client->ps->local_ip, client->ps->local_port, 
-							client->stream_id, strerror(errno));
-		if (tmux_stream_close(client->ctl_bev, &client->stream)) {
-			bufferevent_free(bev);
-			client->local_proxy_bev = NULL;
+		const char *error_msg;
+		if (is_socks5_proxy(client->ps)) {
+			error_msg = "socks5 proxy";
+		} else {
+			error_msg = "server";
 		}
+		handle_proxy_disconnect(client, bev, error_msg);
 	} else if (what & BEV_EVENT_CONNECTED) {
-		debug(LOG_DEBUG, "what [%d] client [%d] connected : %s", what, client->stream_id, strerror(errno));
-		if (client->data_tail_size > 0) {
-			debug(LOG_DEBUG, "send client data ...");
-			send_client_data_tail(client);		
-		} else if (is_socks5_proxy(client->ps)) {
-		    // if rb is not empty, send data
-			// rb is client->stream.rx_ring
-			struct ring_buffer *rb = &client->stream.rx_ring;
-			if (rb->sz > 0)
-				tx_ring_buffer_write(client->local_proxy_bev, rb, rb->sz);
-
-			client->state = SOCKS5_ESTABLISHED;
-		}
+		debug(LOG_DEBUG, "Client %d connected", client->stream_id);
+		handle_post_connection_data(client);
 	}
 }
 

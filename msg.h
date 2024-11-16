@@ -1,31 +1,6 @@
-/* vim: set et ts=4 sts=4 sw=4 : */
-/********************************************************************\
- * This program is free software; you can redistribute it and/or    *
- * modify it under the terms of the GNU General Public License as   *
- * published by the Free Software Foundation; either version 2 of   *
- * the License, or (at your option) any later version.              *
- *                                                                  *
- * This program is distributed in the hope that it will be useful,  *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of   *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the    *
- * GNU General Public License for more details.                     *
- *                                                                  *
- * You should have received a copy of the GNU General Public License*
- * along with this program; if not, contact:                        *
- *                                                                  *
- * Free Software Foundation           Voice:  +1-617-542-5942       *
- * 59 Temple Place - Suite 330        Fax:    +1-617-542-2652       *
- * Boston, MA  02111-1307,  USA       gnu@gnu.org                   *
- *                                                                  *
-\********************************************************************/
 
-/** @file msg.h
-    @brief xfrpc msg struct
-    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
-*/
-
-#ifndef _MSG_H_
-#define _MSG_H_
+#ifndef XFRPC_MSG_H
+#define XFRPC_MSG_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,70 +39,79 @@ enum msg_type {
 	TypeNatHoleSid            = '5',
 };
 
+// General response structure for basic server responses
 struct general_response {
-	int	code;
-	char	*msg;
+	int     code;       // Response code
+	char    *msg;       // Response message
 };
 
+// Control response structure for server control messages
 struct control_response {
-	int	type;
-	int	code;
-	char	*msg;
+	int     type;       // Control message type
+	int     code;       // Response code
+	char    *msg;       // Response message
 };
 
+// Response structure for new proxy requests
 struct new_proxy_response {
-	char 	*run_id;
-	char 	*proxy_name;
-	char	*error;
-	int	remote_port;
+	char    *run_id;        // Unique run identifier
+	char    *proxy_name;    // Name of the proxy
+	char    *error;         // Error message if any
+	int     remote_port;    // Remote port number
 };
 
+// Structure for work connection information
 struct work_conn {
-	char *run_id;
+	char    *run_id;        // Unique run identifier
 };
 
+// Structure for UDP address information
 struct udp_addr {
-	char *addr;
-	int port;
-	char *zone;
+	char    *addr;          // IP address
+	int     port;           // Port number
+	char    *zone;          // Network zone
 };
 
+// Structure for UDP packet data
 struct udp_packet {
-	char *content; // base64
-	struct udp_addr *laddr;
-	struct udp_addr *raddr;
+	char            *content;    // Base64 encoded content
+	struct udp_addr *laddr;     // Local address
+	struct udp_addr *raddr;     // Remote address
 };
 
+// Header structure for all messages with packed attribute to ensure exact memory layout
 struct __attribute__((__packed__)) msg_hdr {
-	char		type;
-	uint64_t	length;
-	uint8_t		data[];
+	char        type;       // Message type identifier
+	uint64_t    length;     // Length of the data payload
+	uint8_t     data[];     // Flexible array member for payload
 };
 
+// Response structure for start work connection requests
 struct start_work_conn_resp {
-	char 	*proxy_name;
+	char    *proxy_name;    // Name of the proxy for the work connection
 };
 
+// Marshalling functions (Convert structures to messages)
 int new_udp_packet_marshal(const struct udp_packet *udp, char **msg);
 int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg);
-char *get_auth_key(const char *token, long int *timestamp);
+int new_work_conn_marshal(const struct work_conn *work_c, char **msg);
 size_t login_request_marshal(char **msg);
 
-// tranlate control request to json string
+// Authentication helper
+char *get_auth_key(const char *token, long int *timestamp);
+
+// Unmarshalling functions (Parse JSON to structures)
 struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres);
 struct login_resp *login_resp_unmarshal(const char *jres);
 struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg);
-
-// parse json string to control response
 struct control_response *control_response_unmarshal(const char *jres);
-struct work_conn *new_work_conn();
-int new_work_conn_marshal(const struct work_conn *work_c, char **msg);
-
-// parse json string to udp packet
 struct udp_packet *udp_packet_unmarshal(const char *jres);
 
-void udp_packet_free(struct udp_packet *udp);
+// Object creation
+struct work_conn *new_work_conn(void);
 
+// Cleanup functions
+void udp_packet_free(struct udp_packet *udp);
 void control_response_free(struct control_response *res);
 
-#endif //_MSG_H_
+#endif

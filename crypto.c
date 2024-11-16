@@ -121,8 +121,16 @@ get_encrypt_block_size()
 	return block_size;
 }
 
-struct frp_coder *
-init_main_encoder() 
+/**
+ * @brief Initializes the main encoder instance
+ *
+ * This function initializes the main encoder used for encryption by either:
+ * 1. Cloning the existing decoder if one exists, or
+ * 2. Creating a new encoder using the authentication token from common config
+ *
+ * @return Pointer to the initialized main encoder instance
+ */
+struct frp_coder *init_main_encoder() 
 {
 	if (main_decoder) {
 		main_encoder = clone_coder(main_decoder);
@@ -133,8 +141,16 @@ init_main_encoder()
 	return main_encoder;
 }
 
-struct frp_coder *
-init_main_decoder(const uint8_t *iv)
+/**
+ * @brief Initializes the main decoder instance
+ *
+ * This function creates a new decoder using the authentication token from 
+ * common config and initializes it with the provided IV (initialization vector).
+ *
+ * @param iv Pointer to the initialization vector buffer (must be block_size bytes)
+ * @return Pointer to the initialized main decoder instance
+ */
+struct frp_coder *init_main_decoder(const uint8_t *iv)
 {
 	struct common_conf *c_conf = get_common_config();
 	main_decoder = new_coder(c_conf->auth_token, default_salt);

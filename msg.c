@@ -58,60 +58,113 @@ const char msg_types[] = {TypeLogin,
 						  TypePong,
 						  TypeUDPPacket};
 
-static void 
-calc_md5(const uint8_t *data, int datalen, uint8_t *digest) {
-    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-    if (!mdctx) {
-        debug(LOG_ERR, "Failed to create MD5 context");
-        return;
-    }
+/**
+ * @brief Calculate MD5 hash of input data
+ *
+ * @param data Input data buffer to hash
+ * @param datalen Length of input data in bytes
+ * @param digest Output buffer for MD5 hash (must be at least 16 bytes)
+ * @return int 0 on success, -1 on failure
+ * 
+ * @note This function uses OpenSSL's EVP interface to calculate MD5 hash.
+ *       The digest parameter must point to a buffer of at least 16 bytes.
+ */
+static int calc_md5(const uint8_t *data, int datalen, uint8_t *digest)
+{
+	if (!data || !digest || datalen <= 0) {
+		debug(LOG_ERR, "Invalid parameters for MD5 calculation");
+		return -1;
+	}
 
-    if (EVP_DigestInit_ex(mdctx, EVP_md5(), NULL) != 1) {
-        debug(LOG_ERR, "Failed to initialize MD5");
-        EVP_MD_CTX_free(mdctx);
-        return;
-    }
+	EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+	if (!mdctx) {
+		debug(LOG_ERR, "Failed to create MD5 context");
+		return -1;
+	}
 
-    if (EVP_DigestUpdate(mdctx, data, datalen) != 1) {
-        debug(LOG_ERR, "Failed to update MD5");
-        EVP_MD_CTX_free(mdctx);
-        return;
-    }
+	int ret = -1;
+	const EVP_MD *md = EVP_md5();
+	if (!md) {
+		debug(LOG_ERR, "Failed to get MD5 algorithm");
+		goto cleanup;
+	}
 
-    unsigned int md_len = 0;
-    if (EVP_DigestFinal_ex(mdctx, digest, &md_len) != 1) {
-        debug(LOG_ERR, "Failed to finalize MD5");
-        EVP_MD_CTX_free(mdctx);
-        return;
-    }
+	if (EVP_DigestInit_ex(mdctx, md, NULL) != 1) {
+		debug(LOG_ERR, "Failed to initialize MD5");
+		goto cleanup;
+	}
 
-    EVP_MD_CTX_free(mdctx);
+	if (EVP_DigestUpdate(mdctx, data, datalen) != 1) {
+		debug(LOG_ERR, "Failed to update MD5");
+		goto cleanup;
+	}
+
+	unsigned int md_len = 0;
+	if (EVP_DigestFinal_ex(mdctx, digest, &md_len) != 1) {
+		debug(LOG_ERR, "Failed to finalize MD5");
+		goto cleanup;
+	}
+
+	ret = 0; // Success
+
+cleanup:
+	EVP_MD_CTX_free(mdctx);
+	return ret;
 }
 
-static void
-fill_custom_domains(struct json_object *j_ctl_req, const char *custom_domains)
+/**
+ * @brief Fills a JSON object with an array of custom domain names
+ *
+ * @param j_ctl_req JSON object to add custom domains array to
+ * @param custom_domains Comma-separated string of domain names
+ * @return void
+ */
+static void fill_custom_domains(struct json_object *j_ctl_req, const char *custom_domains) 
 {
-	struct json_object *jarray_cdomains = json_object_new_array();
-	assert(jarray_cdomains);
-	char *tmp = strdup(custom_domains);
-	assert(tmp);
-	char *tok = tmp, *end = tmp;
-	while (tok != NULL)
-	{
-		strsep(&end, ",");
-
-		int dname_len = strlen(tok) + 1;
-		char *dname_buf = (char *)calloc(1, dname_len);
-		assert(dname_buf);
-		dns_unified(tok, dname_buf, dname_len);
-		json_object_array_add(jarray_cdomains, json_object_new_string(dname_buf));
-
-		free(dname_buf);
-		tok = end;
+	if (!j_ctl_req || !custom_domains) {
+		return;
 	}
-	SAFE_FREE(tmp);
 
-	json_object_object_add(j_ctl_req, "custom_domains", jarray_cdomains);
+	struct json_object *domain_array = json_object_new_array();
+	if (!domain_array) {
+		return;
+	}
+
+	char *domains_copy = strdup(custom_domains);
+	if (!domains_copy) {
+		json_object_put(domain_array);
+		return;
+	}
+
+	// Parse comma-separated domains
+	char *saveptr = NULL;
+	char *domain = strtok_r(domains_copy, ",", &saveptr);
+	
+	while (domain) {
+		// Allocate buffer for normalized domain
+		size_t domain_len = strlen(domain) + 1;
+		char *normalized = calloc(1, domain_len);
+		
+		if (normalized) {
+			// Normalize domain name
+			dns_unified(domain, normalized, domain_len);
+			
+			// Add to JSON array
+			struct json_object *domain_obj = json_object_new_string(normalized);
+			if (domain_obj) {
+				json_object_array_add(domain_array, domain_obj);
+			}
+			
+			free(normalized);
+		}
+		
+		domain = strtok_r(NULL, ",", &saveptr);
+	}
+
+	free(domains_copy);
+	
+	// Add array to main JSON object
+	json_object_object_add(j_ctl_req, "custom_domains", domain_array);
 }
 
 /**

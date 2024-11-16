@@ -52,59 +52,96 @@ int is_logged()
 	return c_login->logged;
 }
 
+/**
+ * @brief Initializes the login structure with system and network information
+ *
+ * This function performs the following initialization steps:
+ * 1. Allocates memory for the login structure if not already allocated
+ * 2. Gets system information using uname()
+ * 3. Sets basic version, OS and architecture information
+ * 4. Initializes other login fields with default values
+ * 5. Determines if device is a router based on network interface name
+ * 6. Gets MAC address to use as run_id
+ *
+ * The function will exit with status 1 if any of the following errors occur:
+ * - Memory allocation failure
+ * - Failure to get common config
+ * - Failure to get system information
+ * - Failure to get network interface name
+ * - Failure to get MAC address
+ *
+ * @note Global variables used:
+ *       - c_login: Global login structure
+ *       - PROTOCOL_VERSION: Protocol version string
+ */
 void init_login()
 {
-	if (! c_login) 
+	// Initialize login structure
+	if (!c_login) {
 		c_login = calloc(sizeof(struct login), 1);
-
-	assert(c_login);
+		if (!c_login) {
+			debug(LOG_ERR, "Failed to allocate memory for login structure");
+			exit(1);
+		}
+	}
 
 	struct common_conf *c_conf = get_common_config();
-	assert(c_conf);
+	if (!c_conf) {
+		debug(LOG_ERR, "Failed to get common config");
+		exit(1);
+	}
 
+	// Get system information
 	struct utsname uname_buf;
-	if (uname(&uname_buf)) {
-		debug(LOG_ERR, "error: get system info failed!");
-		exit(0);
+	if (uname(&uname_buf) != 0) {
+		debug(LOG_ERR, "Failed to get system information");
+		exit(1);
 	}
 
-	c_login->version 		= strdup(PROTOCOL_VERESION);
-	assert(c_login->version);
-	c_login->hostname 		= NULL;
-	c_login->os 			= strdup(uname_buf.sysname);
-	assert(c_login->os);
-	c_login->arch 			= strdup(uname_buf.machine);
-	assert(c_login->arch);
-	c_login->user 			= NULL;
+	// Initialize basic fields
+	c_login->version = strdup(PROTOCOL_VERESION);
+	c_login->os = strdup(uname_buf.sysname);
+	c_login->arch = strdup(uname_buf.machine);
 
-	c_login->timestamp 		= 0;
-	c_login->run_id 		= NULL;
-	c_login->metas			= NULL;
-	c_login->pool_count 	= 1;
-	c_login->privilege_key 	= NULL;
+	if (!c_login->version || !c_login->os || !c_login->arch) {
+		debug(LOG_ERR, "Failed to allocate memory for login fields");
+		exit(1);
+	}
 
-	c_login->logged 		= 0;
+	// Initialize other fields with default values
+	c_login->hostname = NULL;
+	c_login->user = NULL;
+	c_login->timestamp = 0;
+	c_login->metas = NULL;
+	c_login->pool_count = 1;
+	c_login->privilege_key = NULL;
+	c_login->logged = 0;
 
-	/* start to init login->run_id */
+	// Get network interface information
 	char ifname[16] = {0};
-	if(get_net_ifname(ifname, 16)){
-		debug(LOG_ERR, "error: get device sign ifname failed!");
-		exit(0);
+	if (get_net_ifname(ifname, sizeof(ifname)) != 0) {
+		debug(LOG_ERR, "Failed to get network interface name");
+		exit(1);
 	}
 
+	// Check if device is a router
 	if (strcmp(ifname, "br-lan") == 0 || strcmp(ifname, "br0") == 0) {
 		c_conf->is_router = 1;
-		debug(LOG_DEBUG, "working in router");
+		debug(LOG_DEBUG, "Device identified as router");
 	}
 
+	// Get MAC address
 	char if_mac[64] = {0};
-	if(get_net_mac(ifname, if_mac, sizeof(if_mac))) {
-		debug(LOG_ERR, "error: Hard ware MAC address of [%s] get failed!", ifname);
-		exit(0);
+	if (get_net_mac(ifname, if_mac, sizeof(if_mac)) != 0) {
+		debug(LOG_ERR, "Failed to get MAC address for interface %s", ifname);
+		exit(1);
 	}
 
 	c_login->run_id = strdup(if_mac);
-	assert(c_login->run_id);
+	if (!c_login->run_id) {
+		debug(LOG_ERR, "Failed to allocate memory for run_id");
+		exit(1);
+	}
 }
 
 /**

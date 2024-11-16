@@ -25,8 +25,8 @@
 */
 
 
-#ifndef _CRYPTO_H_
-#define _CRYPTO_H_
+#ifndef XFRPC_CRYPTO_H
+#define XFRPC_CRYPTO_H
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -57,4 +57,4 @@ size_t get_block_size();
 void free_encoder(struct frp_coder *encoder);
 void free_evp_cipher_ctx();
 
-#endif // _CRYPTO_H_
+#endif // XFRPC_CRYPTO_H

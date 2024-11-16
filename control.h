@@ -16,8 +16,8 @@
  * for managing FRP client connections and communications.
  */
 
-#ifndef CONTROL_H_
-#define CONTROL_H_
+#ifndef XFRPC_CONTROL_H
+#define XFRPC_CONTROL_H
 
 #include "msg.h"
 #include "uthash.h"
@@ -78,4 +78,4 @@ struct bufferevent *connect_server(struct event_base *base, const char *name,
 
 struct bufferevent *connect_udp_server(struct event_base *base);
 
-#endif //_CONTROL_H_
+#endif //XFRPC_CONTROL_H

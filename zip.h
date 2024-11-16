@@ -24,8 +24,8 @@
     @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 
-#ifndef _ZIP_H_
-#define _ZIP_H_
+#ifndef XFRPC_ZIP_H
+#define XFRPC_ZIP_H
 
 #define CHUNK   16384  
 #define windowBits 		15

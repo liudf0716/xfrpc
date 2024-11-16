@@ -24,9 +24,9 @@
     @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
 */
 
-#ifndef _XFRPC_H_
-#define _XFRPC_H_
+#ifndef XFRPC_XFRPC_H
+#define XFRPC_XFRPC_H
 
 void xfrpc_loop();
 
-#endif //_XFRPC_H_
+#endif // XFRPC_XFRPC_H

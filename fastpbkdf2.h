@@ -1,5 +1,5 @@
-#ifndef FASTPBKDF2_H
-#define FASTPBKDF2_H
+#ifndef XFRPC_FASTPBKDF2_H
+#define XFRPC_FASTPBKDF2_H
 
 #include <stdlib.h>
 #include <stdint.h>

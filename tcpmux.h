@@ -21,8 +21,8 @@
  * @date 2024
  */
 
-#ifndef TCPMUX_H
-#define TCPMUX_H
+#ifndef XFRPC_TCPMUX_H
+#define XFRPC_TCPMUX_H
 
 #include "uthash.h"
 #include <stdint.h>

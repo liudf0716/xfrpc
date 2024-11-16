@@ -1,28 +1,17 @@
 /* vim: set et ts=4 sts=4 sw=4 : */
-/********************************************************************\
- * This program is free software; you can redistribute it and/or    *
- * modify it under the terms of the GNU General Public License as   *
- * published by the Free Software Foundation; either version 2 of   *
- * the License, or (at your option) any later version.              *
- *                                                                  *
- * This program is distributed in the hope that it will be useful,  *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of   *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the    *
- * GNU General Public License for more details.                     *
- *                                                                  *
- * You should have received a copy of the GNU General Public License*
- * along with this program; if not, contact:                        *
- *                                                                  *
- * Free Software Foundation           Voice:  +1-617-542-5942       *
- * 59 Temple Place - Suite 330        Fax:    +1-617-542-2652       *
- * Boston, MA  02111-1307,  USA       gnu@gnu.org                   *
- *                                                                  *
-\********************************************************************/
-
-/** @file proxy_tcp.c
-    @brief xfrp proxy udp implemented
-    @author Copyright (C) 2016 Dengfeng Liu <liudf0716@gmail.com>
-*/
+/*
+ * Copyright (C) 2016 Dengfeng Liu <liudf0716@gmail.com>
+ * 
+ * Licensed under the GNU General Public License Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *     http://www.gnu.org/licenses/gpl-2.0.txt
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include <arpa/inet.h>
 
@@ -34,66 +23,91 @@
 #include "tcpmux.h"
 #include "control.h"
 
-static const char base64_table[65] =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+// Base64 encoding table
+static const char BASE64_CHARS[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-static int 
-base64_encode(const uint8_t *src, int srclen, char *dst)
+/**
+ * Encode binary data using base64 encoding
+ * @param src Input binary data
+ * @param srclen Length of input data
+ * @param dst Output buffer for base64 encoded string
+ * @return Length of encoded string or -1 on error
+ */
+static int base64_encode(const uint8_t *src, int srclen, char *dst) 
 {
-	uint32_t ac = 0;
-	int bits = 0;
-	int i;
-	char *cp = dst;
+    if (!src || !dst || srclen < 0) return -1;
+    
+    uint32_t bits_buf = 0;
+    int bits_cnt = 0;
+    char *out = dst;
 
-	for (i = 0; i < srclen; i++) {
-		ac = (ac << 8) | src[i];
-		bits += 8;
-		do {
-			bits -= 6;
-			*cp++ = base64_table[(ac >> bits) & 0x3f];
-		} while (bits >= 6);
-	}
-	if (bits) {
-		*cp++ = base64_table[(ac << (6 - bits)) & 0x3f];
-		bits -= 6;
-	}
-	while (bits < 0) {
-		*cp++ = '=';
-		bits += 2;
-	}
-	return cp - dst;
+    while (srclen--) {
+        bits_buf = (bits_buf << 8) | *src++;
+        bits_cnt += 8;
+
+        while (bits_cnt >= 6) {
+            bits_cnt -= 6;
+            *out++ = BASE64_CHARS[(bits_buf >> bits_cnt) & 0x3f];
+        }
+    }
+
+    // Handle remaining bits
+    if (bits_cnt > 0) {
+        *out++ = BASE64_CHARS[(bits_buf << (6 - bits_cnt)) & 0x3f];
+        
+        // Add padding
+        while (bits_cnt < 6) {
+            *out++ = '=';
+            bits_cnt += 2;
+        }
+    }
+
+    return out - dst;
 }
 
-static int 
-base64_decode(const char *src, int srclen, uint8_t *dst)
+/**
+ * Decode base64 encoded string to binary data
+ * @param src Input base64 encoded string
+ * @param srclen Length of input string
+ * @param dst Output buffer for decoded data
+ * @return Length of decoded data or -1 on error
+ */
+static int base64_decode(const char *src, int srclen, uint8_t *dst)
 {
-    uint32_t ac = 0;
-	int bits = 0;
-	int i;
-	uint8_t *bp = dst;
+    if (!src || !dst || srclen < 0) return -1;
 
-	for (i = 0; i < srclen; i++) {
-		const char *p = strchr(base64_table, src[i]);
+    uint32_t bits_buf = 0;
+    int bits_cnt = 0;
+    uint8_t *out = dst;
 
-		if (src[i] == '=') {
-			ac = (ac << 6);
-			bits += 6;
-			if (bits >= 8)
-				bits -= 8;
-			continue;
-		}
-		if (p == NULL || src[i] == 0)
-			return -1;
-		ac = (ac << 6) | (p - base64_table);
-		bits += 6;
-		if (bits >= 8) {
-			bits -= 8;
-			*bp++ = (uint8_t)(ac >> bits);
-		}
-	}
-	if (ac & ((1 << bits) - 1))
-		return -1;
-	return bp - dst;
+    while (srclen--) {
+        char c = *src++;
+        
+        if (c == '=') {
+            bits_buf <<= 6;
+            bits_cnt += 6;
+            continue;
+        }
+
+        const char *p = strchr(BASE64_CHARS, c);
+        if (!p) return -1;  // Invalid character
+
+        bits_buf = (bits_buf << 6) | (p - BASE64_CHARS);
+        bits_cnt += 6;
+
+        if (bits_cnt >= 8) {
+            bits_cnt -= 8;
+            *out++ = (bits_buf >> bits_cnt) & 0xff;
+        }
+    }
+
+    // Check for invalid trailing bits
+    if (bits_buf & ((1 << bits_cnt) - 1)) {
+        return -1;
+    }
+
+    return out - dst;
 }
 
 static void

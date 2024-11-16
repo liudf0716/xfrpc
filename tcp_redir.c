@@ -115,68 +115,81 @@ static void accept_cb(struct evconnlistener *listener, evutil_socket_t fd,
     return;
 }
 
-// define a thread worker function for tcp_redir
-static void *tcp_redir_worker(void *arg)
-{
+static int setup_server_address(struct tcp_redir_service *trs, const char *server_addr) {
+    if (is_valid_ip_address(server_addr)) {
+        trs->server_addr.sin_addr.s_addr = inet_addr(server_addr);
+    } else {
+        struct hostent *host = gethostbyname(server_addr);
+        if (!host || host->h_addrtype != AF_INET) {
+            debug(LOG_ERR, "Invalid host or unsupported address type (only IPv4 supported)");
+            return -1;
+        }
+        trs->server_addr.sin_addr.s_addr = *(unsigned long *)host->h_addr_list[0];
+    }
+    return 0;
+}
+
+static int initialize_listener(struct event_base *base, struct tcp_redir_service *trs) {
+    struct sockaddr_in sin = {
+        .sin_family = AF_INET,
+        .sin_port = htons(trs->ps->local_port),
+        .sin_addr.s_addr = htonl(INADDR_ANY)
+    };
+
+    struct evconnlistener *listener = evconnlistener_new_bind(base, accept_cb, trs,
+        LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1, 
+        (struct sockaddr *)&sin, sizeof(sin));
+
+    if (!listener) {
+        debug(LOG_ERR, "Failed to create listener");
+        return -1;
+    }
+    return 0;
+}
+
+/**
+ * @brief Worker thread function for TCP redirection.
+ * 
+ * This function serves as the entry point for a worker thread that handles
+ * TCP redirection operations. It processes the redirected TCP connections
+ * according to the configuration specified in the argument.
+ *
+ * @param arg Pointer to thread-specific arguments
+ * @return void* Returns NULL on completion
+ */
+static void *tcp_redir_worker(void *arg) {
     struct proxy_service *ps = (struct proxy_service *)arg;
     struct common_conf *c_conf = get_common_config();
-    // the worker is based on libevent and bufferevent
-    // it listens on the local port and forward the data to the remote port
-    // the local port and remote port are defined in the proxy_service
-    // the proxy_service as argument is passed to the worker function
+    struct event_base *base;
+    struct tcp_redir_service trs = {0};
 
-    // create a event_base
-    struct evconnlistener *listener;
-    struct event_base *base = event_base_new();
-    if (!base) {
-        debug(LOG_ERR, "create event base failed!");
-        exit(1);
+    if (!ps || !c_conf) {
+        debug(LOG_ERR, "Invalid arguments");
+        return NULL;
     }
 
-    // define listen address and port
-    struct sockaddr_in sin;
-    memset(&sin, 0, sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(ps->local_port);
-    sin.sin_addr.s_addr = htonl(INADDR_ANY);
-    
-    struct tcp_redir_service trs;
+    if (!(base = event_base_new())) {
+        debug(LOG_ERR, "Failed to create event base");
+        return NULL;
+    }
+
+    // Initialize tcp_redir_service structure
     trs.base = base;
     trs.ps = ps;
     trs.server_addr.sin_family = AF_INET;
     trs.server_addr.sin_port = htons(ps->remote_port);
-    // if c_conf->server_addr is ip address, use inet_addr to convert it
-    // if c_conf->server_addr is domain name, use gethostbyname to convert it
-    if (is_valid_ip_address(c_conf->server_addr))
-        trs.server_addr.sin_addr.s_addr = inet_addr(c_conf->server_addr);
-    else {
-        struct hostent *host = gethostbyname(c_conf->server_addr);
-        if (!host) {
-            debug(LOG_ERR, "gethostbyname failed!");
-            exit(1);
-        }
-        // only support ipv4
-        if (host->h_addrtype != AF_INET) {
-            debug(LOG_ERR, "only support ipv4!");
-            exit(1);
-        }
-        trs.server_addr.sin_addr.s_addr = *(unsigned long *)host->h_addr_list[0];
-    }
-    
-    // create a listener
-    listener = evconnlistener_new_bind(base, accept_cb, (void *)&trs,
-        LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1, (struct sockaddr *)&sin, sizeof(sin));
-    if (!listener) {
-        debug(LOG_ERR, "create listener failed!");
-        exit(1);
+
+    if (setup_server_address(&trs, c_conf->server_addr) < 0) {
+        event_base_free(base);
+        return NULL;
     }
 
-    // start the event loop
+    if (initialize_listener(base, &trs) < 0) {
+        event_base_free(base);
+        return NULL;
+    }
+
     event_base_dispatch(base);
-
-    // free the listener
-    evconnlistener_free(listener);
-    // free the event base
     event_base_free(base);
 
     return NULL;

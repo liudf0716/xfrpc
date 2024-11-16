@@ -1,28 +1,20 @@
-/* vim: set et ts=4 sts=4 sw=4 : */
-/********************************************************************\
- * This program is free software; you can redistribute it and/or    *
- * modify it under the terms of the GNU General Public License as   *
- * published by the Free Software Foundation; either version 2 of   *
- * the License, or (at your option) any later version.              *
- *                                                                  *
- * This program is distributed in the hope that it will be useful,  *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of   *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the    *
- * GNU General Public License for more details.                     *
- *                                                                  *
- * You should have received a copy of the GNU General Public License*
- * along with this program; if not, contact:                        *
- *                                                                  *
- * Free Software Foundation           Voice:  +1-617-542-5942       *
- * 59 Temple Place - Suite 330        Fax:    +1-617-542-2652       *
- * Boston, MA  02111-1307,  USA       gnu@gnu.org                   *
- *                                                                  *
-\********************************************************************/
-
-/** @file login.c
-    @brief xfrpc login protocol implemented
-    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
-*/
+/*
+ * Copyright (C) 2016-2024 Dengfeng Liu <liu_df@qq.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -115,24 +107,42 @@ void init_login()
 	assert(c_login->run_id);
 }
 
+/**
+ * @brief Validates and processes the login response from the server
+ *
+ * This function checks if the login response is valid by verifying the run_id.
+ * If valid, it updates the client's run_id and sets the logged status.
+ * If invalid, it logs error messages and sets logged status to 0.
+ *
+ * @param lr Pointer to the login_resp structure containing server response
+ *
+ * @return 1 if login response is valid and processing successful
+ * @return 0 if login response is invalid or processing failed
+ *
+ * @note The function will free existing run_id before updating with new value
+ */
 int login_resp_check(struct login_resp *lr)
 {
-	if (lr->run_id == NULL || strlen(lr->run_id) <= 1) {
-		if (lr->error && strlen(lr->error) > 0) {
+	// Check for invalid run_id
+	if (!lr->run_id || strlen(lr->run_id) <= 1) {
+		// Log error message if available
+		if (lr->error && *lr->error) {
 			debug(LOG_ERR, "login response error: %s", lr->error);
 		}
-		debug(LOG_ERR, "login falied!");
+		debug(LOG_ERR, "login failed!");
 		c_login->logged = 0;
-	} else {
-		c_login->logged = 1;
-		debug(LOG_DEBUG, "xfrp login response: run_id: [%s], version: [%s]", 
-			lr->run_id, 
-			lr->version);
-		SAFE_FREE(c_login->run_id);
-
-		c_login->run_id = strdup(lr->run_id);
-		assert(c_login->run_id);
+		return 0;
 	}
 
-	return c_login->logged;
+	// Login successful
+	debug(LOG_DEBUG, "xfrp login response: run_id: [%s], version: [%s]", 
+		  lr->run_id, lr->version);
+
+	// Update run_id
+	SAFE_FREE(c_login->run_id);
+	c_login->run_id = strdup(lr->run_id);
+	assert(c_login->run_id);
+
+	c_login->logged = 1;
+	return 1;
 }

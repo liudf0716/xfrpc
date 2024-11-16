@@ -274,24 +274,44 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	return nret;
 }
 
+/**
+ * @brief Marshals work connection data into a JSON string
+ *
+ * Creates a JSON object containing work connection information and converts it to a string.
+ * The resulting JSON string contains the "run_id" field from the work_conn structure.
+ *
+ * @param work_c Pointer to the work connection structure to marshal
+ * @param msg    Pointer to char pointer that will store the resulting JSON string
+ *
+ * @return Length of the marshaled string on success, 0 on failure
+ *         The caller is responsible for freeing the allocated string in *msg
+ */
 int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 {
-	const char *tmp = NULL;
-	int nret = 0;
-	struct json_object *j_new_work_conn = json_object_new_object();
-	if (!j_new_work_conn)
+	if (!work_c || !msg) {
 		return 0;
+	}
 
+	struct json_object *j_new_work_conn = json_object_new_object();
+	if (!j_new_work_conn) {
+		return 0;
+	}
+
+	// Add run_id field
 	JSON_MARSHAL_TYPE(j_new_work_conn, "run_id", string, SAFE_JSON_STRING(work_c->run_id));
-	tmp = json_object_to_json_string(j_new_work_conn);
-	if (tmp && strlen(tmp) > 0) {
-		nret = strlen(tmp);
-		*msg = strdup(tmp);
-		assert(*msg);
+
+	// Convert to JSON string
+	const char *json_str = json_object_to_json_string(j_new_work_conn);
+	int nret = 0;
+	
+	if (json_str && strlen(json_str) > 0) {
+		*msg = strdup(json_str);
+		if (*msg) {
+			nret = strlen(json_str);
+		}
 	}
 
 	json_object_put(j_new_work_conn);
-
 	return nret;
 }
 

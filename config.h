@@ -79,7 +79,4 @@ int validate_proxy(struct proxy_service *ps);
 /* FTP specific functions */
 char *get_ftp_data_proxy_name(const char *ftp_proxy_name);
 
-/* Environment check functions */
-int is_running_in_router(void);
-
 #endif //XFRPC_CONFIG_H

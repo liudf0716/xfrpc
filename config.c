@@ -543,21 +543,36 @@ void load_config(const char *confile)
 	dump_all_ps();
 }
 
-int is_running_in_router()
+/**
+ * @brief Retrieves a proxy service by its name
+ *
+ * @param proxy_name The name of the proxy service to search for
+ * @return struct proxy_service* Pointer to the found proxy service, or NULL if not found
+ *
+ * @note This function searches through the internal proxy service list
+ * @warning The returned pointer should not be freed by the caller
+ */
+struct proxy_service *get_proxy_service(const char *proxy_name)
 {
-	return c_conf->is_router;
-}
-
-struct proxy_service *
-get_proxy_service(const char *proxy_name)
-{
+	if (!proxy_name)
+		return NULL;
+		
 	struct proxy_service *ps = NULL;
 	HASH_FIND_STR(all_ps, proxy_name, ps);
 	return ps;
 }
 
-struct proxy_service *
-get_all_proxy_services()
+/**
+ * @brief Returns an array of all proxy services configured in the application
+ *
+ * @return struct proxy_service* Pointer to an array of proxy service structures
+ *                              Returns NULL if no services are configured
+ *
+ * This function retrieves all configured proxy services from the application's
+ * configuration. The returned array contains the complete proxy service configurations
+ * including ports, protocols, and other service-specific settings.
+ */
+struct proxy_service *get_all_proxy_services()
 {
 	return all_ps;
 }

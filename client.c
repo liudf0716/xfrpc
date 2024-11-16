@@ -266,11 +266,26 @@ del_proxy_client_by_stream_id(uint32_t sid)
 	del_proxy_client(pc);
 }
 
-struct proxy_client *
-get_proxy_client(uint32_t sid)
+/**
+ * @brief Retrieves a proxy client by its stream ID
+ * @param sid Stream ID to search for
+ * @return struct proxy_client* Pointer to found proxy client, NULL if not found
+ */
+struct proxy_client *get_proxy_client(uint32_t sid)
 {
 	struct proxy_client *pc = NULL;
+	
+	if (sid == 0) {
+		debug(LOG_DEBUG, "Invalid stream ID: 0");
+		return NULL;
+	}
+	
 	HASH_FIND_INT(all_pc, &sid, pc);
+	
+	if (!pc) {
+		debug(LOG_DEBUG, "No proxy client found for stream ID: %d", sid);
+	}
+	
 	return pc;
 }
 

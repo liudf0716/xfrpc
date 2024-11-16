@@ -1,31 +1,6 @@
-/* vim: set et ts=4 sts=4 sw=4 : */
-/********************************************************************\
- * This program is free software; you can redistribute it and/or    *
- * modify it under the terms of the GNU General Public License as   *
- * published by the Free Software Foundation; either version 2 of   *
- * the License, or (at your option) any later version.              *
- *                                                                  *
- * This program is distributed in the hope that it will be useful,  *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of   *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the    *
- * GNU General Public License for more details.                     *
- *                                                                  *
- * You should have received a copy of the GNU General Public License*
- * along with this program; if not, contact:                        *
- *                                                                  *
- * Free Software Foundation           Voice:  +1-617-542-5942       *
- * 59 Temple Place - Suite 330        Fax:    +1-617-542-2652       *
- * Boston, MA  02111-1307,  USA       gnu@gnu.org                   *
- *                                                                  *
-\********************************************************************/
 
-/** @file login.h
-    @brief xfrp login header
-    @author Copyright (C) 2016 Dengfeng Liu <liu_df@qq.com>
-*/
-
-#ifndef _LOGIN_H_
-#define _LOGIN_H_
+#ifndef XFRPC_LOGIN_H_
+#define XFRPC_LOGIN_H_
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,32 +10,38 @@
 
 #include "uthash.h"
 
-struct login {
-	char		*version;
-	char		*hostname;
-	char 		*os;
-	char		*arch;
-	char 		*user;
-	char 		*privilege_key;
-	time_t 		timestamp;
-	char 		*run_id;
-	char		*metas;
-	int 		pool_count;
+// Login configuration structure
+typedef struct login {
+	// Version information
+	char    *version;
+	// System information
+	char    *hostname;
+	char    *os;
+	char    *arch;
+	// User credentials
+	char    *user;
+	char    *privilege_key;
+	// Session information
+	time_t  timestamp;
+	char    *run_id;
+	char    *metas;
+	int     pool_count;
+	// Login status
+	int     logged;     // 0: not logged in, 1: logged in
+} login_t;
 
-	/* fields not need json marshal */
-	int			logged;		//0 not login 1:logged
-};
+// Login response structure
+typedef struct login_resp {
+	char    *version;
+	char    *run_id;
+	char    *error;
+} login_resp_t;
 
-struct login_resp {
-	char 	*version;
-	char	*run_id;
-	char 	*error;
-};
+// Function declarations
+void init_login(void);
+char *get_run_id(void);
+login_t *get_common_login_config(void);
+int is_logged(void);
+int login_resp_check(login_resp_t *lr);
 
-void init_login();
-char *get_run_id();
-struct login *get_common_login_config();
-int is_logged();
-int login_resp_check(struct login_resp *lr);
-
-#endif //_LOGIN_H_
+#endif /* XFRPC_LOGIN_H_ */

@@ -295,57 +295,84 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 	return nret;
 }
 
-// result returned of this func need be free
-struct new_proxy_response *
-new_proxy_resp_unmarshal(const char *jres)
+/**
+ * @brief Unmarshal a JSON string into a new_proxy_response structure
+ *
+ * @param jres The JSON string to unmarshal. Must not be NULL.
+ * @return struct new_proxy_response* Pointer to newly allocated response structure,
+ *         or NULL if:
+ *         - Input is NULL
+ *         - JSON parsing fails
+ *         - Required fields are missing 
+ *         - Memory allocation fails
+ *         
+ * @note The returned structure must be freed by the caller
+ */
+struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres) 
 {
+	if (!jres) return NULL;
+
 	struct json_object *j_np_res = json_tokener_parse(jres);
-	if (j_np_res == NULL)
-		return NULL;
+	if (!j_np_res) return NULL;
 
 	struct new_proxy_response *npr = calloc(1, sizeof(struct new_proxy_response));
-	assert(npr);
-
-	struct json_object *npr_run_id = NULL;
-	if (json_object_object_get_ex(j_np_res, "run_id", &npr_run_id))
-		npr->run_id = strdup(json_object_get_string(npr_run_id));
-
-	struct json_object *npr_proxy_remote_addr = NULL;
-	if (!json_object_object_get_ex(j_np_res, "remote_addr", &npr_proxy_remote_addr)) {
-		free(npr->run_id);
-		free(npr);
-		npr = NULL;
-		goto END_ERROR;
+	if (!npr) {
+		json_object_put(j_np_res);
+		return NULL;
 	}
 
-	const char *remote_addr = json_object_get_string(npr_proxy_remote_addr);
-	char *port = strrchr(remote_addr, ':');
-	if (port) {
-		port++;
-		npr->remote_port = atoi(port);
+	// Get optional run_id field
+	struct json_object *j_run_id = NULL;
+	if (json_object_object_get_ex(j_np_res, "run_id", &j_run_id)) {
+		const char *run_id = json_object_get_string(j_run_id);
+		if (run_id && !(npr->run_id = strdup(run_id))) {
+			goto error;
+		}
 	}
 
-	struct json_object *npr_proxy_name = NULL;
-	if (!json_object_object_get_ex(j_np_res, "proxy_name", &npr_proxy_name)) {
-		free(npr->run_id);
-		free(npr);
-		npr = NULL;
-		goto END_ERROR;
-	}
-
-	npr->proxy_name = strdup(json_object_get_string(npr_proxy_name));
-	assert(npr->proxy_name);
-
-	struct json_object *npr_error = NULL;
-	if (json_object_object_get_ex(j_np_res, "error", &npr_error)) {
-		npr->error = strdup(json_object_get_string(npr_error));
-		assert(npr->error);
+	// Get required remote_addr field
+	struct json_object *j_remote_addr = NULL;
+	if (!json_object_object_get_ex(j_np_res, "remote_addr", &j_remote_addr)) {
+		goto error;
 	}
 	
+	// Parse port from remote_addr
+	const char *remote_addr = json_object_get_string(j_remote_addr);
+	if (remote_addr) {
+		const char *port = strrchr(remote_addr, ':');
+		if (port) {
+			npr->remote_port = atoi(port + 1);
+		}
+	}
 
-END_ERROR:
+	// Get required proxy_name field
+	struct json_object *j_proxy_name = NULL;
+	if (!json_object_object_get_ex(j_np_res, "proxy_name", &j_proxy_name) ||
+		!(npr->proxy_name = strdup(json_object_get_string(j_proxy_name)))) {
+		goto error;
+	}
+
+	// Get optional error field
+	struct json_object *j_error = NULL;
+	if (json_object_object_get_ex(j_np_res, "error", &j_error)) {
+		const char *error = json_object_get_string(j_error);
+		if (error && !(npr->error = strdup(error))) {
+			goto error;
+		}
+	}
+
 	json_object_put(j_np_res);
 	return npr;
+
+error:
+	json_object_put(j_np_res);
+	if (npr) {
+		SAFE_FREE(npr->run_id);
+		SAFE_FREE(npr->proxy_name);
+		SAFE_FREE(npr->error);
+		SAFE_FREE(npr);
+	}
+	return NULL;
 }
 
 /**

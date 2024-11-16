@@ -257,13 +257,34 @@ del_proxy_client(struct proxy_client *client)
 	free_proxy_client(client);
 }
 
-void
-del_proxy_client_by_stream_id(uint32_t sid)
-{
+/**
+ * @brief Deletes a proxy client and its associated stream based on the stream ID
+ *
+ * This function performs cleanup by removing both the stream and its associated
+ * proxy client from the system. It first validates the stream ID, then removes
+ * the stream, and finally removes the proxy client if one exists.
+ *
+ * @param sid The stream ID to identify which proxy client and stream to remove
+ *
+ * @note If sid is 0, the function will return without performing any action
+ * @note If no proxy client is found for the given stream ID, only the stream will be removed
+ */
+void del_proxy_client_by_stream_id(uint32_t sid) {
+	if (sid == 0) {
+		debug(LOG_DEBUG, "Invalid stream ID: 0");
+		return;
+	}
+
+	// Delete the stream first
 	del_stream(sid);
 
+	// Find and delete the proxy client
 	struct proxy_client *pc = get_proxy_client(sid);
-	del_proxy_client(pc);
+	if (pc) {
+		del_proxy_client(pc);
+	} else {
+		debug(LOG_DEBUG, "No proxy client found to delete for stream ID: %d", sid);
+	}
 }
 
 /**

@@ -263,7 +263,6 @@ handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len)
 	}
 }
 
-// read data from local service
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
 	struct common_conf  *c_conf = get_common_config();
@@ -294,18 +293,37 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	free(buf);
 }
 
-// read data from frps
-// when tcp mux enable this function will not be used
+/**
+ * @brief Callback function for handling data transfer from server to client in TCP proxy
+ *
+ * This function is called when data is available to be read from the server's bufferevent
+ * and needs to be forwarded to the client.
+ *
+ * @param bev The bufferevent structure containing the server's buffer
+ * @param ctx The context pointer containing user-defined data (typically proxy session information)
+ */
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 {
+	struct common_conf *c_conf = get_common_config();
 	struct proxy_client *client = (struct proxy_client *)ctx;
-	assert(client);
-	struct bufferevent *partner = client->local_proxy_bev;
-	assert(partner);
-	struct evbuffer *src, *dst;
-	src = bufferevent_get_input(bev);
+	
+	if (!client || !client->local_proxy_bev) {
+		debug(LOG_ERR, "Invalid client or local proxy connection");
+		return;
+	}
+
+	struct evbuffer *src = bufferevent_get_input(bev);
 	size_t len = evbuffer_get_length(src);
-	assert(len > 0);
-	dst = bufferevent_get_output(partner);
-	evbuffer_add_buffer(dst, src);
+	if (len == 0) {
+		debug(LOG_ERR, "No data to read from local service");
+		return;
+	}
+
+	if (!c_conf->tcp_mux) {
+		struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+		evbuffer_add_buffer(dst, src);
+		return;
+	}
+
+	debug(LOG_ERR, "impossible to reach here");
 }

@@ -416,48 +416,87 @@ START_W_C_R_END:
 	return sr;
 }
 
-struct control_response *
-control_response_unmarshal(const char *jres)
+/**
+ * @brief Unmarshal a JSON string into a control_response structure
+ *
+ * This function parses a JSON string and creates a control_response structure
+ * containing the unmarshaled data. The JSON should have the following fields:
+ * - type: integer value
+ * - code: integer value  
+ * - msg: string value
+ *
+ * @param jres The JSON string to unmarshal. Must not be NULL.
+ * @return struct control_response* Pointer to newly allocated control_response structure
+ *         containing the unmarshaled data, or NULL if:
+ *         - Input is NULL
+ *         - JSON parsing fails
+ *         - Memory allocation fails
+ *         - Required fields are missing
+ *         - Message string cannot be duplicated
+ *
+ * @note The returned structure must be freed using control_response_free()
+ */
+struct control_response *control_response_unmarshal(const char *jres)
 {
-	struct json_object *j_ctl_res = json_tokener_parse(jres);
-	if (j_ctl_res == NULL)
-		return NULL;
-	struct control_response *ctl_res = calloc(sizeof(struct control_response), 1);
-	assert(ctl_res);
+	if (!jres) return NULL;
 
+	struct json_object *j_ctl_res = json_tokener_parse(jres);
+	if (!j_ctl_res) return NULL;
+
+	struct control_response *ctl_res = calloc(1, sizeof(struct control_response));
+	if (!ctl_res) {
+		json_object_put(j_ctl_res);
+		return NULL;
+	}
+
+	// Get type field
 	struct json_object *jtype = NULL;
 	if (!json_object_object_get_ex(j_ctl_res, "type", &jtype)) {
-		free(ctl_res);
-		ctl_res = NULL;
-		goto END_ERROR;
+		goto error;
 	}
 	ctl_res->type = json_object_get_int(jtype);
 
+	// Get code field 
 	struct json_object *jcode = NULL;
 	if (!json_object_object_get_ex(j_ctl_res, "code", &jcode)) {
-		free(ctl_res);
-		ctl_res = NULL;
-		goto END_ERROR;
+		goto error;
 	}
-
 	ctl_res->code = json_object_get_int(jcode);
 
+	// Get msg field
 	struct json_object *jmsg = NULL;
 	if (!json_object_object_get_ex(j_ctl_res, "msg", &jmsg)) {
-		free(ctl_res);
-		ctl_res = NULL;
-		goto END_ERROR;
+		goto error;
 	}
-	ctl_res->msg = strdup(json_object_get_string(jmsg));
-	assert(ctl_res->msg);
+	const char *msg_str = json_object_get_string(jmsg);
+	if (!msg_str) {
+		goto error;
+	}
+	ctl_res->msg = strdup(msg_str);
+	if (!ctl_res->msg) {
+		goto error;
+	}
 
-END_ERROR:
 	json_object_put(j_ctl_res);
 	return ctl_res;
+
+error:
+	json_object_put(j_ctl_res);
+	control_response_free(ctl_res);
+	return NULL;
 }
 
-void 
-control_response_free(struct control_response *res)
+/**
+ * @brief Frees memory allocated for a control response structure
+ *
+ * This function safely deallocates memory for:
+ * - The message string within the control response
+ * - The control response structure itself
+ *
+ * @param res Pointer to the control_response structure to be freed
+ * @note Function checks for NULL pointer before attempting to free memory
+ */
+void control_response_free(struct control_response *res)
 {
 	if (!res)
 		return;

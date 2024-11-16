@@ -41,22 +41,23 @@
 #include "client.h"
 #include "utils.h"
 
+/**
+ * @brief Macro to add a typed value to a JSON object
+ * @param jobj JSON object to add to
+ * @param key Key name 
+ * @param jtype JSON type (string, int, boolean, etc)
+ * @param item Value to add
+ */
 #define JSON_MARSHAL_TYPE(jobj, key, jtype, item) \
-	json_object_object_add(jobj, key, json_object_new_##jtype((item)));
+	json_object_object_add(jobj, key, json_object_new_##jtype((item)))
 
+/**
+ * @brief Macro to safely handle NULL strings in JSON
+ * @param str_target String to check
+ * @return Original string if not NULL, empty string if NULL
+ */
 #define SAFE_JSON_STRING(str_target) \
-	str_target ? str_target : "\0"
-
-const char msg_types[] = {TypeLogin,
-						  TypeLoginResp,
-						  TypeNewProxy,
-						  TypeNewProxyResp,
-						  TypeNewWorkConn,
-						  TypeReqWorkConn,
-						  TypeStartWorkConn,
-						  TypePing,
-						  TypePong,
-						  TypeUDPPacket};
+	((str_target) ? (str_target) : "\0")
 
 /**
  * @brief Calculate MD5 hash of input data

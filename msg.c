@@ -194,45 +194,51 @@ login_request_marshal(char **msg)
 	return nret;
 }
 
+/**
+ * @brief Marshals a proxy service configuration into a JSON string
+ *
+ * @param np_req Proxy service configuration structure
+ * @param msg Pointer to store the resulting JSON string
+ * @return Number of bytes in the marshaled string, 0 on failure
+ */
 int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 {
-	const char *tmp = NULL;
-	int nret = 0;
-	char *path = NULL;
-	char *delimiter = ",";
-	char *save = NULL;
-	struct json_object *j_np_req = json_object_new_object();
-	if (!j_np_req)
-		return 0;
+	if (!np_req || !msg) return 0;
 
+	struct json_object *j_np_req = json_object_new_object();
+	if (!j_np_req) return 0;
+
+	// Add basic proxy configuration
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_name", string, np_req->proxy_name);
-	// if proxy_type is socks5, set the proxy_type to tcp
-	if (strcmp(np_req->proxy_type, "socks5") == 0 || strcmp(np_req->proxy_type, "mstsc") == 0) {
-		JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, "tcp");
-	} else {
-		JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, np_req->proxy_type);
-	}
+	
+	// Handle proxy type - normalize socks5/mstsc to tcp
+	const char *proxy_type = (strcmp(np_req->proxy_type, "socks5") == 0 || 
+							strcmp(np_req->proxy_type, "mstsc") == 0) ? 
+							"tcp" : np_req->proxy_type;
+	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, proxy_type);
+
+	// Add encryption and compression flags
 	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
 	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
 
-	// if proxy_type is tcp, http, https and socks5, set group and group_key to j_np_req
-	if (strcmp(np_req->proxy_type, "tcp") == 0 ||
-		strcmp(np_req->proxy_type, "http") == 0 ||
-		strcmp(np_req->proxy_type, "https") == 0 ||
-		strcmp(np_req->proxy_type, "socks5") == 0) {
-
+	// Add group settings for specific proxy types
+	if (strcmp(proxy_type, "tcp") == 0 || 
+		strcmp(proxy_type, "http") == 0 ||
+		strcmp(proxy_type, "https") == 0) {
 		if (np_req->group) {
 			JSON_MARSHAL_TYPE(j_np_req, "group", string, np_req->group);
-		} 
+		}
 		if (np_req->group_key) {
 			JSON_MARSHAL_TYPE(j_np_req, "group_key", string, np_req->group_key);
 		}
 	}
 
+	// Handle FTP specific configuration
 	if (is_ftp_proxy(np_req)) {
 		JSON_MARSHAL_TYPE(j_np_req, "remote_data_port", int, np_req->remote_data_port);
 	}
 
+	// Handle domains and ports
 	if (np_req->custom_domains) {
 		fill_custom_domains(j_np_req, np_req->custom_domains);
 		json_object_object_add(j_np_req, "remote_port", NULL);
@@ -245,32 +251,44 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 		}
 	}
 
+	// Add subdomain
 	JSON_MARSHAL_TYPE(j_np_req, "subdomain", string, SAFE_JSON_STRING(np_req->subdomain));
 
-	json_object *j_location_array = json_object_new_array();
+	// Handle locations array
+	struct json_object *j_location_array = json_object_new_array();
 	if (np_req->locations) {
-		json_object_object_add(j_np_req, "locations", j_location_array);
-		path = strtok_r(np_req->locations, delimiter, &save);
-		while (path) {
-			json_object_array_add(j_location_array, json_object_new_string(path));
-			path = strtok_r(NULL, delimiter, &save);
+		char *locations_copy = strdup(np_req->locations);
+		if (locations_copy) {
+			char *save_ptr = NULL;
+			char *path = strtok_r(locations_copy, ",", &save_ptr);
+			while (path) {
+				json_object_array_add(j_location_array, json_object_new_string(path));
+				path = strtok_r(NULL, ",", &save_ptr);
+			}
+			free(locations_copy);
 		}
+		json_object_object_add(j_np_req, "locations", j_location_array);
 	} else {
 		json_object_object_add(j_np_req, "locations", NULL);
+		json_object_put(j_location_array);
 	}
 
+	// Add HTTP related fields
 	JSON_MARSHAL_TYPE(j_np_req, "host_header_rewrite", string, SAFE_JSON_STRING(np_req->host_header_rewrite));
 	JSON_MARSHAL_TYPE(j_np_req, "http_user", string, SAFE_JSON_STRING(np_req->http_user));
 	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
 
-	tmp = json_object_to_json_string(j_np_req);
-	if (tmp && strlen(tmp) > 0) {
-		nret = strlen(tmp);
-		*msg = strdup(tmp);
-		assert(*msg);
+	// Convert to string
+	const char *json_str = json_object_to_json_string(j_np_req);
+	int nret = 0;
+	if (json_str && strlen(json_str) > 0) {
+		*msg = strdup(json_str);
+		if (*msg) {
+			nret = strlen(json_str);
+		}
 	}
-	json_object_put(j_np_req);
 
+	json_object_put(j_np_req);
 	return nret;
 }
 

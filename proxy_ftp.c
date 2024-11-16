@@ -79,21 +79,6 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	size_t read_n = 0;
 	read_n = evbuffer_remove(src, buf, len);
 
-// #define FTP_P_DEBUG 1
-#ifdef FTP_P_DEBUG
-	char *dbg_buf = calloc(1, read_n * 7 + 1);
-	assert(dbg_buf);
-	unsigned int i = 0;
-	for(i = 0; i<read_n && ((2 * i) < (read_n * 2 + 1)); i++) {
-		snprintf(dbg_buf + 7*i, 8, "%3u[%c] ", 
-			(unsigned char)buf[i], 
-			(unsigned char)buf[i]);
-	}
-	debug(LOG_DEBUG, "FTP Client RECV ctl byte:%s", dbg_buf);
-	debug(LOG_DEBUG, "FTP Client RECV ctl stri:%s", buf);
-	SAFE_FREE(dbg_buf);
-#endif //FTP_P_DEBUG
-
 	struct ftp_pasv *local_fp = pasv_unpack((char *)buf);
 
 	if (local_fp) {
@@ -121,10 +106,6 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 			SAFE_FREE(pasv_msg);
 			goto FTP_C2S_CB_END;
 		}
-
-#ifdef FTP_P_DEBUG
-		debug(LOG_DEBUG, "ftp pack result:%s", pasv_msg);
-#endif //FTP_P_DEBUG
 
 		set_ftp_data_proxy_tunnel(p->proxy_name, local_fp, r_fp);
 		evbuffer_add(dst, pasv_msg, pack_len);

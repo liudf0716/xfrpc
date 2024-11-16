@@ -41,7 +41,7 @@ int is_valid_ip_address(const char *ip_address)
 
 //	net_if_name: name of network interface, e.g. br-lan
 //	return: 1: error 0:get succeed
-int get_net_mac(char *net_if_name, char *mac, int mac_len) {
+int get_net_mac(const char *net_if_name, char *mac, int mac_len) {
 	int ret = 1;
 	int i = 0;
 	int sock = 0;

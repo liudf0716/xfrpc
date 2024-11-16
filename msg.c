@@ -144,53 +144,81 @@ get_auth_key(const char *token, long int *timestamp)
 	return auth_key;
 }
 
-size_t
-login_request_marshal(char **msg)
+/**
+ * @brief Marshals login request data into a JSON string
+ *
+ * @param msg Pointer to store the resulting JSON string
+ * @return size_t Number of bytes in marshaled string, 0 on failure
+ */
+size_t login_request_marshal(char **msg)
 {
-	size_t nret = 0;
-	struct json_object *j_login_req = json_object_new_object();
-	if (j_login_req == NULL)
-		return 0;
+	if (!msg) return 0;
 
+	// Create JSON object
+	struct json_object *j_login_req = json_object_new_object();
+	if (!j_login_req) return 0;
+
+	// Get login config
 	struct login *lg = get_common_login_config();
 	if (!lg) {
 		json_object_put(j_login_req);
 		return 0;
 	}
 
-	SAFE_FREE(lg->privilege_key);
+	// Generate new auth key
 	struct common_conf *cf = get_common_config();
 	char *auth_key = get_auth_key(cf->auth_token, &lg->timestamp);
-	lg->privilege_key = strdup(auth_key);
-	assert(lg->privilege_key);
+	if (!auth_key) {
+		json_object_put(j_login_req);
+		return 0;
+	}
 
+	// Update privilege key
+	SAFE_FREE(lg->privilege_key);
+	lg->privilege_key = strdup(auth_key);
+	if (!lg->privilege_key) {
+		SAFE_FREE(auth_key);
+		json_object_put(j_login_req);
+		return 0;
+	}
+
+	// Add required fields
 	JSON_MARSHAL_TYPE(j_login_req, "version", string, lg->version);
 	JSON_MARSHAL_TYPE(j_login_req, "hostname", string, SAFE_JSON_STRING(lg->hostname));
 	JSON_MARSHAL_TYPE(j_login_req, "os", string, lg->os);
 	JSON_MARSHAL_TYPE(j_login_req, "arch", string, lg->arch);
-	if (lg->user)
-		JSON_MARSHAL_TYPE(j_login_req, "user", string, SAFE_JSON_STRING(lg->user));
+	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, lg->privilege_key);
+	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
 
-	JSON_MARSHAL_TYPE(j_login_req, "privilege_key", string, SAFE_JSON_STRING(lg->privilege_key));
+	// Add timestamp based on architecture
 	if (sizeof(time_t) == 4) {
 		JSON_MARSHAL_TYPE(j_login_req, "timestamp", int, lg->timestamp);
 	} else {
 		JSON_MARSHAL_TYPE(j_login_req, "timestamp", int64, lg->timestamp);
 	}
-	if (lg->run_id)
-		JSON_MARSHAL_TYPE(j_login_req, "run_id", string, SAFE_JSON_STRING(lg->run_id));
-	JSON_MARSHAL_TYPE(j_login_req, "pool_count", int, lg->pool_count);
-	//json_object_object_add(j_login_req, "metas", NULL);
 
-	const char *tmp = NULL;
-	tmp = json_object_to_json_string(j_login_req);
-	if (tmp && strlen(tmp) > 0) {
-		nret = strlen(tmp);
-		*msg = strdup(tmp);
-		assert(*msg);
+	// Add optional fields
+	if (lg->user) {
+		JSON_MARSHAL_TYPE(j_login_req, "user", string, lg->user);
 	}
+	if (lg->run_id) {
+		JSON_MARSHAL_TYPE(j_login_req, "run_id", string, lg->run_id);
+	}
+
+	// Convert to string
+	size_t nret = 0;
+	const char *json_str = json_object_to_json_string(j_login_req);
+	if (json_str && strlen(json_str) > 0) {
+		*msg = strdup(json_str);
+		if (*msg) {
+			nret = strlen(json_str);
+		}
+	}
+
+	// Cleanup
 	json_object_put(j_login_req);
 	SAFE_FREE(auth_key);
+	
 	return nret;
 }
 

@@ -236,45 +236,82 @@ E_END:
 	return outlen;
 }
 
-size_t 
-decrypt_data(const uint8_t *enc_data, size_t enclen, struct frp_coder *decoder, uint8_t **ret)
+/**
+ * @brief Decrypts data using AES-128-CFB cipher
+ *
+ * This function decrypts data that was encrypted using AES-128-CFB cipher mode.
+ * It uses a persistent EVP_CIPHER_CTX context (dec_ctx) for better performance
+ * across multiple calls.
+ *
+ * @param enc_data Pointer to the encrypted data buffer
+ * @param enclen Length of the encrypted data
+ * @param decoder Pointer to the frp_coder structure containing key and IV
+ * @param ret Address where the pointer to decrypted data will be stored
+ * @return The length of the decrypted data, or 0 if decryption fails
+ */
+size_t decrypt_data(const uint8_t *enc_data, size_t enclen, 
+				   struct frp_coder *decoder, uint8_t **ret)
 {
-	uint8_t *inbuf = (uint8_t *)enc_data;
-	uint8_t *outbuf = calloc(enclen+1, 1);
-	struct frp_coder *c = decoder;
-	assert(inbuf);
-	assert(outbuf);
-	*ret = outbuf;
-	assert(decoder);
-	
 	int outlen = 0, tmplen = 0;
+	uint8_t *outbuf = NULL;
+	EVP_CIPHER_CTX *ctx = NULL;
+	
+	// Input validation
+	if (!enc_data || !decoder || !ret) {
+		debug(LOG_ERR, "Invalid input parameters");
+		return 0;
+	}
+
+	// Allocate output buffer
+	outbuf = calloc(enclen + 1, 1);
+	if (!outbuf) {
+		debug(LOG_ERR, "Failed to allocate output buffer");
+		return 0;
+	}
+	*ret = outbuf;
+
+	// Initialize or reuse decryption context
 	if (!dec_ctx) {
-		dec_ctx= EVP_CIPHER_CTX_new();
-		EVP_DecryptInit_ex(dec_ctx, EVP_aes_128_cfb(), NULL, c->key, c->iv);
+		dec_ctx = EVP_CIPHER_CTX_new();
+		if (!dec_ctx) {
+			debug(LOG_ERR, "Failed to create cipher context");
+			return 0;
+		}
+		EVP_DecryptInit_ex(dec_ctx, EVP_aes_128_cfb(), NULL, 
+						  decoder->key, decoder->iv);
 	}
+	ctx = dec_ctx;
 
-	EVP_CIPHER_CTX *ctx = dec_ctx;
-	if(!EVP_DecryptUpdate(ctx, outbuf, &tmplen, inbuf, enclen)) {
+	// Perform decryption
+	if (!EVP_DecryptUpdate(ctx, outbuf, &tmplen, enc_data, enclen)) {
 		debug(LOG_ERR, "EVP_DecryptUpdate error!");
-		goto D_END;
+		return 0;
 	}
-	outlen += tmplen;
+	outlen = tmplen;
 
-	if(!EVP_DecryptFinal_ex(ctx, outbuf+outlen, &tmplen)) {
+	if (!EVP_DecryptFinal_ex(ctx, outbuf + outlen, &tmplen)) {
 		debug(LOG_ERR, "EVP_DecryptFinal_ex error");
-		goto D_END;
+		return 0;
 	}
 	outlen += tmplen;
 
-D_END:
 	return outlen;
 }
 
-void 
-free_encoder(struct frp_coder *encoder) {
+/**
+ * @brief Frees a frp_coder structure and its members
+ * 
+ * This function safely frees all memory associated with a frp_coder structure,
+ * including its token and salt members. It uses the SAFE_FREE macro to handle
+ * NULL pointers gracefully.
+ *
+ * @param encoder Pointer to the frp_coder structure to be freed. Can be NULL.
+ */
+void free_encoder(struct frp_coder *encoder) 
+{
 	if (encoder) {
 		SAFE_FREE(encoder->token);
 		SAFE_FREE(encoder->salt);
-		free(encoder);
+		SAFE_FREE(encoder);
 	}
 }

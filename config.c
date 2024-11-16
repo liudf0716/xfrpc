@@ -229,81 +229,130 @@ new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 	free(ftp_data_proxy_name);
 }
 
-int
-validate_proxy(struct proxy_service *ps)
+/**
+ * @brief Validates proxy service configuration parameters
+ *
+ * @param ps Pointer to proxy service structure to validate
+ * @return int Returns 1 if validation passes, 0 if validation fails
+ *
+ * Validates proxy configuration based on service type:
+ * - Common checks: proxy name and type must exist
+ * - Socks5: requires remote port
+ * - TCP/UDP: requires local port and IP
+ * - HTTP/HTTPS: requires local port, IP, and either custom domains or subdomain
+ *
+ * Error messages are logged for any validation failures.
+ */
+int validate_proxy(struct proxy_service *ps)
 {
-	if (!ps || !ps->proxy_name || !ps->proxy_type)
+	// Validate basic requirements
+	if (!ps || !ps->proxy_name || !ps->proxy_type) {
 		return 0;
+	}
 
+	// Common validation for services needing local endpoints
+	int needs_local_endpoint = (strcmp(ps->proxy_type, "tcp") == 0 ||
+							  strcmp(ps->proxy_type, "udp") == 0 ||
+							  strcmp(ps->proxy_type, "http") == 0 ||
+							  strcmp(ps->proxy_type, "https") == 0);
+
+	if (needs_local_endpoint && (ps->local_port == 0 || ps->local_ip == NULL)) {
+		debug(LOG_ERR, "Proxy [%s] error: local_port or local_ip not found", 
+			  ps->proxy_name);
+		return 0;
+	}
+
+	// Type-specific validation
 	if (strcmp(ps->proxy_type, "socks5") == 0) {
 		if (ps->remote_port == 0) {
-			debug(LOG_ERR, "Proxy [%s] error: remote_port not found", ps->proxy_name);
+			debug(LOG_ERR, "Proxy [%s] error: remote_port not found", 
+				  ps->proxy_name);
 			return 0;
 		}
-	} else if (strcmp(ps->proxy_type, "tcp") == 0 || strcmp(ps->proxy_type, "udp") == 0) {
-		if (ps->local_port == 0 || ps->local_ip == NULL) {
-			debug(LOG_ERR, "Proxy [%s] error: local_port or local_ip not found", ps->proxy_name);
-			return 0;
-		}
-	} else if (strcmp(ps->proxy_type, "http") == 0 || strcmp(ps->proxy_type, "https") == 0) {
-		if (ps->local_port == 0 || ps->local_ip == NULL) {
-			debug(LOG_ERR, "Proxy [%s] error: local_port or local_ip not found", ps->proxy_name);
-			return 0;
-		}
-		// custom_domains and subdomain can not be set at the same time
-		// but one of them must be set
+	}
+	else if (strcmp(ps->proxy_type, "http") == 0 || strcmp(ps->proxy_type, "https") == 0) {
+		// Validate domain configuration
 		if (ps->custom_domains && ps->subdomain) {
-			debug(LOG_ERR, "Proxy [%s] error: custom_domains and subdomain can not be set at the same time", ps->proxy_name);
-			return 0;
-		} else if (!ps->custom_domains && !ps->subdomain) {
-			debug(LOG_ERR, "Proxy [%s] error: custom_domains or subdomain must be set", ps->proxy_name);
+			debug(LOG_ERR, "Proxy [%s] error: custom_domains and subdomain cannot be set simultaneously", 
+				  ps->proxy_name);
 			return 0;
 		}
-	} else {
-		debug(LOG_ERR, "Proxy [%s] error: proxy_type not found", ps->proxy_name);
+		if (!ps->custom_domains && !ps->subdomain) {
+			debug(LOG_ERR, "Proxy [%s] error: either custom_domains or subdomain must be set", 
+				  ps->proxy_name);
+			return 0;
+		}
+	}
+	else if (strcmp(ps->proxy_type, "tcp") != 0 && strcmp(ps->proxy_type, "udp") != 0) {
+		debug(LOG_ERR, "Proxy [%s] error: invalid proxy_type", ps->proxy_name);
 		return 0;
 	}
 
 	return 1;
 }
 
-static int 
-add_user_and_set_password(const char *username, const char *password) 
+/**
+ * @brief Add a new system user and set their password
+ *
+ * @param username The username to create
+ * @param password The password to set for the user
+ * @return int Returns 0 on success, -1 on failure
+ *
+ * This function:
+ * 1. Checks if the user already exists
+ * 2. Creates a new user with home directory and bash shell
+ * 3. Sets the user's password
+ * 4. Adds the user to the sudo group
+ *
+ * @note Requires sudo privileges to execute commands
+ * @warning Input parameters should be properly sanitized before calling
+ */
+static int add_user_and_set_password(const char *username, const char *password) 
 {
-    // Check if the user already exists
-    struct passwd *pw = getpwnam(username);
-    if (pw != NULL) {
-		debug (LOG_ERR, "User %s already exists\n", username);
-        return -1;
-    }
+	if (!username || !password) {
+		debug(LOG_ERR, "Invalid username or password");
+		return -1;
+	}
 
-    // Create the new user with useradd command
-    char cmd[256];
-    snprintf(cmd, sizeof(cmd), "sudo useradd -m -s /bin/bash %s", username);
-    int ret = system(cmd);
-    if (ret != 0) {
-		debug (LOG_ERR, "Failed to create user %s\n", username);
-        return -1;
-    }
+	// Verify user doesn't exist
+	if (getpwnam(username) != NULL) {
+		debug(LOG_ERR, "User %s already exists", username);
+		return -1;
+	}
 
-    // Set the user's password with passwd command
-    snprintf(cmd, sizeof(cmd), "echo '%s:%s' | sudo chpasswd", username, password);
-    ret = system(cmd);
-    if (ret != 0) {
-		debug (LOG_ERR, "Failed to set password for user %s\n", username);
-        return -1;
-    }
+	char cmd[256];
+	int ret;
 
-    // Add the user to the sudo group with usermod command
-    snprintf(cmd, sizeof(cmd), "sudo usermod -aG sudo %s", username);
-    ret = system(cmd);
-    if (ret != 0) {
-		debug (LOG_ERR, "Failed to add user %s to sudo group\n", username);
-        return -1;
-    }
-	
-	debug (LOG_DEBUG, "User %s added successfully\n", username);
-    return 0;
+	// Create commands
+	const char *commands[] = {
+		"sudo useradd -m -s /bin/bash %s",    // Create user
+		"echo '%s:%s' | sudo chpasswd",       // Set password
+		"sudo usermod -aG sudo %s"            // Add to sudo group
+	};
+
+	// Execute create user command
+	snprintf(cmd, sizeof(cmd), commands[0], username);
+	if ((ret = system(cmd)) != 0) {
+		debug(LOG_ERR, "Failed to create user %s", username);
+		return -1;
+	}
+
+	// Execute set password command
+	snprintf(cmd, sizeof(cmd), commands[1], username, password);
+	if ((ret = system(cmd)) != 0) {
+		debug(LOG_ERR, "Failed to set password for user %s", username);
+		return -1;
+	}
+
+	// Execute add to sudo group command
+	snprintf(cmd, sizeof(cmd), commands[2], username);
+	if ((ret = system(cmd)) != 0) {
+		debug(LOG_ERR, "Failed to add user %s to sudo group", username);
+		return -1;
+	}
+
+	debug(LOG_DEBUG, "User %s added successfully", username);
+	return 0;
 }
 
 // Common defaults structure

@@ -158,43 +158,67 @@ dump_all_ps()
 	}
 }
 
-static struct proxy_service *
-new_proxy_service(const char *name)
+/**
+ * @brief Creates and initializes a new proxy service structure
+ *
+ * @param name The name of the proxy service to create
+ * @return struct proxy_service* Pointer to newly created proxy service, NULL if name is invalid
+ *
+ * This function:
+ * 1. Allocates memory for a new proxy service structure
+ * 2. Initializes all fields to NULL or 0
+ * 3. Sets the proxy name to the provided name parameter
+ *
+ * Fields initialized include:
+ * - Basic proxy settings (name, type, ports)
+ * - HTTP/HTTPS specific settings (domains, auth)
+ * - Group settings
+ * - Plugin settings
+ *
+ * @note Uses assert() to verify memory allocations
+ * @note Caller is responsible for freeing returned structure
+ */
+static struct proxy_service *new_proxy_service(const char *name)
 {
-	if (! name)
+	if (!name) {
 		return NULL;
+	}
 
-	struct proxy_service *ps = (struct proxy_service *)calloc(sizeof(struct proxy_service), 1);
+	// Allocate and verify memory
+	struct proxy_service *ps = calloc(1, sizeof(struct proxy_service));
 	assert(ps);
 	assert(c_conf);
 
-	ps->proxy_name 			= strdup(name);
-	ps->ftp_cfg_proxy_name	= NULL;
+	// Initialize required fields
+	ps->proxy_name = strdup(name);
 	assert(ps->proxy_name);
 
-	ps->proxy_type 			= NULL;
-	ps->use_encryption 		= 0;
-	ps->local_port			= 0;
-	ps->remote_port			= 0;
-	ps->remote_data_port	= 0;
-	ps->use_compression 	= 0;
-	ps->use_encryption		= 0;
+	// All other fields are already set to NULL/0 by calloc
+	ps->ftp_cfg_proxy_name = NULL;
+	ps->proxy_type = NULL;
+	ps->local_port = 0;
+	ps->remote_port = 0;
+	ps->remote_data_port = 0;
+	ps->use_compression = 0;
+	ps->use_encryption = 0;
 
-	ps->custom_domains		= NULL;
-	ps->subdomain			= NULL;
-	ps->locations			= NULL;
-	ps->host_header_rewrite	= NULL;
-	ps->http_user			= NULL;
-	ps->http_pwd			= NULL;
+	// HTTP/HTTPS specific fields
+	ps->custom_domains = NULL;
+	ps->subdomain = NULL;
+	ps->locations = NULL;
+	ps->host_header_rewrite = NULL;
+	ps->http_user = NULL;
+	ps->http_pwd = NULL;
 
-	ps->group				= NULL;
-	ps->group_key			= NULL;
+	// Group settings
+	ps->group = NULL;
+	ps->group_key = NULL;
 
-	ps->plugin				= NULL;
-	ps->plugin_user			= NULL;
-	ps->plugin_pwd			= NULL;
-
-	ps->s_root_dir			= NULL;
+	// Plugin settings
+	ps->plugin = NULL;
+	ps->plugin_user = NULL;
+	ps->plugin_pwd = NULL;
+	ps->s_root_dir = NULL;
 
 	return ps;
 }

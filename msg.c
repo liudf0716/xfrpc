@@ -528,19 +528,36 @@ new_udp_packet_marshal(const struct udp_packet *udp, char **msg)
 	return 0;
 }
 
-void 
-udp_packet_free(struct udp_packet *udp)
+/**
+ * @brief Frees memory allocated for a UDP packet structure and its components
+ *
+ * This function safely deallocates memory for a UDP packet structure including:
+ * - Packet content
+ * - Local address structure (addr and zone)
+ * - Remote address structure (addr and zone)
+ * - The UDP packet structure itself
+ *
+ * @param udp Pointer to the UDP packet structure to be freed
+ * @note Function checks for NULL pointers before attempting to free memory
+ */
+void udp_packet_free(struct udp_packet *udp)
 {
 	if (!udp)
 		return;
 
 	SAFE_FREE(udp->content);
-	SAFE_FREE(udp->laddr->addr);
-	SAFE_FREE(udp->laddr->zone);
-	SAFE_FREE(udp->laddr);
-	SAFE_FREE(udp->raddr->addr);
-	SAFE_FREE(udp->raddr->zone);
-	SAFE_FREE(udp->raddr);
+
+	if (udp->laddr) {
+		SAFE_FREE(udp->laddr->addr);
+		SAFE_FREE(udp->laddr->zone);
+		SAFE_FREE(udp->laddr);
+	}
+
+	if (udp->raddr) {
+		SAFE_FREE(udp->raddr->addr);
+		SAFE_FREE(udp->raddr->zone); 
+		SAFE_FREE(udp->raddr);
+	}
 
 	SAFE_FREE(udp);
 }

@@ -135,91 +135,102 @@ is_udp_proxy (const struct proxy_service *ps)
 	return 0;
 }
 
-// create frp tunnel for service
-void 
-start_xfrp_tunnel(struct proxy_client *client)
+/**
+ * Sets up callback functions for a proxy client
+ *
+ * @param client Pointer to the proxy client structure for which callbacks will be configured
+ * 
+ * This function configures various callback functions that will be used by the proxy client
+ * for handling different events and operations during the proxy communication process.
+ */
+static void setup_proxy_callbacks(struct proxy_client *client, 
+								bufferevent_data_cb *proxy_c2s_recv,
+								bufferevent_data_cb *proxy_s2c_recv) 
 {
-	if (! client->ctl_bev) {
-		debug(LOG_ERR, "proxy client control bev is invalid!");
+	struct proxy_service *ps = client->ps;
+	
+	if (is_ftp_proxy(ps)) {
+		*proxy_c2s_recv = ftp_proxy_c2s_cb;
+		*proxy_s2c_recv = ftp_proxy_s2c_cb;
+	} else if (is_udp_proxy(ps)) {
+		*proxy_c2s_recv = udp_proxy_c2s_cb;
+		*proxy_s2c_recv = udp_proxy_s2c_cb;
+	} else {
+		*proxy_c2s_recv = tcp_proxy_c2s_cb;
+		*proxy_s2c_recv = tcp_proxy_s2c_cb;
+	}
+}
+
+/**
+ * @brief Sets up a local connection for the proxy client
+ * 
+ * This function establishes a local connection for the specified proxy client.
+ * It handles the connection setup process including socket creation and configuration.
+ *
+ * @param client Pointer to the proxy client structure containing connection details
+ * @return int Returns 0 on success, negative value on failure
+ */
+static int setup_local_connection(struct proxy_client *client) 
+{
+	struct proxy_service *ps = client->ps;
+	
+	if (is_udp_proxy(ps)) {
+		client->local_proxy_bev = connect_udp_server(client->base);
+	} else if (!is_socks5_proxy(ps)) {
+		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port);
+	} else {
+		debug(LOG_DEBUG, "socks5 proxy client can't connect to remote server here ...");
+		return 0;
+	}
+
+	if (!client->local_proxy_bev) {
+		debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
+		del_proxy_client_by_stream_id(client->stream_id);
+		return -1;
+	}
+
+	return 1;
+}
+
+/**
+ * Initiates and establishes a xfrp tunnel for the specified proxy client.
+ * 
+ * This function starts a new tunnel connection for the given proxy client,
+ * setting up the necessary network resources and connection parameters
+ * based on the client's configuration.
+ *
+ * @param client Pointer to the proxy_client structure containing the client configuration
+ *              and connection details
+ */
+void start_xfrp_tunnel(struct proxy_client *client)
+{
+	if (!client || !client->ctl_bev || !client->base || !client->ps || !client->ps->local_port) {
+		debug(LOG_ERR, "Invalid client configuration");
 		return;
 	}
 
-	struct event_base *base = client->base;
+	if (setup_local_connection(client) <= 0) {
+		return;
+	}
+
 	struct common_conf *c_conf = get_common_config();
 	struct proxy_service *ps = client->ps;
 
-	if ( !base ) {
-		debug(LOG_ERR, "service event base get failed");
-		return;
-	}
-
-	if ( !ps ) {
-		debug(LOG_ERR, "service tunnel started failed, no proxy service resource.");
-		return;
-	}
-
-	if ( !ps->local_port ) {
-		debug(LOG_ERR, "service tunnel started failed, proxy service resource unvalid.");
-		return;
-	}
-
-	// if client's proxy type is udp
-	if ( is_udp_proxy(ps) ) {
-		debug(LOG_DEBUG, "start udp proxy tunnel for service [%s:%d]", ps->local_ip, ps->local_port);
-		client->local_proxy_bev = connect_udp_server(base);
-		if ( !client->local_proxy_bev ) {
-			debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
-			del_proxy_client_by_stream_id(client->stream_id);
-			return;
-		}
-	} else if ( !is_socks5_proxy(ps) ) {
-		client->local_proxy_bev = connect_server(base, ps->local_ip, ps->local_port);
-		if ( !client->local_proxy_bev ) {
-			debug(LOG_ERR, "frpc tunnel connect local proxy port [%d] failed!", ps->local_port);
-			del_proxy_client_by_stream_id(client->stream_id);
-			return;
-		}
-	} else {
-		debug(LOG_DEBUG, "socks5 proxy client can't connect to remote server here ...");
-		return;
-	}
-	
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
-		  c_conf->server_addr, 
-		  ps->remote_port, 
-		  ps->local_ip ? ps->local_ip:"127.0.0.1",
-		  ps->local_port);
+		  c_conf->server_addr, ps->remote_port,
+		  ps->local_ip ? ps->local_ip : "127.0.0.1", ps->local_port);
 
-#define PREDICT_FALSE(x) 0
 	bufferevent_data_cb proxy_s2c_recv, proxy_c2s_recv;
-	if (PREDICT_FALSE(is_ftp_proxy(client->ps))) {
-		proxy_c2s_recv = ftp_proxy_c2s_cb;
-		proxy_s2c_recv = ftp_proxy_s2c_cb;
-	} else if ( is_udp_proxy(ps) ) {
-		proxy_c2s_recv = udp_proxy_c2s_cb;
-		proxy_s2c_recv = udp_proxy_s2c_cb;
-	} else {
-		proxy_c2s_recv = tcp_proxy_c2s_cb; // local service ---> xfrpc
-		proxy_s2c_recv = tcp_proxy_s2c_cb; // frps ---> xfrpc
-	}
-	
+	setup_proxy_callbacks(client, &proxy_c2s_recv, &proxy_s2c_recv);
+
 	if (!c_conf->tcp_mux) {
-		bufferevent_setcb(client->ctl_bev, 
-						proxy_s2c_recv, 
-						NULL, 
-						xfrp_worker_event_cb, 
-						client);
+		bufferevent_setcb(client->ctl_bev, proxy_s2c_recv, NULL, 
+						 xfrp_worker_event_cb, client);
 		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	}
 
-	
-
-	bufferevent_setcb(client->local_proxy_bev, 
-						proxy_c2s_recv, 
-						NULL, 
-						xfrp_proxy_event_cb, 
-						client);
-						
+	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, NULL,
+					 xfrp_proxy_event_cb, client);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
 }
 

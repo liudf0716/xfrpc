@@ -512,34 +512,60 @@ char *get_ftp_data_proxy_name(const char *ftp_proxy_name)
 	return ftp_data_proxy_name;
 }
 
-void load_config(const char *confile)
-{
+/**
+ * @brief Validates heartbeat configuration parameters
+ *
+ * Ensures heartbeat interval is positive and timeout is greater than interval.
+ * Exits the program if validation fails.
+ */
+static void validate_heartbeat_config(void) {
+	if (c_conf->heartbeat_interval <= 0) {
+		debug(LOG_ERR, "Error: heartbeat_interval must be positive");
+		exit(0);
+	}
+
+	if (c_conf->heartbeat_timeout < c_conf->heartbeat_interval) {
+		debug(LOG_ERR, "Error: heartbeat_timeout must be greater than heartbeat_interval");
+		exit(0);
+	}
+}
+
+/**
+ * @brief Loads and parses the configuration file for the xfrpc client
+ *
+ * @param confile Path to the configuration file to be loaded
+ *
+ * This function:
+ * 1. Initializes the common configuration structure
+ * 2. Parses the common section of the config file
+ * 3. Validates heartbeat settings
+ * 4. Parses the proxy service sections
+ * 5. Dumps the configuration for debugging
+ *
+ * @note Exits the program if configuration parsing fails or validation errors occur
+ */
+void load_config(const char *confile) {
+	// Initialize common configuration
 	c_conf = (struct common_conf *)calloc(sizeof(struct common_conf), 1);
 	assert(c_conf);
-	
 	init_common_conf(c_conf);
 
 	debug(LOG_DEBUG, "Reading configuration file '%s'", confile);
-	
+
+	// Parse common section
 	if (ini_parse(confile, common_handler, c_conf) < 0) {
 		debug(LOG_ERR, "Config file parse failed");
 		exit(0);
 	}
-	
+
 	dump_common_conf();
-	
-	if (c_conf->heartbeat_interval <= 0) {
-		debug(LOG_ERR, "Error: heartbeat_interval <= 0");
-		exit(0);
-	}
-	
-	if (c_conf->heartbeat_timeout < c_conf->heartbeat_interval) {
-		debug(LOG_ERR, "Error: heartbeat_timeout < heartbeat_interval");
-		exit(0);
-	}
-	
+
+	// Validate heartbeat settings
+	validate_heartbeat_config();
+
+	// Parse proxy services
 	ini_parse(confile, proxy_service_handler, NULL);
-	
+
 	dump_all_ps();
 }
 

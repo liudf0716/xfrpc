@@ -494,22 +494,29 @@ init_common_conf(struct common_conf *config)
 	config->is_router			= 0;
 }
 
-// it should be free after using
-// because of assert it will never return NULL
-char *get_ftp_data_proxy_name(const char *ftp_proxy_name)
-{
-	char *ftp_tail_data_name = FTP_RMT_CTL_PROXY_SUFFIX;
-	char *ftp_data_proxy_name = (char *)calloc(1, 
-								strlen(ftp_proxy_name)+strlen(ftp_tail_data_name)+1);
-	assert(ftp_data_proxy_name);
+/**
+ * @brief Creates a FTP data proxy name by appending a suffix to the control proxy name
+ *
+ * @param ftp_proxy_name The base FTP proxy name to extend
+ * @return char* A newly allocated string containing the FTP data proxy name
+ * 
+ * @note The returned string must be freed by the caller
+ * @note Function will assert if memory allocation fails
+ */
+char *get_ftp_data_proxy_name(const char *ftp_proxy_name) {
+	if (!ftp_proxy_name) {
+		return NULL;
+	}
 
-	snprintf(ftp_data_proxy_name, 
-		strlen(ftp_proxy_name) + strlen(ftp_tail_data_name) + 1, 
-		"%s%s", 
-		ftp_proxy_name, 
-		ftp_tail_data_name);
+	const char *suffix = FTP_RMT_CTL_PROXY_SUFFIX;
+	size_t total_len = strlen(ftp_proxy_name) + strlen(suffix) + 1;
 	
-	return ftp_data_proxy_name;
+	char *data_proxy_name = (char *)calloc(1, total_len);
+	assert(data_proxy_name);
+
+	snprintf(data_proxy_name, total_len, "%s%s", ftp_proxy_name, suffix);
+	
+	return data_proxy_name;
 }
 
 /**

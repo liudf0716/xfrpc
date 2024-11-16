@@ -16,6 +16,7 @@
 #include <netdb.h>
 #include <ifaddrs.h>
 #include <linux/if_link.h>
+#include <stdbool.h>
 
 #include "utils.h"
 
@@ -183,28 +184,45 @@ int get_net_ifname(char *if_buf, int blen)
 	return ret;
 }
 
-// e.g. wWw.Baidu.com/China will be trans into www.baidu.com/China
-// return: 0:check and trant succeed, 1:failed or domain name is invalid
+/**
+ * Converts domain name to lowercase and validates format
+ * 
+ * This function takes a domain name string and:
+ * 1. Converts all characters to lowercase until '/' is encountered
+ * 2. Validates that the domain has at least one dot (.)
+ * 3. Copies the result to the output buffer
+ *
+ * Example: wWw.Baidu.com/China -> www.baidu.com/China
+ *
+ * @param dname Input domain name string
+ * @param udname_buf Output buffer for unified domain name
+ * @param udname_buf_len Length of output buffer
+ * @return 0 on success, 1 on failure (invalid domain or buffer too small)
+ */
 int dns_unified(const char *dname, char *udname_buf, int udname_buf_len)
 {
-	if (! dname || ! udname_buf || udname_buf_len < strlen(dname)+1)
+	// Validate input parameters
+	if (!dname || !udname_buf || udname_buf_len < strlen(dname) + 1) {
 		return 1;
-	
-	int has_dot = 0;
-	int dlen = strlen(dname);
-	int i = 0;
-	for(i=0; i<dlen; i++) {
-		if(dname[i] == '/')
-			break;
+	}
 
-		if (dname[i] == '.' && i != dlen-1)
-			has_dot = 1;
+	const int dlen = strlen(dname);
+	bool has_dot = false;
+
+	// Process each character until '/' or end of string
+	for (int i = 0; i < dlen; i++) {
+		if (dname[i] == '/') {
+			udname_buf[i] = '\0';
+			break;
+		}
+
+		if (dname[i] == '.' && i != dlen - 1) {
+			has_dot = true;
+		}
 
 		udname_buf[i] = tolower(dname[i]);
 	}
 
-	if (! has_dot)	//domain name should have 1 dot leastly
-		return 1;
-
-	return 0;
+	// Domain must contain at least one dot
+	return has_dot ? 0 : 1;
 }

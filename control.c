@@ -2070,7 +2070,7 @@ static void clear_main_control()
 
 	// Clean up resources
 	clear_all_proxy_client();
-	free_evp_cipher_ctx();
+	free_crypto_resources();
 
 	// Reinitialize TCP multiplexing if enabled
 	struct common_conf *conf = get_common_config();

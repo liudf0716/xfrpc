@@ -149,6 +149,6 @@ void free_encoder(struct frp_coder *encoder);
 /**
  * @brief Free EVP cipher context
  */
-void free_evp_cipher_ctx(void);
+void free_crypto_resources(void);
 
 #endif // XFRPC_CRYPTO_H

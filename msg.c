@@ -391,29 +391,57 @@ END_ERROR:
 	return lr;
 }
 
-struct start_work_conn_resp *
-start_work_conn_resp_unmarshal(const char *resp_msg)
+/**
+ * @brief Unmarshals a start work connection response message from JSON string
+ *
+ * @param resp_msg The JSON string to unmarshal. Must not be NULL.
+ * @return struct start_work_conn_resp* Pointer to newly allocated response structure,
+ *         or NULL if:
+ *         - Input is NULL
+ *         - JSON parsing fails
+ *         - Required fields are missing
+ *         - Memory allocation fails
+ *         
+ * @note The returned structure must be freed by the caller
+ */
+struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg)
 {
+	if (!resp_msg) return NULL;
+
 	struct json_object *j_start_w_res = json_tokener_parse(resp_msg);
-	if (j_start_w_res == NULL)
-		return NULL;
+	if (!j_start_w_res) return NULL;
 
 	struct start_work_conn_resp *sr = calloc(1, sizeof(struct start_work_conn_resp));
-	assert(sr);
+	if (!sr) {
+		json_object_put(j_start_w_res);
+		return NULL;
+	}
 
 	struct json_object *pn = NULL;
 	if (!json_object_object_get_ex(j_start_w_res, "proxy_name", &pn)) {
-		free(sr);
-		sr = NULL;
-		goto START_W_C_R_END;
+		goto error;
 	}
 
-	sr->proxy_name = strdup(json_object_get_string(pn));
-	assert(sr->proxy_name);
+	const char *proxy_name = json_object_get_string(pn);
+	if (!proxy_name) {
+		goto error;
+	}
 
-START_W_C_R_END:
+	sr->proxy_name = strdup(proxy_name);
+	if (!sr->proxy_name) {
+		goto error;
+	}
+
 	json_object_put(j_start_w_res);
 	return sr;
+
+error:
+	json_object_put(j_start_w_res);
+	if (sr) {
+		SAFE_FREE(sr->proxy_name);
+		SAFE_FREE(sr);
+	}
+	return NULL;
 }
 
 /**

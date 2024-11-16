@@ -1,28 +1,20 @@
-/* vim: set et ts=4 sts=4 sw=4 : */
-/********************************************************************\
- * This program is free software; you can redistribute it and/or    *
- * modify it under the terms of the GNU General Public License as   *
- * published by the Free Software Foundation; either version 2 of   *
- * the License, or (at your option) any later version.              *
- *                                                                  *
- * This program is distributed in the hope that it will be useful,  *
- * but WITHOUT ANY WARRANTY; without even the implied warranty of   *
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the    *
- * GNU General Public License for more details.                     *
- *                                                                  *
- * You should have received a copy of the GNU General Public License*
- * along with this program; if not, contact:                        *
- *                                                                  *
- * Free Software Foundation           Voice:  +1-617-542-5942       *
- * 59 Temple Place - Suite 330        Fax:    +1-617-542-2652       *
- * Boston, MA  02111-1307,  USA       gnu@gnu.org                   *
- *                                                                  *
-\********************************************************************/
-
-/** @file tcp_redir.c
-    @brief xfrp tcp redirect service implemented
-    @author Copyright (C) 2023 Dengfeng Liu <liu_df@qq.com>
-*/
+/*
+ * Copyright (C) 2023 Dengfeng Liu <liudf0716@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 #include <pthread.h>
 #include <arpa/inet.h>
@@ -190,22 +182,41 @@ static void *tcp_redir_worker(void *arg)
     return NULL;
 }
 
+/**
+ * @brief Starts the TCP redirection service for a given proxy service.
+ * 
+ * This function initiates the TCP redirection service, setting up the necessary
+ * network configurations and handlers for the specified proxy service.
+ * 
+ * @param ps Pointer to the proxy service structure containing service configuration
+ *           and connection details.
+ * 
+ * @return void
+ * 
+ * @note The proxy service structure must be properly initialized before calling
+ *       this function.
+ */
 void start_tcp_redir_service(struct proxy_service *ps)
 {
-    // create a thread 
     pthread_t tid;
-    if (pthread_create(&tid, NULL, tcp_redir_worker, (void *)ps) != 0) {
-        debug(LOG_ERR, "create tcp_redir worker thread failed!");
-        exit(1);
-    }
-    debug(LOG_INFO, "create tcp_redir worker thread success!");
+    int ret;
 
-    // detach the thread
-    if (pthread_detach(tid) != 0) {
-        debug(LOG_ERR, "detach tcp_redir worker thread failed!");
-        exit(1);
+    if (!ps) {
+        debug(LOG_ERR, "Invalid proxy service parameter");
+        return;
     }
-    debug(LOG_INFO, "detach tcp_redir worker thread success!");
 
-    return;
+    ret = pthread_create(&tid, NULL, tcp_redir_worker, ps);
+    if (ret != 0) {
+        debug(LOG_ERR, "Failed to create tcp_redir worker thread: %s", strerror(ret));
+        return;
+    }
+
+    ret = pthread_detach(tid);
+    if (ret != 0) {
+        debug(LOG_ERR, "Failed to detach tcp_redir worker thread: %s", strerror(ret));
+        return;
+    }
+
+    debug(LOG_INFO, "TCP redirection service started successfully");
 }

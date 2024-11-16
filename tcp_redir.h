@@ -1,8 +1,12 @@
-#ifndef _TCP_REDIR_H_
-#define _TCP_REDIR_H_
+#ifndef XFRPC_TCP_REDIR_H
+#define XFRPC_TCP_REDIR_H
 
 #include "proxy.h"
 
+/**
+ * Starts the TCP redirection service
+ * @param proxy Pointer to proxy service configuration
+ */
 void start_tcp_redir_service(struct proxy_service *proxy);
 
 #endif

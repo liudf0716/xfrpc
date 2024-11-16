@@ -352,9 +352,31 @@ cleanup:
     evbuffer_free(base64_output);
 }
 
-void 
-udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
+/**
+ * @brief Callback function for handling data from server to client in UDP proxy
+ * 
+ * This function is triggered when data is received from the server and needs to be
+ * forwarded to the local UDP client. It reads from the server's bufferevent and
+ * writes to the client's local proxy bufferevent.
+ *
+ * @param bev The bufferevent structure containing data from the server
+ * @param ctx Context pointer containing the proxy client structure
+ *
+ * @note The function will return early if client or local_proxy_bev is NULL
+ */
+void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 {
     struct proxy_client *client = (struct proxy_client *)ctx;
-	assert(client);
+    if (!client || !client->local_proxy_bev) {
+        debug(LOG_ERR, "Invalid client parameters");
+        return;
+    }
+
+    struct evbuffer *src = bufferevent_get_input(bev);
+    struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+    
+    // Forward data from server to local UDP socket
+    if (evbuffer_add_buffer(dst, src) != 0) {
+        debug(LOG_ERR, "Failed to forward data from server to client");
+    }
 }

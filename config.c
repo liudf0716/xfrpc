@@ -43,60 +43,81 @@
 #include "utils.h"
 #include "version.h"
 
-
-// define a list of type in array
+/**
+ * @brief Array of valid proxy service types supported by the application
+ */
 static const char *valid_types[] = {
 	"tcp",
-	"udp",
+	"udp", 
 	"socks5",
 	"http",
 	"https",
 	NULL
 };
 
-static struct common_conf 	*c_conf;
-static struct proxy_service *all_ps;
+/**
+ * @brief Global configuration structures
+ */
+static struct common_conf    *c_conf;    /* Common configuration settings */
+static struct proxy_service *all_ps;     /* Hash table of all proxy services */
 
+/* Forward declaration */
 static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps);
 
-struct common_conf *
-get_common_config()
+/**
+ * @brief Gets the common configuration settings
+ * @return struct common_conf* Pointer to common configuration structure
+ */
+struct common_conf *get_common_config(void)
 {
 	return c_conf;
-};
-
-void 
-free_common_config()
-{
-	struct common_conf *c_conf = get_common_config();
-
-	if (c_conf->server_addr) free(c_conf->server_addr);
-	if (c_conf->auth_token) free(c_conf->auth_token);
-};
-
-static int 
-is_true(const char *val)
-{
-	if (val && (strcmp(val, "true") == 0 || strcmp(val, "1") == 0))
-		return 1;
-		
-	return 0;
 }
 
-static const char *
-get_valid_type(const char *val)
+/**
+ * @brief Frees memory used by common configuration
+ *
+ * Deallocates memory for:
+ * - Server address
+ * - Authentication token
+ */
+void free_common_config(void)
 {
-	if (!val)
+	struct common_conf *c_conf = get_common_config();
+	SAFE_FREE(c_conf->server_addr);
+	SAFE_FREE(c_conf->auth_token);
+}
+
+/**
+ * @brief Checks if a string value represents a boolean true
+ *
+ * @param val String value to check
+ * @return int Returns 1 if true, 0 otherwise
+ *
+ * Considers "true" and "1" as true values
+ */
+static int is_true(const char *val)
+{
+	return (val && (strcmp(val, "true") == 0 || strcmp(val, "1") == 0));
+}
+
+/**
+ * @brief Validates if a proxy type string is supported
+ *
+ * @param val Type string to validate
+ * @return const char* Returns the valid type string or NULL if invalid
+ */
+static const char *get_valid_type(const char *val)
+{
+	if (!val) {
 		return NULL;
-	
-	#define MATCH_VALUE(s) strcmp(val, s) == 0
-	// iterate the valid_types array
+	}
+
 	for (int i = 0; valid_types[i]; i++) {
-		if (MATCH_VALUE(valid_types[i])) {
+		if (strcmp(val, valid_types[i]) == 0) {
 			return valid_types[i];
 		}
 	}
-	
+
 	return NULL;
 }
 

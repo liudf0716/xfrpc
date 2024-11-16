@@ -63,56 +63,73 @@ static void event_cb(struct bufferevent *bev, short events, void *arg)
     }
 }
 
-// define a callback function for accept event
+/**
+ * @brief Callback function for accepting new TCP connections
+ *
+ * This callback is triggered when a new TCP connection is received. It handles the following:
+ * - Checks if there's already an existing connection (only one allowed)
+ * - Creates bufferevent for the local connection
+ * - Creates bufferevent for the remote connection
+ * - Establishes connection to the remote server
+ * - Sets up callbacks and enables events for both local and remote bufferevents
+ *
+ * @param listener The event listener that received the connection
+ * @param fd The socket file descriptor for the new connection
+ * @param address The address structure of the connecting client
+ * @param socklen The length of the address structure
+ * @param arg User-provided argument (tcp_redir_service structure)
+ *
+ * @note This implementation only allows one active connection at a time
+ */
 static void accept_cb(struct evconnlistener *listener, evutil_socket_t fd,
     struct sockaddr *address, int socklen, void *arg)
 {
-     if (current_bev) {
-        // Already have a connection, reject new connection
-        debug(LOG_INFO, "Rejecting new connection. Only one connection allowed at a time.");
+    struct tcp_redir_service *trs = (struct tcp_redir_service *)arg;
+    struct bufferevent *bev_in = NULL, *bev_out = NULL;
+
+    // Check for existing connection
+    if (current_bev) {
+        debug(LOG_INFO, "Rejecting new connection: only one connection allowed");
         evutil_closesocket(fd);
         return;
     }
 
-    // the argument is the proxy_service
-    struct tcp_redir_service *trs = (struct tcp_redir_service *)arg;
-    struct event_base *base = trs->base;
-
-    // read the data from the local port
-    struct bufferevent *bev_in = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+    // Create local bufferevent
+    bev_in = bufferevent_socket_new(trs->base, fd, 
+                                   BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
     if (!bev_in) {
-        debug(LOG_ERR, "create bufferevent for local port failed!");
-        evutil_closesocket(fd); 
+        debug(LOG_ERR, "Failed to create local bufferevent");
+        evutil_closesocket(fd);
         return;
     }
 
-     // connect to the remote xfrpc service
-    struct bufferevent *bev_out = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+    // Create remote bufferevent
+    bev_out = bufferevent_socket_new(trs->base, -1, 
+                                    BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
     if (!bev_out) {
-        debug(LOG_ERR, "create bufferevent for remote xfrps service failed!");
+        debug(LOG_ERR, "Failed to create remote bufferevent");
         bufferevent_free(bev_in);
         return;
     }
 
-    // connect to the remote port
-    if (bufferevent_socket_connect(bev_out, (struct sockaddr *)&(trs->server_addr), sizeof(trs->server_addr)) < 0) {
-        debug(LOG_ERR, "connect to remote port failed! %s", strerror(errno));
+    // Connect to remote server
+    if (bufferevent_socket_connect(bev_out, (struct sockaddr *)&(trs->server_addr), 
+                                  sizeof(trs->server_addr)) < 0) {
+        debug(LOG_ERR, "Failed to connect to remote server: %s", strerror(errno));
         bufferevent_free(bev_in);
         bufferevent_free(bev_out);
         return;
     }
-    debug(LOG_INFO, "connect to remote xfrps service [%s:%d] success!", 
-        get_common_config()->server_addr, trs->ps->remote_port);
 
-    bufferevent_setcb(bev_in, read_cb, NULL, event_cb, (void *)bev_out);
-    bufferevent_setcb(bev_out, read_cb, NULL, event_cb, (void *)bev_in);
+    // Setup callbacks and enable events
+    bufferevent_setcb(bev_in, read_cb, NULL, event_cb, bev_out);
+    bufferevent_setcb(bev_out, read_cb, NULL, event_cb, bev_in);
     bufferevent_enable(bev_in, EV_READ|EV_WRITE);
     bufferevent_enable(bev_out, EV_READ|EV_WRITE);
 
     current_bev = bev_in;
-
-    debug(LOG_INFO, "connect to remote port success!");
-    return;
+    debug(LOG_INFO, "Connected to remote server %s:%d", 
+          get_common_config()->server_addr, trs->ps->remote_port);
 }
 
 static int setup_server_address(struct tcp_redir_service *trs, const char *server_addr) {

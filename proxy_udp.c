@@ -191,44 +191,76 @@ static int evutil_base64_encode(struct evbuffer *src, struct evbuffer *dst)
     return encode_len;
 }
 
-void 
-handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client)
-{
-    // debase64 of udp_pkt->content
+static int resolve_local_addr(const char *ip, struct sockaddr_in *addr) {
+    if (inet_pton(AF_INET, ip, &addr->sin_addr) > 0) {
+        return 0;
+    }
+
+    struct hostent *host = gethostbyname(ip);
+    if (!host) {
+        debug(LOG_ERR, "Failed to resolve hostname: %s", ip);
+        return -1;
+    }
+
+    memcpy(&addr->sin_addr, host->h_addr, host->h_length);
+    return 0;
+}
+
+/**
+ * @brief Handles incoming UDP packets for proxying
+ * 
+ * This function processes UDP packets received from a client and handles the UDP proxy
+ * protocol logic for forwarding the packet to its destination.
+ * 
+ * @param udp_pkt Pointer to the UDP packet structure containing packet data
+ * @param client Pointer to the proxy client structure representing the connected client
+ * 
+ * @note The function assumes both parameters are valid non-NULL pointers
+ */
+void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client) {
+    if (!udp_pkt || !client || !client->local_proxy_bev || !client->ps) {
+        debug(LOG_ERR, "Invalid parameters in handle_udp_packet");
+        return;
+    }
+
+    // Decode base64 content
     struct evbuffer *base64_input = evbuffer_new();
+    struct evbuffer *decoded_output = evbuffer_new();
+    if (!base64_input || !decoded_output) {
+        debug(LOG_ERR, "Failed to create evbuffers");
+        goto cleanup;
+    }
+
     size_t content_len = strlen(udp_pkt->content);
-    evbuffer_add(base64_input, udp_pkt->content, content_len);
-    struct evbuffer *base64_output = evbuffer_new();
+    if (evbuffer_add(base64_input, udp_pkt->content, content_len) != 0) {
+        debug(LOG_ERR, "Failed to add content to base64_input buffer");
+        goto cleanup;
+    }
 
-    evutil_base64_decode(base64_input, base64_output);
-    evbuffer_free(base64_input);
+    if (evutil_base64_decode(base64_input, decoded_output) < 0) {
+        debug(LOG_ERR, "Base64 decoding failed");
+        goto cleanup;
+    }
 
-    // send buf content to local_proxy_bev
-    struct bufferevent *local_proxy_bev = client->local_proxy_bev;
-    assert(local_proxy_bev != NULL);
-    // according to client proxy service's local address and port, send buf to local_proxy_bev
-    assert(client->ps);
-    // if client->ps->local_addr is domain, need to resolve it
+    // Setup local address
     struct sockaddr_in local_addr;
     memset(&local_addr, 0, sizeof(local_addr));
     local_addr.sin_family = AF_INET;
     local_addr.sin_port = htons(client->ps->local_port);
-    if (inet_pton(AF_INET, client->ps->local_ip, &local_addr.sin_addr) <= 0) {
-        // domain
-        struct hostent *host = gethostbyname(client->ps->local_ip);
-        assert(host != NULL);
-        if (host == NULL) {
-            debug(LOG_ERR, "gethostbyname %s failed", client->ps->local_ip);
-            evbuffer_free(base64_output);
-            return;
-        }
-        memcpy(&local_addr.sin_addr, host->h_addr, host->h_length);
-    } 
 
-    // send buf to local_proxy_bev
-    struct evbuffer *dst = bufferevent_get_output(local_proxy_bev);
-    evbuffer_add_buffer(dst, base64_output);
-    evbuffer_free(base64_output);
+    if (resolve_local_addr(client->ps->local_ip, &local_addr) != 0) {
+        goto cleanup;
+    }
+
+    // Forward decoded data
+    struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+    if (evbuffer_add_buffer(dst, decoded_output) != 0) {
+        debug(LOG_ERR, "Failed to forward decoded data");
+    }
+
+cleanup:
+    if (base64_input) evbuffer_free(base64_input);
+    if (decoded_output) evbuffer_free(decoded_output);
 }
 
 void 

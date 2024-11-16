@@ -263,33 +263,68 @@ handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len)
 	}
 }
 
+/**
+ * @brief Callback function handling data transfer from client to server in TCP proxy
+ *
+ * This function processes data received from the client-side bufferevent and forwards
+ * it to the control connection. It supports both regular TCP proxy mode and TCP
+ * multiplexing mode.
+ *
+ * @param bev The bufferevent structure containing client data
+ * @param ctx Context pointer containing proxy client information
+ *
+ * Operation flow:
+ * 1. Validates client and control connection
+ * 2. Checks for available data in source buffer
+ * 3. If TCP multiplexing is disabled, directly forwards data to control connection
+ * 4. If TCP multiplexing is enabled, reads data into temporary buffer and writes
+ *    to multiplexed stream
+ * 
+ * @note In multiplexing mode, if partial write occurs, the read event is disabled
+ *       to prevent buffer overflow
+ */
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
-	struct common_conf  *c_conf = get_common_config();
 	struct proxy_client *client = (struct proxy_client *)ctx;
-	assert(client);
-	struct bufferevent *partner = client->ctl_bev;
-	assert(partner);
+	if (!client || !client->ctl_bev) {
+		debug(LOG_ERR, "Invalid client or control connection");
+		return;
+	}
+
 	struct evbuffer *src = bufferevent_get_input(bev);
 	size_t len = evbuffer_get_length(src);
-	assert(len > 0);
+	if (len == 0) {
+		debug(LOG_DEBUG, "No data to read from client");
+		return;
+	}
+
+	struct common_conf *c_conf = get_common_config();
 	if (!c_conf->tcp_mux) {
-		struct evbuffer *dst = bufferevent_get_output(partner);
+		struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
 		evbuffer_add_buffer(dst, src);
 		return;
 	}
 
-	uint8_t *buf = (uint8_t *)malloc(len);
-	assert(buf != NULL);
-	memset(buf, 0, len);
-	uint32_t nr = bufferevent_read(bev, buf, len);
-	assert(nr == len);
+	uint8_t *buf = calloc(1, len);
+	if (!buf) {
+		debug(LOG_ERR, "Failed to allocate memory for buffer");
+		return;
+	}
 
-	nr = tmux_stream_write(partner, buf, len, &client->stream);
-	if (nr < len) {
-		debug(LOG_DEBUG, "stream_id [%d] len is %d tmux_stream_write %d data, disable read", client->stream.id, len, nr);
+	size_t nr = bufferevent_read(bev, buf, len);
+	if (nr != len) {
+		debug(LOG_ERR, "Failed to read complete data: expected %zu, got %zu", len, nr);
+		free(buf);
+		return;
+	}
+
+	uint32_t written = tmux_stream_write(client->ctl_bev, buf, len, &client->stream);
+	if (written < len) {
+		debug(LOG_DEBUG, "Stream %d: Partial write %u/%zu bytes, disabling read",
+			  client->stream.id, written, len);
 		bufferevent_disable(bev, EV_READ);
 	}
+
 	free(buf);
 }
 

@@ -135,53 +135,66 @@ int show_net_ifname()
 	return 0;
 }
 
-// return: 0: network interface get succeed
+/**
+ * Gets the primary network interface name of the system
+ * 
+ * This function attempts to find the primary network interface name by:
+ * 1. First looking for common router interfaces (br-lan or br0)
+ * 2. Falling back to first non-loopback interface if router interfaces not found
+ *
+ * @param if_buf Output buffer to store interface name
+ * @param blen Length of output buffer (must be >= 8 bytes)
+ * @return 0 on success, -1 on invalid parameters, 1 if no interface found
+ */
 int get_net_ifname(char *if_buf, int blen)
 {
-	if (NULL == if_buf || blen < 8) return -1;
-
-	struct ifaddrs *ifaddr, *ifa;
-	int family, n;
-	int ret = 1;
-	if (getifaddrs(&ifaddr) == -1) {
-	   perror("getifaddrs");
-	   exit(EXIT_FAILURE);
+	// Validate input parameters
+	if (if_buf == NULL || blen < 8) {
+		return -1;
 	}
 
-	int found = 0;
-	char tmp_if_buf[16];
-	memset(tmp_if_buf, 0, sizeof(tmp_if_buf));
-	/* Walk through linked list, maintaining head pointer so we
-	  can free list later */
-	for (ifa = ifaddr, n = 0; ifa != NULL; ifa = ifa->ifa_next, n++) {
-	    if (ifa->ifa_addr == NULL) continue;
+	struct ifaddrs *ifaddr = NULL, *ifa = NULL;
+	int family;
+	char backup_ifname[IFNAMSIZ] = {0};
+	
+	if (getifaddrs(&ifaddr) == -1) {
+		perror("getifaddrs");
+		return 1;
+	}
 
-	    family = ifa->ifa_addr->sa_family;
+	// Iterate through all interfaces
+	for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL) {
+			continue;
+		}
+
+		family = ifa->ifa_addr->sa_family;
 
 		if (family == AF_INET) {
-			// for LEDE/OpenWRT or Padavan embedded router os
-			if (strcmp(ifa->ifa_name, "br-lan") == 0 || strcmp(ifa->ifa_name, "br0") == 0) {
-				found = 1;
-				break;
+			// Check for router specific interfaces
+			if (strcmp(ifa->ifa_name, "br-lan") == 0 || 
+				strcmp(ifa->ifa_name, "br0") == 0) {
+				strncpy(if_buf, ifa->ifa_name, blen);
+				freeifaddrs(ifaddr);
+				return 0;
 			}
 		} else if (family == AF_PACKET && 
-			ifa->ifa_data != NULL && 
-			strcmp(ifa->ifa_name, "lo") != 0) { // skip local loop interface
-			
-			strncpy(tmp_if_buf, ifa->ifa_name, 16);
+				  ifa->ifa_data != NULL && 
+				  strcmp(ifa->ifa_name, "lo") != 0) {
+			// Store first non-loopback interface as backup
+			strncpy(backup_ifname, ifa->ifa_name, IFNAMSIZ);
 		}
 	}
 
-	if (found) {
-		strncpy(if_buf, ifa->ifa_name, blen);
-		ret = 0;
-	} else if (tmp_if_buf[0] != 0) {
-		strncpy(if_buf, tmp_if_buf, blen);
-		ret = 0;
+	// Use backup interface if router interfaces not found
+	if (backup_ifname[0] != '\0') {
+		strncpy(if_buf, backup_ifname, blen);
+		freeifaddrs(ifaddr);
+		return 0;
 	}
 
 	freeifaddrs(ifaddr);
-	return ret;
+	return 1;
 }
 
 /**

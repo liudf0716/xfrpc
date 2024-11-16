@@ -219,7 +219,9 @@ char *get_auth_key(const char *token, long int *timestamp)
 
 	// Calculate MD5 hash
 	uint8_t digest[16] = {0};
-	calc_md5((const uint8_t *)seed, strlen(seed), digest);
+	if (calc_md5((const uint8_t *)seed, strlen(seed), digest) < 0) {
+		return NULL;
+	}
 
 	// Allocate auth key buffer
 	char *auth_key = malloc(33); // 32 hex chars + null terminator

@@ -40,40 +40,53 @@ int is_valid_ip_address(const char *ip_address)
 	return result;
 }
 
-//	net_if_name: name of network interface, e.g. br-lan
-//	return: 1: error 0:get succeed
-int get_net_mac(const char *net_if_name, char *mac, int mac_len) {
-	int ret = 1;
-	int i = 0;
-	int sock = 0;
+/**
+ * Gets the MAC address of a specified network interface
+ * 
+ * This function retrieves the hardware (MAC) address of a network interface
+ * and formats it as a string of uppercase hexadecimal digits.
+ *
+ * @param net_if_name Name of network interface (e.g., "br-lan", "eth0")
+ * @param mac Output buffer to store MAC address string
+ * @param mac_len Length of output buffer (must be >= 12 bytes for MAC XX:XX:XX:XX:XX:XX)
+ * @return 0 on success, 1 on error (invalid parameters or system calls failed)
+ */
+int get_net_mac(const char *net_if_name, char *mac, int mac_len) 
+{
+	struct ifreq ifreq;
+	int sock;
 
-	if (mac_len < 12 || net_if_name == NULL) {
+	// Validate input parameters
+	if (!net_if_name || !mac || mac_len < 12) {
 		return 1;
 	}
-	struct ifreq ifreq;
 
+	// Create socket for interface communication
 	sock = socket(AF_INET, SOCK_STREAM, 0);
-	if( sock < 0 ) {
-		perror("error sock");
-		goto OUT;
+	if (sock < 0) {
+		perror("socket creation failed");
+		return 1;
 	}
 
-	strncpy(ifreq.ifr_name, net_if_name, IFNAMSIZ);
-	if( ioctl(sock, SIOCGIFHWADDR,&ifreq) < 0 ) {
-		perror("error ioctl");
-		goto OUT;
+	// Prepare interface request structure
+	memset(&ifreq, 0, sizeof(ifreq));
+	strncpy(ifreq.ifr_name, net_if_name, IFNAMSIZ - 1);
+
+	// Get hardware address
+	if (ioctl(sock, SIOCGIFHWADDR, &ifreq) < 0) {
+		perror("ioctl SIOCGIFHWADDR failed");
+		close(sock);
+		return 1;
 	}
 
-	for( i = 0; i < 6; i++ ){
-		snprintf(mac+2*i, mac_len - 2*i, "%02X", 
-			(unsigned char)ifreq.ifr_hwaddr.sa_data[i]);
+	// Format MAC address as string
+	for (int i = 0; i < 6; i++) {
+		snprintf(mac + (i * 2), mac_len - (i * 2), "%02X", 
+				(unsigned char)ifreq.ifr_hwaddr.sa_data[i]);
 	}
-	mac[strlen(mac)] = 0;
-	ret =  0;
 
-OUT:
 	close(sock);
-	return ret;
+	return 0;
 }
 
 /**

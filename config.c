@@ -356,99 +356,89 @@ process_plugin_conf(struct proxy_service *ps)
 	}
 }
 
+/**
+ * @brief Handles parsing of proxy service configuration sections
+ *
+ * @param user User data pointer (unused)
+ * @param sect Section name from config file
+ * @param nm Parameter name
+ * @param value Parameter value
+ * @return int Returns 1 if parameter was handled, 0 otherwise
+ *
+ * This function processes configuration parameters for proxy services including:
+ * - Basic settings (type, ports, encryption)
+ * - HTTP/HTTPS specific settings (domains, auth)
+ * - Plugin configurations
+ * - Group settings
+ */
 static int 
 proxy_service_handler(void *user, const char *sect, const char *nm, const char *value)
 {
- 	struct proxy_service *ps = NULL;
-
-	char *section = NULL;
-	section = strdup(sect);
-	assert(section);
-
-	if (strcmp(section, "common") == 0) {
-		SAFE_FREE(section);
+	// Skip common section
+	if (strcmp(sect, "common") == 0) {
 		return 0;
 	}
 
-	HASH_FIND_STR(all_ps, section, ps);
+	// Find or create proxy service
+	struct proxy_service *ps = NULL;
+	HASH_FIND_STR(all_ps, sect, ps);
 	if (!ps) {
-		ps = new_proxy_service(section);
-		if (! ps) {
-			debug(LOG_ERR, "cannot create proxy service, it should not happenned!");
+		ps = new_proxy_service(sect);
+		if (!ps) {
+			debug(LOG_ERR, "Failed to create proxy service");
 			exit(0);
 		}
-
 		HASH_ADD_KEYPTR(hh, all_ps, ps->proxy_name, strlen(ps->proxy_name), ps);
-	} 
-	
-	#define MATCH_NAME(s) strcmp(nm, s) == 0
-	#define TO_BOOL(v) strcmp(value, "true") ? 0:1
+	}
 
+	#define MATCH_NAME(s) strcmp(nm, s) == 0
+	#define SET_STRING_VALUE(field) do { \
+		ps->field = strdup(value); \
+		assert(ps->field); \
+	} while(0)
+
+	// Process configuration parameters
 	if (MATCH_NAME("type")) {
-		if (! get_valid_type(value)) {
-			debug(LOG_ERR, "proxy service type %s is not supportted", value);
-			SAFE_FREE(section);
+		if (!get_valid_type(value)) {
+			debug(LOG_ERR, "Unsupported proxy type: %s", value);
 			exit(0);
 		}
-		ps->proxy_type = strdup(value);
-		assert(ps->proxy_type);
-	} else if (MATCH_NAME("local_ip")) {
-		ps->local_ip = strdup(value);
-		assert(ps->local_ip);
-	} else if (MATCH_NAME("local_port")) {
-		ps->local_port = atoi(value);
-	} else if (MATCH_NAME("use_encryption")) {
-		ps->use_encryption = is_true(value);
-	} else if (MATCH_NAME("remote_port")) {
-		ps->remote_port = atoi(value);
-	} else if (MATCH_NAME("remote_data_port")) {
-		ps->remote_data_port = atoi(value);
-	} else if (MATCH_NAME("http_user")) {
-		ps->http_user = strdup(value);
-	} else if (MATCH_NAME("http_pwd")) {
-		ps->http_pwd = strdup(value);
-	} else if (MATCH_NAME("subdomain")) {
-		ps->subdomain = strdup(value);
-	} else if (MATCH_NAME("custom_domains")) {
-		ps->custom_domains = strdup(value);
-		assert(ps->custom_domains);
-	} else if (MATCH_NAME("locations")) {
-		ps->locations = strdup(value);
-	} else if (MATCH_NAME("host_header_rewrite")) {
-		ps->host_header_rewrite = strdup(value);
-	} else if (MATCH_NAME("use_encryption")) {
-		ps->use_encryption = TO_BOOL(value);
-	} else if (MATCH_NAME("use_compression")) {
-		ps->use_compression = TO_BOOL(value);
-	} else if (MATCH_NAME("group")) {
-		ps->group = strdup(value);
-	} else if (MATCH_NAME("group_key")) {
-		ps->group_key = strdup(value);
-	} else if (MATCH_NAME("plugin")) {
-		ps->plugin = strdup(value);
-	} else if (MATCH_NAME("plugin_user")) {
-		ps->plugin_user = strdup(value);
-	} else if (MATCH_NAME("plugin_pwd")) {
-		ps->plugin_pwd = strdup(value);
-	} else if (MATCH_NAME("root_dir")) {
-		ps->s_root_dir = strdup(value);
-	} else {
-		debug(LOG_ERR, "unknown option %s in section %s", nm, section);
-		SAFE_FREE(section);
+		SET_STRING_VALUE(proxy_type);
+	}
+	else if (MATCH_NAME("local_ip")) SET_STRING_VALUE(local_ip);
+	else if (MATCH_NAME("local_port")) ps->local_port = atoi(value);
+	else if (MATCH_NAME("remote_port")) ps->remote_port = atoi(value);
+	else if (MATCH_NAME("remote_data_port")) ps->remote_data_port = atoi(value);
+	else if (MATCH_NAME("use_encryption")) ps->use_encryption = is_true(value);
+	else if (MATCH_NAME("use_compression")) ps->use_compression = is_true(value);
+	else if (MATCH_NAME("http_user")) SET_STRING_VALUE(http_user);
+	else if (MATCH_NAME("http_pwd")) SET_STRING_VALUE(http_pwd);
+	else if (MATCH_NAME("subdomain")) SET_STRING_VALUE(subdomain);
+	else if (MATCH_NAME("custom_domains")) SET_STRING_VALUE(custom_domains);
+	else if (MATCH_NAME("locations")) SET_STRING_VALUE(locations);
+	else if (MATCH_NAME("host_header_rewrite")) SET_STRING_VALUE(host_header_rewrite);
+	else if (MATCH_NAME("group")) SET_STRING_VALUE(group);
+	else if (MATCH_NAME("group_key")) SET_STRING_VALUE(group_key);
+	else if (MATCH_NAME("plugin")) SET_STRING_VALUE(plugin);
+	else if (MATCH_NAME("plugin_user")) SET_STRING_VALUE(plugin_user);
+	else if (MATCH_NAME("plugin_pwd")) SET_STRING_VALUE(plugin_pwd);
+	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
+	else {
+		debug(LOG_ERR, "Unknown option %s in section %s", nm, sect);
 		return 0;
 	}
-	
-	// if ps->proxy_type is socks5, and ps->remote_port is not set, set it to 1980
-	if (ps->proxy_type && strcmp(ps->proxy_type, "socks5") == 0) {
-		if (ps->remote_port == 0)
-			ps->remote_port = DEFAULT_SOCKS5_PORT;
-		if (ps->group == NULL)
-			ps->group = strdup("chatgptd");
-	} else if (ps->proxy_type && strcmp(ps->proxy_type, "tcp") == 0) {
-		process_plugin_conf(ps);
+
+	// Special handling for socks5 and plugin configurations
+	if (ps->proxy_type) {
+		if (strcmp(ps->proxy_type, "socks5") == 0) {
+			if (ps->remote_port == 0) ps->remote_port = DEFAULT_SOCKS5_PORT;
+			if (!ps->group) SET_STRING_VALUE(group);
+		}
+		else if (strcmp(ps->proxy_type, "tcp") == 0) {
+			process_plugin_conf(ps);
+		}
 	}
-	
-	SAFE_FREE(section);
+
 	return 1;
 }
 

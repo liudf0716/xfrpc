@@ -279,8 +279,7 @@ get_proxy_client(uint32_t sid)
  * 
  * @return struct proxy_client* Pointer to newly created proxy client, NULL if allocation fails
  */
-struct proxy_client *
-new_proxy_client() 
+struct proxy_client *new_proxy_client() 
 {
 	struct proxy_client *client = NULL;
 	

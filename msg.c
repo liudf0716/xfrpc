@@ -348,47 +348,67 @@ END_ERROR:
 	return npr;
 }
 
-// login_resp_unmarshal NEED FREE
-struct login_resp *
-login_resp_unmarshal(const char *jres)
+/**
+ * @brief Unmarshal a JSON string into a login_resp structure
+ *
+ * @param jres The JSON string to unmarshal. Must not be NULL.
+ * @return struct login_resp* Pointer to newly allocated login_resp structure,
+ *         or NULL if:
+ *         - Input is NULL
+ *         - JSON parsing fails
+ *         - Required fields are missing
+ *         - Memory allocation fails
+ *         
+ * @note The returned structure must be freed by the caller
+ */
+struct login_resp *login_resp_unmarshal(const char *jres)
 {
+	if (!jres) return NULL;
+
 	struct json_object *j_lg_res = json_tokener_parse(jres);
-	if (j_lg_res == NULL)
-		return NULL;
+	if (!j_lg_res) return NULL;
 
 	struct login_resp *lr = calloc(1, sizeof(struct login_resp));
-	assert(lr);
+	if (!lr) {
+		json_object_put(j_lg_res);
+		return NULL;
+	}
 
+	// Get version field
 	struct json_object *l_version = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "version", &l_version)) {
-		free(lr);
-		lr = NULL;
-		goto END_ERROR;
+	if (!json_object_object_get_ex(j_lg_res, "version", &l_version) ||
+		!(lr->version = strdup(json_object_get_string(l_version)))) {
+		goto error;
 	}
 
-	lr->version = strdup(json_object_get_string(l_version));
-	assert(lr->version);
-
+	// Get run_id field
 	struct json_object *l_run_id = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "run_id", &l_run_id)) {
-		free(lr->version);
-		free(lr);
-		lr = NULL;
-		goto END_ERROR;
+	if (!json_object_object_get_ex(j_lg_res, "run_id", &l_run_id) ||
+		!(lr->run_id = strdup(json_object_get_string(l_run_id)))) {
+		goto error;
 	}
 
-	lr->run_id = strdup(json_object_get_string(l_run_id));
-	assert(lr->run_id);
-
+	// Get optional error field if present
 	struct json_object *l_error = NULL;
 	if (json_object_object_get_ex(j_lg_res, "error", &l_error)) {
-		lr->error = strdup(json_object_get_string(l_error));
-		assert(lr->error);
+		const char *error_str = json_object_get_string(l_error);
+		if (error_str && !(lr->error = strdup(error_str))) {
+			goto error;
+		}
 	}
 
-END_ERROR:
 	json_object_put(j_lg_res);
 	return lr;
+
+error:
+	json_object_put(j_lg_res);
+	if (lr) {
+		SAFE_FREE(lr->version);
+		SAFE_FREE(lr->run_id);
+		SAFE_FREE(lr->error);
+		SAFE_FREE(lr);
+	}
+	return NULL;
 }
 
 /**

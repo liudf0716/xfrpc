@@ -100,39 +100,75 @@ get_valid_type(const char *val)
 	return NULL;
 }
 
-static void 
-dump_common_conf()
+/**
+ * @brief Dumps the common configuration settings to debug log
+ * 
+ * Outputs the following common configuration parameters:
+ * - Server address
+ * - Server port
+ * - Authentication token
+ * - Heartbeat interval
+ * - Heartbeat timeout
+ *
+ * @note Does nothing if c_conf is NULL
+ */
+static void dump_common_conf(void)
 {
-	if(! c_conf) {
+	if (!c_conf) {
 		debug(LOG_ERR, "Error: c_conf is NULL");
 		return;
 	}
 
 	debug(LOG_DEBUG, "Section[common]: {server_addr:%s, server_port:%d, auth_token:%s, interval:%d, timeout:%d}",
-			 c_conf->server_addr, c_conf->server_port, c_conf->auth_token, 
-			 c_conf->heartbeat_interval, c_conf->heartbeat_timeout);
+		c_conf->server_addr, 
+		c_conf->server_port, 
+		c_conf->auth_token, 
+		c_conf->heartbeat_interval, 
+		c_conf->heartbeat_timeout);
 }
 
-static void 
-dump_proxy_service(const int index, struct proxy_service *ps)
+/**
+ * @brief Dumps configuration details for a single proxy service
+ *
+ * @param index Index number of the proxy service being dumped
+ * @param ps Pointer to proxy service structure to dump
+ *
+ * This function:
+ * 1. Sets default proxy type to "tcp" if none specified
+ * 2. Creates data proxy service if type is "ftp"
+ * 3. Validates proxy configuration
+ * 4. Logs proxy service details including:
+ *    - Name, port, type
+ *    - Encryption/compression settings
+ *    - Domain configurations
+ *    - HTTP settings
+ *
+ * @note Exits program if proxy validation fails
+ */
+static void dump_proxy_service(const int index, struct proxy_service *ps)
 {
 	if (!ps)
 		return;
 	
-	if (NULL == ps->proxy_type) {
+	// Set default type or handle FTP
+	if (!ps->proxy_type) {
 		ps->proxy_type = strdup("tcp");
 		assert(ps->proxy_type);
 	} else if (strcmp(ps->proxy_type, "ftp") == 0) {
 		new_ftp_data_proxy_service(ps);
 	}
 
+	// Validate configuration
 	if (!validate_proxy(ps)) {
 		debug(LOG_ERR, "Error: validate_proxy failed");
 		exit(-1);
 	}
 
+	// Log proxy service details
 	debug(LOG_DEBUG, 
-		"Proxy service %d: {name:%s, local_port:%d, type:%s, use_encryption:%d, use_compression:%d, custom_domains:%s, subdomain:%s, locations:%s, host_header_rewrite:%s, http_user:%s, http_pwd:%s}",
+		"Proxy service %d: {name:%s, local_port:%d, type:%s, use_encryption:%d, "
+		"use_compression:%d, custom_domains:%s, subdomain:%s, locations:%s, "
+		"host_header_rewrite:%s, http_user:%s, http_pwd:%s}",
 		index,
 		ps->proxy_name,
 		ps->local_port,
@@ -147,12 +183,26 @@ dump_proxy_service(const int index, struct proxy_service *ps)
 		ps->http_pwd);
 }
 
-static void 
-dump_all_ps()
+/**
+ * @brief Dumps debug information for all configured proxy services
+ *
+ * Iterates through all configured proxy services and prints their configuration
+ * details to the debug log. Each proxy service is numbered sequentially starting
+ * from 0.
+ *
+ * Uses the HASH_ITER macro from uthash to safely iterate through the hash table
+ * of proxy services. For each service, calls dump_proxy_service() to output its
+ * configuration details.
+ *
+ * @note Requires the all_ps global variable to be properly initialized
+ * @see dump_proxy_service() for details on what information is logged
+ */
+static void dump_all_ps(void)
 {
-	struct proxy_service *ps = NULL, *tmp = NULL;
-	
+	struct proxy_service *ps = NULL;
+	struct proxy_service *tmp = NULL;
 	int index = 0;
+	
 	HASH_ITER(hh, all_ps, ps, tmp) {
 		dump_proxy_service(index++, ps);
 	}

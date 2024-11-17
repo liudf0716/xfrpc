@@ -181,32 +181,56 @@ socks5_proxy_connect(struct proxy_client *client, struct socks5_addr *addr)
 	return bev;
 }
 
-uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len)
+/**
+ * @brief Legacy SOCKS5 protocol handler 
+ * 
+ * This function implements a simplified SOCKS5 protocol handler that supports:
+ * - Initial direct connection request (SOCKS5_INIT)
+ * - Data forwarding in established state (SOCKS5_ESTABLISHED)
+ *
+ * @param client The proxy client structure
+ * @param rb Ring buffer containing incoming data
+ * @param len Length of data in ring buffer
+ * @return Number of bytes processed, 0 on error
+ * 
+ * @deprecated Use handle_socks5() instead which implements full SOCKS5 protocol
+ */
+uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len) 
 {
-	uint32_t nret = 0;
+	uint32_t bytes_processed = 0;
+
+	// Handle established connection state
 	if (client->state == SOCKS5_ESTABLISHED) {
 		assert(client->local_proxy_bev);
 		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
 		return len;
-	} else if (client->state == SOCKS5_INIT && len >= 7) {
-		debug(LOG_DEBUG, "handle client ss5 handshake : SOCKS5_INIT len: %d", len);
-		int offset = 0;
-		if (!parse_socks5_addr(rb, len, &offset, &client->remote_addr)) {
-			debug(LOG_ERR, "parse_ss5_addr failed");
-			return nret;
+	}
+
+	// Handle initial connection request
+	if (client->state == SOCKS5_INIT && len >= 7) {
+		debug(LOG_DEBUG, "Processing initial SOCKS5 connection request, len: %d", len);
+
+		// Parse destination address
+		int addr_len = 0;
+		if (!parse_socks5_addr(rb, len, &addr_len, &client->remote_addr)) {
+			debug(LOG_ERR, "Failed to parse SOCKS5 address");
+			return bytes_processed;
 		}
 
+		// Establish proxy connection
 		client->local_proxy_bev = socks5_proxy_connect(client, &client->remote_addr);
-		if (client->local_proxy_bev == NULL) {
-			debug(LOG_ERR, "socks5_proxy_connect failed");
-			return 0;
+		if (!client->local_proxy_bev) {
+			debug(LOG_ERR, "Failed to establish proxy connection");
+			return bytes_processed;
 		}
-		debug(LOG_DEBUG, "socks5_proxy_connect success: offset: %d, len is %d rb size is %d", 
-			offset, len, rb->sz);
+
+		debug(LOG_DEBUG, "SOCKS5 proxy connection established (parsed %d of %d bytes)", 
+			  addr_len, len);
 		
-		return offset;
-	} 
-	return nret;
+		return addr_len;
+	}
+
+	return bytes_processed;
 }
 
 /**

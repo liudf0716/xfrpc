@@ -51,8 +51,7 @@
 
 #define	BUF_LEN	2*1024
 
-static int
-is_socks5(uint8_t *buf, int len)
+static int is_socks5(uint8_t *buf, int len)
 {
 	if (len < 3)
 		return 0;
@@ -65,8 +64,7 @@ is_socks5(uint8_t *buf, int len)
 	return 1;
 }
 
-static int
-parse_socks5_addr(struct ring_buffer *rb, int len, int *offset, struct socks5_addr *addr)
+static int parse_socks5_addr(struct ring_buffer *rb, int len, int *offset, struct socks5_addr *addr)
 {
 	assert(addr);
 	assert(len > 0);
@@ -107,77 +105,85 @@ parse_socks5_addr(struct ring_buffer *rb, int len, int *offset, struct socks5_ad
 	return 1;
 }
 
-static struct bufferevent *
-socks5_proxy_connect(struct proxy_client *client, struct socks5_addr *addr)
+/**
+ * @brief Establish a SOCKS5 proxy connection based on destination address
+ *
+ * This function creates and establishes a proxy connection to the target address
+ * specified in the SOCKS5 address structure. It supports:
+ * - IPv4 addresses (type 0x01)
+ * - Domain names (type 0x03) 
+ * - IPv6 addresses (type 0x04)
+ *
+ * @param client Proxy client structure containing event base
+ * @param addr SOCKS5 address structure with connection details
+ * @return Configured bufferevent on success, NULL on failure
+ */
+static struct bufferevent *socks5_proxy_connect(struct proxy_client *client, struct socks5_addr *addr)
 {
 	struct bufferevent *bev = NULL;
-	// check addr's type
+
+	// Create new socket bufferevent
+	bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
+	if (!bev) {
+		debug(LOG_ERR, "Failed to create bufferevent for SOCKS5 proxy");
+		return NULL;
+	}
+
+	int connect_result = -1;
 	switch(addr->type) {
-		case 0x01: // ipv4
-		{
-			struct sockaddr_in sin;
-			memset(&sin, 0, sizeof(sin));
-			sin.sin_family = AF_INET;
-			sin.sin_port = addr->port;
+		case 0x01: { // IPv4
+			struct sockaddr_in sin = {
+				.sin_family = AF_INET,
+				.sin_port = addr->port
+			};
 			memcpy(&sin.sin_addr, addr->addr, 4);
-			// print addr->addr in ipv4 format
-			char ip[INET_ADDRSTRLEN] = {0};
+
+			// Log connection details
+			char ip[INET_ADDRSTRLEN];
 			inet_ntop(AF_INET, addr->addr, ip, INET_ADDRSTRLEN);
-			debug(LOG_DEBUG, "socks5_proxy_connect, type: %d, ip: %s, port: %d", addr->type, ip, ntohs(addr->port));
-			bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
-			if (!bev) {
-				debug(LOG_ERR, "socks5_proxy_connect failed, type: %d", addr->type);
-				return NULL;
-			}
-			if (bufferevent_socket_connect(bev, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-				debug(LOG_ERR, "socks5_proxy_connect failed, type: %d", addr->type);
-				bufferevent_free(bev);
-				return NULL;
-			}
-			break;
-		}	
-		case 0x03: // domain
-			// connect  domain by bufferevent_socket_connect_hostname function
-			bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
-			if (!bev) {
-				debug(LOG_ERR, "socks5_proxy_connect failed, type: %d", addr->type);
-				return NULL;
-			}
-			if (bufferevent_socket_connect_hostname(
-					bev, get_main_control()->dnsbase, AF_INET, (char *)addr->addr, ntohs(addr->port)) < 0) {
-				debug(LOG_ERR, "socks5_proxy_connect failed, type: %d", addr->type);
-				bufferevent_free(bev);
-				return NULL;
-			}
-			break;
-		case 0x04: // ipv6
-		{
-			// connect target with ipv6 addr
-			struct sockaddr_in6 sin6;
-			memset(&sin6, 0, sizeof(sin6));
-			sin6.sin6_family = AF_INET6;
-			sin6.sin6_port = addr->port;
-			memcpy(&sin6.sin6_addr, addr->addr, 16);
-			bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
-			if (!bev) {
-				debug(LOG_ERR, "socks5_proxy_connect failed, type: %d", addr->type);
-				return NULL;
-			}
-			if (bufferevent_socket_connect(bev, (struct sockaddr *)&sin6, sizeof(sin6)) < 0) {
-				debug(LOG_ERR, "socks5_proxy_connect failed, type: %d", addr->type);
-				bufferevent_free(bev);
-				return NULL;
-			}
+			debug(LOG_DEBUG, "SOCKS5 connecting to IPv4: %s:%d", ip, ntohs(addr->port));
+
+			connect_result = bufferevent_socket_connect(bev, 
+				(struct sockaddr *)&sin, sizeof(sin));
 			break;
 		}
+
+		case 0x03: // Domain name
+			debug(LOG_DEBUG, "SOCKS5 connecting to domain: %s:%d", 
+				addr->addr, ntohs(addr->port));
+			connect_result = bufferevent_socket_connect_hostname(bev,
+				get_main_control()->dnsbase, AF_INET, 
+				(char *)addr->addr, ntohs(addr->port));
+			break;
+
+		case 0x04: { // IPv6
+			struct sockaddr_in6 sin6 = {
+				.sin6_family = AF_INET6,
+				.sin6_port = addr->port
+			};
+			memcpy(&sin6.sin6_addr, addr->addr, 16);
+
+			connect_result = bufferevent_socket_connect(bev,
+				(struct sockaddr *)&sin6, sizeof(sin6));
+			break;
+		}
+
 		default:
-			debug(LOG_ERR, "socks5_proxy_connect failed, type: %d", addr->type);
+			debug(LOG_ERR, "Invalid SOCKS5 address type: %d", addr->type);
+			bufferevent_free(bev);
 			return NULL;
 	}
-	
+
+	if (connect_result < 0) {
+		debug(LOG_ERR, "Failed to connect SOCKS5 proxy (type %d)", addr->type);
+		bufferevent_free(bev);
+		return NULL;
+	}
+
+	// Setup callbacks and enable bufferevent
 	bufferevent_setcb(bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);
 	bufferevent_enable(bev, EV_READ | EV_WRITE);
-	
+
 	return bev;
 }
 

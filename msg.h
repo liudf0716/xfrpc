@@ -1,4 +1,10 @@
 
+
+// SPDX-License-Identifier: GPL-3.0-only
+/*
+ * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
+ */
+
 #ifndef XFRPC_MSG_H
 #define XFRPC_MSG_H
 

@@ -1,13 +1,8 @@
-/* vim: set et sw=4 ts=4 sts=4 : */
-/*
- * Copyright (C) 2022-2024 Liu Dengfeng <https://github.com/liudf0716>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published by 
- * the Free Software Foundation
- */
 
-/* Command line argument handling */
+// SPDX-License-Identifier: GPL-3.0-only
+/*
+ * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
+ */
 
 #include <stdio.h>
 #include <stdlib.h>

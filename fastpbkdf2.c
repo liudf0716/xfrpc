@@ -1,3 +1,9 @@
+
+// SPDX-License-Identifier: GPL-3.0-only
+/*
+ * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
+ */
+
 #include <string.h>
 #include <assert.h>
 #include <openssl/evp.h>

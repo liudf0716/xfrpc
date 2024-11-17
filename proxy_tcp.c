@@ -49,19 +49,30 @@
 #include "tcpmux.h"
 #include "control.h"
 
-#define	BUF_LEN	2*1024
+/** @brief Maximum buffer size for SOCKS5 protocol data */
+#define SOCKS5_BUFFER_SIZE 2048
 
-static int is_socks5(uint8_t *buf, int len)
+/**
+ * @brief Validates if a buffer contains a valid SOCKS5 protocol header
+ *
+ * Checks if the given buffer contains a valid SOCKS5 protocol header with:
+ * - Version: 0x05 (SOCKS5)
+ * - Command: 0x01 (CONNECT)
+ * - Reserved: 0x00
+ *
+ * @param buf Buffer containing the SOCKS5 header
+ * @param len Length of the buffer
+ * @return 1 if valid SOCKS5 header, 0 if invalid
+ */
+static int is_socks5(const uint8_t *buf, int len)
 {
-	if (len < 3)
+	if (!buf || len < 3) {
 		return 0;
-	if (buf[0] != 0x05)
-		return 0;
-	if (buf[1] != 0x01)
-		return 0;
-	if (buf[2] != 0x00)
-		return 0;
-	return 1;
+	}
+
+	return (buf[0] == 0x05 &&    // SOCKS5 version
+			buf[1] == 0x01 &&    // CONNECT command
+			buf[2] == 0x00);     // Reserved field
 }
 
 /**

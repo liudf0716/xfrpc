@@ -181,8 +181,7 @@ socks5_proxy_connect(struct proxy_client *client, struct socks5_addr *addr)
 	return bev;
 }
 
-uint32_t
-handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len)
+uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len)
 {
 	uint32_t nret = 0;
 	if (client->state == SOCKS5_ESTABLISHED) {
@@ -210,57 +209,81 @@ handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len)
 	return nret;
 }
 
-uint32_t 
-handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len)
+/**
+ * @brief Handles SOCKS5 protocol states and data forwarding
+ * 
+ * This function implements the SOCKS5 protocol state machine and handles:
+ * - Initial handshake (SOCKS5_INIT)
+ * - Authentication negotiation (SOCKS5_HANDSHAKE)
+ * - Connection establishment (SOCKS5_CONNECT)
+ * 
+ * @param client The proxy client structure
+ * @param rb Ring buffer containing incoming data
+ * @param len Length of data in ring buffer
+ * @return Number of bytes processed, 0 on error
+ */
+uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len)
 {
 	uint32_t nret = 0;
-	// if client's local_bev is not NULL, then we should forward rb's data to local_bev
+
+	// Forward data in established connection state
 	if (client->state == SOCKS5_CONNECT) {
 		assert(client->local_proxy_bev);
 		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
 		return len;
-	} else if (client->state == SOCKS5_INIT && len >= 3) {
-		debug(LOG_DEBUG, "handle client socks5 handshake : SOCKS5_INIT len: %d", len);
-		// consume rb->buf three bytes
+	}
+
+	// Handle initial SOCKS5 handshake
+	if (client->state == SOCKS5_INIT && len >= 3) {
+		debug(LOG_DEBUG, "Processing SOCKS5 initial handshake, len: %d", len);
 		uint8_t buf[3] = {0};
 		rx_ring_buffer_pop(rb, buf, 3);
+
 		if (buf[0] != 0x5 || buf[1] != 0x1 || buf[2] != 0x0) {
-			debug(LOG_ERR, "handle client socks5 handshake failed");
+			debug(LOG_ERR, "Invalid SOCKS5 handshake");
 			return nret;
 		}
-		buf[0] = 0x5;
-		buf[1] = 0x0;
-		buf[2] = 0x0;
+
+		// Send handshake response
+		buf[1] = 0x0; // No authentication required
 		tmux_stream_write(client->ctl_bev, buf, 3, &client->stream);
 		client->state = SOCKS5_HANDSHAKE;
 		return 3;
-	} else if (client->state == SOCKS5_HANDSHAKE && len >= 10) {
-		debug(LOG_DEBUG, "handle client socks5 request: SOCKS5_HANDSHAKE len: %d", len);
+	}
+
+	// Handle connection request
+	if (client->state == SOCKS5_HANDSHAKE && len >= 10) {
+		debug(LOG_DEBUG, "Processing SOCKS5 connection request, len: %d", len);
 		uint8_t buf[3] = {0};
 		rx_ring_buffer_pop(rb, buf, 3);
+
 		if (!is_socks5(buf, 3)) {
-			debug(LOG_ERR, "handle client socks5 request failed");
+			debug(LOG_ERR, "Invalid SOCKS5 request format");
 			return nret;
 		}
+
 		int offset = 0;
 		if (!parse_socks5_addr(rb, len, &offset, &client->remote_addr)) {
-			debug(LOG_ERR, "parse_socks5_addr failed");
+			debug(LOG_ERR, "Failed to parse SOCKS5 address");
 			return nret;
 		}
+
 		client->local_proxy_bev = socks5_proxy_connect(client, &client->remote_addr);
-		if (client->local_proxy_bev == NULL) {
-			debug(LOG_ERR, "socks5_proxy_connect failed");
-			return 0;
+		if (!client->local_proxy_bev) {
+			debug(LOG_ERR, "Failed to establish proxy connection");
+			return nret;
 		}
-		assert(len == offset+3);
-		//tx_ring_buffer_write(client->local_bev, rb, len - offset);
+
+		assert(len == offset + 3);
 		return len;
-	} else {
-		debug(LOG_ERR, "not socks5 protocol, close client");
-		// close client->local_proxy_bev
-		bufferevent_free(client->local_proxy_bev);
-		return nret;
 	}
+
+	// Handle invalid protocol state
+	debug(LOG_ERR, "Invalid SOCKS5 protocol state");
+	if (client->local_proxy_bev) {
+		bufferevent_free(client->local_proxy_bev);
+	}
+	return nret;
 }
 
 /**

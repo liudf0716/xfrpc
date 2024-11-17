@@ -64,44 +64,69 @@ static int is_socks5(uint8_t *buf, int len)
 	return 1;
 }
 
-static int parse_socks5_addr(struct ring_buffer *rb, int len, int *offset, struct socks5_addr *addr)
+/**
+ * @brief Parse SOCKS5 address structure from ring buffer
+ *
+ * Parses a SOCKS5 address structure which can be one of:
+ * - IPv4 (type 0x01): 4 bytes address + 2 bytes port
+ * - IPv6 (type 0x04): 16 bytes address + 2 bytes port  
+ * - Domain (type 0x03): 1 byte length + domain + 2 bytes port
+ *
+ * @param rb Ring buffer containing the SOCKS5 address data
+ * @param len Total length of data in ring buffer
+ * @param offset Returns number of bytes processed
+ * @param addr Output parameter for parsed address structure
+ * @return 1 on success, 0 on failure/invalid format
+ */
+static int parse_socks5_addr(struct ring_buffer *rb, int len, int *offset, 
+							struct socks5_addr *addr)
 {
-	assert(addr);
+	assert(addr && rb && offset);
 	assert(len > 0);
+
+	// Initialize
 	memset(addr, 0, sizeof(struct socks5_addr));
-	uint8_t buf[22] = {0};
+	uint8_t buf[256] = {0};  // Increased buffer size to handle domains
+	
+	// Read address type
 	rx_ring_buffer_pop(rb, buf, 1);
 	*offset = 1;
-	if (buf[0] == 0x01) {
-		if (len < 7)
+	addr->type = buf[0];
+
+	// Parse based on address type
+	switch(addr->type) {
+		case 0x01:  // IPv4
+			if (len < 7) return 0;
+			rx_ring_buffer_pop(rb, buf+1, 6);
+			memcpy(addr->addr, buf+1, 4);     // IPv4 address
+			memcpy(&addr->port, buf+5, 2);    // Port
+			*offset = 7;
+			break;
+
+		case 0x04:  // IPv6
+			if (len < 19) return 0;
+			rx_ring_buffer_pop(rb, buf+1, 18);
+			memcpy(addr->addr, buf+1, 16);    // IPv6 address
+			memcpy(&addr->port, buf+17, 2);   // Port
+			*offset = 19;
+			break;
+
+		case 0x03:  // Domain name
+			if (len < 2) return 0;
+			rx_ring_buffer_pop(rb, buf+1, 1); // Domain length
+			uint8_t domain_len = buf[1];
+			
+			if (len < domain_len + 4) return 0;
+			rx_ring_buffer_pop(rb, buf+2, domain_len + 2);
+			memcpy(addr->addr, buf+2, domain_len);  // Domain
+			memcpy(&addr->port, buf+2+domain_len, 2); // Port
+			*offset = domain_len + 4;
+			break;
+
+		default:
 			return 0;
-		addr->type = 0x01;
-		rx_ring_buffer_pop(rb, buf+1, 6);
-		memcpy(addr->addr, buf+1, 4);
-		memcpy(&addr->port, buf+5, 2);
-		*offset = 7;
-	} else if (buf[0] == 0x04) { // ipv6
-		if (len < 19)
-			return 0;
-		addr->type = 0x04;
-		rx_ring_buffer_pop(rb, buf+1, 18);
-		memcpy(addr->addr, buf+1, 16);
-		memcpy(&addr->port, buf+17, 2);
-		*offset = 19;
-	} else if (buf[0] == 0x03) { // domain
-		if (len < 2)
-			return 0;
-		rx_ring_buffer_pop(rb, buf+1, 1);
-		if (len < 2 + buf[1])
-			return 0;
-		addr->type = 0x03;
-		rx_ring_buffer_pop(rb, buf+2, buf[1] + 2);
-		memcpy(addr->addr, buf+2, buf[1]);
-		memcpy(&addr->port, buf+2+buf[1], 2);
-		*offset = 2 + buf[1] + 2;
-	} else {
-		return 0;
 	}
+
 	return 1;
 }
 

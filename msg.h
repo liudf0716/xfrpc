@@ -104,7 +104,7 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg);
 size_t login_request_marshal(char **msg);
 
 // Authentication helper
-char *get_auth_key(const char *token, long int *timestamp);
+char *get_auth_key(const char *token, time_t *timestamp);
 
 // Unmarshalling functions (Parse JSON to structures)
 struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres);

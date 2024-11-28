@@ -181,7 +181,7 @@ struct work_conn *new_work_conn()
  * 3. Calculates MD5 hash of seed
  * 4. Converts hash to hex string
  */
-char *get_auth_key(const char *token, long int *timestamp) 
+char *get_auth_key(const char *token, time_t *timestamp)
 {
 	if (!timestamp) {
 		return NULL;

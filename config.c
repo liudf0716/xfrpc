@@ -546,6 +546,7 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 		SET_STRING_VALUE(proxy_type);
 	}
 	else if (MATCH_NAME("local_ip")) SET_STRING_VALUE(local_ip);
+	else if (MATCH_NAME("bind_addr")) SET_STRING_VALUE(bind_addr);
 	else if (MATCH_NAME("local_port")) ps->local_port = atoi(value);
 	else if (MATCH_NAME("remote_port")) ps->remote_port = atoi(value);
 	else if (MATCH_NAME("remote_data_port")) ps->remote_data_port = atoi(value);

@@ -67,6 +67,7 @@ struct proxy_service {
 
 	/* Network configuration */
 	char    *local_ip;
+	char	*bind_addr;
 	int     remote_port;
 	int     remote_data_port;
 	int     local_port;

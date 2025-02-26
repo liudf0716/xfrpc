@@ -199,7 +199,7 @@ static int setup_local_connection(struct proxy_client *client)
 	if (is_udp_proxy(ps)) {
 		client->local_proxy_bev = connect_udp_server(client->base);
 	} else if (!is_socks5_proxy(ps)) {
-		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port);
+		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port, ps->bind_addr);
 	} else {
 		debug(LOG_DEBUG, "socks5 proxy client can't connect to remote server here ...");
 		return 0;

@@ -34,7 +34,7 @@ void close_main_control(void);
 
 /* Server connection functions */
 struct bufferevent *connect_server(struct event_base *base, const char *name,
-                                   const int port);
+                                   const int port, const char *bind_addr);
 struct bufferevent *connect_udp_server(struct event_base *base);
 void connect_eventcb(struct bufferevent *bev, short events, void *ptr);
 
@@ -60,9 +60,6 @@ void send_enc_msg_frp_server(struct bufferevent *bev, const enum msg_type type,
 void control_process(struct proxy_client *client);
 
 void send_new_proxy(struct proxy_service *ps);
-
-struct bufferevent *connect_server(struct event_base *base, const char *name,
-                                   const int port);
 
 struct bufferevent *connect_udp_server(struct event_base *base);
 

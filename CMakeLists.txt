@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.5...3.27)
 project(xfrp C)
 
 # Build options
+option(DEBUG "Enable debug mode" OFF)
 option(THIRDPARTY_STATIC_BUILD "Build with static third party libraries" OFF)
 option(ENABLE_SANITIZER "Enable sanitizer(Debug+Gcc/Clang/AppleClang)" ON)
 
@@ -112,6 +113,16 @@ set(EXTERNAL_LIBS
     ${JSON-C_LIBRARIES}
     ${ZLIB_LIBRARIES}
 )
+
+# Set debug flags
+if(DEBUG)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0")
+    add_definitions(-DDEBUG)
+    message(STATUS "Debug mode: ON (-g -O0 flags added, DEBUG defined)")
+else()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
+    message(STATUS "Debug mode: OFF (optimized build)")
+endif()
 
 # Compiler flags
 add_definitions(

@@ -316,7 +316,8 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	
 	// Handle proxy type - normalize socks5/mstsc to tcp
 	const char *proxy_type = (strcmp(np_req->proxy_type, "socks5") == 0 || 
-							strcmp(np_req->proxy_type, "mstsc") == 0) ? 
+							strcmp(np_req->proxy_type, "mstsc") == 0 ||
+							strcmp(np_req->proxy_type, "iod") == 0) ? 
 							"tcp" : np_req->proxy_type;
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, proxy_type);
 

@@ -344,7 +344,7 @@ uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len
 		struct in_addr addr;
 		addr.s_addr = header.vip4;
 		char *iod_addr = inet_ntoa(addr);
-		client->local_proxy_bev = connect_server(client->base, iod_addr, client->ps->remote_port, client->ps->bind_addr);
+		client->local_proxy_bev = connect_server(client->base, iod_addr, client->ps->remote_port);
 		if (!client->local_proxy_bev) {
 			debug(LOG_ERR, "Failed to connect to iod server [%s:%d] bind_addr [%s]", iod_addr, client->ps->remote_port, client->ps->bind_addr);
 			return 0;

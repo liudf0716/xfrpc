@@ -234,7 +234,7 @@ static int init_tcp_mux_client(struct proxy_client *client) {
 static int init_direct_client(struct proxy_client *client, 
 							const char *server_addr, 
 							int server_port) {
-	struct bufferevent *bev = connect_server(client->base, server_addr, server_port, NULL);
+	struct bufferevent *bev = connect_server(client->base, server_addr, server_port);
 	if (!bev) {
 		debug(LOG_ERR, "Failed to connect to server [%s:%d]", 
 			  server_addr, server_port);
@@ -458,7 +458,6 @@ static void new_work_connection(struct bufferevent *bev, struct tmux_stream *str
  * @param base      The event_base to be used for the connection
  * @param name      The server address (IP or hostname)
  * @param port      The port number to connect to
- * @param local_ip	The local ip address to bind to (optional)
  *
  * @return         A pointer to the connected bufferevent structure on success,
  *                NULL on failure
@@ -472,93 +471,52 @@ static void new_work_connection(struct bufferevent *bev, struct tmux_stream *str
  * @note Requires main_ctl->dnsbase to be initialized for hostname resolution
  * @note The returned bufferevent must be freed by the caller when no longer needed
  */
-struct bufferevent *connect_server(struct event_base *base, const char *name, const int port, 
-                                  const char *local_ip) 
+struct bufferevent *connect_server(struct event_base *base, const char *name, const int port) 
 {
-    // Validate input parameters
-    if (!base || !name || port <= 0) {
-        debug(LOG_ERR, "Invalid connection parameters: base=%p, name=%s, port=%d",
-              base, name ? name : "NULL", port);
-        return NULL;
-    }
+	// Validate input parameters
+	if (!base || !name || port <= 0) {
+		debug(LOG_ERR, "Invalid connection parameters: base=%p, name=%s, port=%d",
+			  base, name ? name : "NULL", port);
+		return NULL;
+	}
 
-    // For IP addresses, connect directly without DNS
-    if (is_valid_ip_address(name)) {
-        struct sockaddr_in sin;
-        memset(&sin, 0, sizeof(sin));
-        sin.sin_family = AF_INET;
-        sin.sin_addr.s_addr = inet_addr(name);
-        sin.sin_port = htons(port);
+	// Create new bufferevent socket
+	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+	if (!bev) {
+		debug(LOG_ERR, "Failed to create new bufferevent socket");
+		return NULL;
+	}
 
-        // Create a socket manually
-        evutil_socket_t fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (fd < 0) {
-            debug(LOG_ERR, "Failed to create socket: %s", strerror(errno));
-            return NULL;
-        }
-        
-        // If local_ip is provided, bind to it
-        if (local_ip && is_valid_ip_address(local_ip)) {
-            struct sockaddr_in local_addr;
-            memset(&local_addr, 0, sizeof(local_addr));
-            local_addr.sin_family = AF_INET;
-            local_addr.sin_addr.s_addr = inet_addr(local_ip);
-            local_addr.sin_port = 0;  // Let OS choose port
+	// For IP addresses, connect directly without DNS
+	if (is_valid_ip_address(name)) {
+		struct sockaddr_in sin;
+		memset(&sin, 0, sizeof(sin));
+		sin.sin_family = AF_INET;
+		sin.sin_addr.s_addr = inet_addr(name);
+		sin.sin_port = htons(port);
 
-            if (bind(fd, (struct sockaddr*)&local_addr, sizeof(local_addr)) < 0) {
-                debug(LOG_ERR, "Failed to bind to local IP %s: %s", 
-                      local_ip, strerror(errno));
-                evutil_closesocket(fd);
-                return NULL;
-            }
-        }
-        
-        // Start connecting
-        if (connect(fd, (struct sockaddr*)&sin, sizeof(sin)) < 0) {
-            debug(LOG_ERR, "Connection failed to %s:%d: %s", 
-                      name, port, strerror(errno));
-			evutil_closesocket(fd);
+		if (bufferevent_socket_connect(bev, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+			debug(LOG_ERR, "Direct IP connection failed to %s:%d", name, port);
+			bufferevent_free(bev);
 			return NULL;
-        }
+		}
+	}
+	// Otherwise use DNS resolution
+	else if (main_ctl && main_ctl->dnsbase) {
+		if (bufferevent_socket_connect_hostname(bev, main_ctl->dnsbase, 
+											  AF_INET, name, port) < 0) {
+			debug(LOG_ERR, "DNS hostname connection failed to %s:%d", name, port);
+			bufferevent_free(bev);
+			return NULL;
+		}
+	}
+	else {
+		debug(LOG_ERR, "No DNS base available for hostname resolution");
+		bufferevent_free(bev);
+		return NULL;
+	}
 
-		// Make socket non-blocking
-        if (evutil_make_socket_nonblocking(fd) < 0) {
-            debug(LOG_ERR, "Failed to make socket non-blocking: %s", strerror(errno));
-            evutil_closesocket(fd);
-            return NULL;
-        }
-
-        // Create bufferevent with the connected socket
-        struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
-        if (!bev) {
-            debug(LOG_ERR, "Failed to create bufferevent from socket");
-            evutil_closesocket(fd);
-            return NULL;
-        }
-        
-        return bev;
-    }
-    // For hostname resolution
-    else if (main_ctl && main_ctl->dnsbase) {
-        struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
-        if (!bev) {
-            debug(LOG_ERR, "Failed to create new bufferevent socket");
-            return NULL;
-        }
-        
-        if (bufferevent_socket_connect_hostname(bev, main_ctl->dnsbase, 
-                                             AF_INET, name, port) < 0) {
-            debug(LOG_ERR, "DNS hostname connection failed to %s:%d", name, port);
-            bufferevent_free(bev);
-            return NULL;
-        }
-        
-        return bev;
-    }
-    else {
-        debug(LOG_ERR, "No DNS base available for hostname resolution");
-        return NULL;
-    }
+	return bev;
 }
 
 /**
@@ -1483,7 +1441,7 @@ static int init_server_connection(struct bufferevent **bev_out,
 	}
 
 	// Create new connection
-	*bev_out = connect_server(base, server_addr, server_port, NULL);
+	*bev_out = connect_server(base, server_addr, server_port);
 	if (!*bev_out) {
 		debug(LOG_ERR, "Failed to connect to server [%s:%d]: [%d: %s]",
 			  server_addr, server_port, errno, strerror(errno));
@@ -1834,7 +1792,7 @@ static int init_frp_connection(struct bufferevent **bev_out, struct event_base *
 		return -1;
 	}
 
-	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port, NULL);
+	struct bufferevent *bev = connect_server(base, c_conf->server_addr, c_conf->server_port);
 	if (!bev) {
 		debug(LOG_ERR, "Failed to connect to server [%s:%d]", 
 			  c_conf->server_addr, c_conf->server_port);

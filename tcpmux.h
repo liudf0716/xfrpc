@@ -295,6 +295,9 @@ int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);
  */
 int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len);
 
+
+int rx_ring_buffer_peek(struct ring_buffer *ring, uint8_t *data, uint32_t len);
+
 /**
  * @brief Reads data from a bufferevent into the receive ring buffer.
  *

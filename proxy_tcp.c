@@ -28,6 +28,7 @@
 #include "config.h"
 #include "tcpmux.h"
 #include "control.h"
+#include "iod_proto.h"
 
 /** @brief Maximum buffer size for SOCKS5 protocol data */
 #define SOCKS5_BUFFER_SIZE 2048
@@ -330,6 +331,35 @@ uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int 
 		bufferevent_free(client->local_proxy_bev);
 	}
 	return nret;
+}
+
+#define IOD_INIT_MAX_LEN 24
+uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len)
+{
+	if (!client->iod_state && len >= IOD_INIT_MAX_LEN) {
+		struct iod_header header;
+		rx_ring_buffer_peek(rb, (uint8_t *)&header, IOD_INIT_MAX_LEN);
+
+		// create a new iod socket connection
+		struct in_addr addr;
+		addr.s_addr = header.vip4;
+		char *iod_addr = inet_ntoa(addr);
+		client->local_proxy_bev = connect_server(client->base, iod_addr, client->ps->remote_port, client->ps->bind_addr);
+		if (!client->local_proxy_bev) {
+			debug(LOG_ERR, "Failed to connect to iod server [%s:%d] bind_addr [%s]", iod_addr, client->ps->remote_port, client->ps->bind_addr);
+			return 0;
+		}
+
+		tx_ring_buffer_write(client->ctl_bev, rb, len);
+		client->iod_state = 1;
+	} else if (client->iod_state) {
+		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
+	} else {
+		debug(LOG_ERR, "Invalid IOD state, len: %d", len);
+		return 0;
+	}
+
+	return len;
 }
 
 /**

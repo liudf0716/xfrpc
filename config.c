@@ -33,6 +33,7 @@ static const char *valid_types[] = {
 	"socks5",
 	"http",
 	"https",
+	"iod",
 	NULL
 };
 
@@ -272,6 +273,8 @@ static struct proxy_service *new_proxy_service(const char *name)
 	ps->plugin_pwd = NULL;
 	ps->s_root_dir = NULL;
 
+	ps->bind_addr	= NULL;
+
 	return ps;
 }
 
@@ -343,6 +346,12 @@ int validate_proxy(struct proxy_service *ps)
 		if (ps->remote_port == 0) {
 			debug(LOG_ERR, "Proxy [%s] error: remote_port not found", 
 				  ps->proxy_name);
+			return 0;
+		}
+	}
+	else if (strcmp(ps->proxy_type, "iod") == 0) {
+		if (ps->remote_port == 0 || ps->local_port == 0) {
+			debug(LOG_ERR, "Proxy [%s] error: remote_port and local_port must be set for IOD proxy", ps->proxy_name);
 			return 0;
 		}
 	}

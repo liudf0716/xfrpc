@@ -59,4 +59,7 @@ void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client);
 uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len);
 uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len);
 
+
+uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len);
+
 #endif //XFRPC_PROXY_H

@@ -148,6 +148,10 @@ int is_socks5_proxy(const struct proxy_service *ps) {
 	return is_proxy_type(ps, "socks5", 1);
 }
 
+int is_iod_proxy(const struct proxy_service *ps) {
+	return is_proxy_type(ps, "iod", 1);
+}
+
 /**
  * @brief Check if proxy service is UDP type
  * @param ps Pointer to proxy service structure

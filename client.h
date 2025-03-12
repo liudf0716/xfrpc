@@ -54,6 +54,8 @@ struct proxy_client {
 	struct socks5_addr  remote_addr;
 	enum socks5_state   state;
 
+	int 			   iod_state;
+
 	/* Hash handling */
 	UT_hash_handle      hh;
 };
@@ -105,6 +107,7 @@ int send_client_data_tail(struct proxy_client *client);
 int is_ftp_proxy(const struct proxy_service *ps);
 int is_socks5_proxy(const struct proxy_service *ps);
 int is_udp_proxy(const struct proxy_service *ps);
+int is_iod_proxy(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);
 void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx);

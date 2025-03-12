@@ -757,6 +757,25 @@ int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
     return len;
 }
 
+int rx_ring_buffer_peek(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
+    assert(ring->sz >= len);
+    assert(data);
+
+    uint32_t remaining = len;
+    uint8_t *dst = data;
+    uint32_t cur = ring->cur; // Use a local copy of cursor, don't modify the original
+
+    while (remaining > 0) {
+        uint32_t chunk = MIN(remaining, RBUF_SIZE - cur);
+        memcpy(dst, &ring->data[cur], chunk);
+        dst += chunk;
+        cur = (cur + chunk) % RBUF_SIZE; // Only update local cursor
+        remaining -= chunk;
+    }
+
+    return len;
+}
+
 /**
  * @brief Processes data received from a tmux stream
  *
@@ -812,7 +831,7 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
     struct proxy_client *pc = (struct proxy_client *)param;
     uint32_t bytes_processed = 0;
 
-    if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps))) {
+    if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps) && !is_iod_proxy(pc->ps))) {
         uint8_t *data = calloc(length, sizeof(uint8_t));
         if (!data) {
             debug(LOG_ERR, "Memory allocation failed for data buffer");
@@ -823,6 +842,9 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
         handle_fn(data, bytes_processed, pc);
         free(data);
     } 
+    else if (is_iod_proxy(pc->ps)) {
+        bytes_processed = handle_iod(pc, &stream->rx_ring, length);
+    }
     else if (is_socks5_proxy(pc->ps)) {
         bytes_processed = handle_ss5(pc, &stream->rx_ring, length);
     } 

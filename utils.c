@@ -222,7 +222,7 @@ int get_net_ifname(char *if_buf, int blen)
 				  ifa->ifa_data != NULL && 
 				  strcmp(ifa->ifa_name, "lo") != 0) {
 			// Store first non-loopback interface as backup
-			strncpy(backup_ifname, ifa->ifa_name, IFNAMSIZ);
+			strncpy(backup_ifname, ifa->ifa_name, IFNAMSIZ-1);
 		}
 	}
 

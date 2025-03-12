@@ -333,12 +333,116 @@ uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int 
 	return nret;
 }
 
+static void handle_iod_set_vip(struct proxy_client *client, struct iod_header *header)
+{
+	struct in_addr addr;
+	addr.s_addr = header->vip4;
+	char *vip = inet_ntoa(addr);
+	debug(LOG_INFO, "Set VIP: %s", vip);
+	
+	// Check if dummy0 interface exists
+	if (system("ip link show dummy0 > /dev/null 2>&1") != 0) {
+		// Create dummy0 interface if it doesn't exist
+		system("modprobe dummy");
+		system("ip link add dummy0 type dummy");
+	}
+
+	// Remove any existing IP addresses from dummy0
+	system("ip addr flush dev dummy0");
+
+	// Set the IP address to the VIP
+	char cmd[128] = {0};
+	snprintf(cmd, sizeof(cmd), "ip addr add %s/32 dev dummy0", vip);
+	system(cmd);
+
+	// Ensure the interface is up
+	system("ip link set dev dummy0 up");
+
+	debug(LOG_INFO, "VIP %s successfully configured on dummy0", vip);
+
+	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)&header, sizeof(struct iod_header), &client->stream);
+	if (written < sizeof(struct iod_header)) {
+		debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
+	}
+	
+}
+
+static void handle_iod_get_vip(struct proxy_client *client, struct iod_header *header)
+{
+	struct in_addr addr;
+	addr.s_addr = header->vip4;
+	char *vip = inet_ntoa(addr);
+	debug(LOG_INFO, "Get VIP: %s", vip);
+	char cmd[] = "ip -4 addr show dev dummy0 | grep inet | awk '{print $2}' | cut -d/ -f1";
+	FILE *fp = popen(cmd, "r");
+	if (!fp) {
+		debug(LOG_ERR, "Failed to execute command to get dummy0 IP");
+		header->vip4 = 0;
+	} else {
+		char ip[16] = {0};
+		if (fgets(ip, sizeof(ip), fp) != NULL) {
+			// Remove trailing newline if present
+			char *nl = strchr(ip, '\n');
+			if (nl) *nl = '\0';
+			
+			struct in_addr addr;
+			if (inet_aton(ip, &addr) == 0) {
+				debug(LOG_ERR, "Failed to convert IP: %s", ip);
+				header->vip4 = 0;
+			} else {
+				header->vip4 = addr.s_addr;
+				debug(LOG_INFO, "Retrieved VIP from dummy0: %s", ip);
+			}
+		} else {
+			debug(LOG_ERR, "No IP found on dummy0 interface");
+			header->vip4 = 0;
+		}
+		pclose(fp);
+	}
+
+	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)&header, sizeof(struct iod_header), &client->stream);
+	if (written < sizeof(struct iod_header)) {
+		debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
+	}
+}
+
+static void handle_local_iod_command(struct proxy_client *client, struct iod_header *header)
+{
+	uint32_t iod_type = htonl(header->type);
+	switch (iod_type) {
+	case IOD_SET_VIP:
+		debug(LOG_INFO, "Set VIP command");
+		handle_iod_set_vip(client, header);
+		break;
+	case IOD_GET_VIP: 
+		debug(LOG_INFO, "Get VIP command");
+		handle_iod_get_vip(client, header);
+		break;
+	default:
+		debug(LOG_ERR, "Invalid IOD command: %d", iod_type);
+		break;
+	}
+}
+
 #define IOD_INIT_MAX_LEN 24
 uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len)
 {
 	if (!client->iod_state && len >= IOD_INIT_MAX_LEN) {
 		struct iod_header header;
 		rx_ring_buffer_peek(rb, (uint8_t *)&header, IOD_INIT_MAX_LEN);
+		if (!is_valid_iod_header(&header)) {
+			debug(LOG_INFO, "invalid IOD header, len: %d", len);
+			return 0;
+		}
+
+		uint32_t iod_type = htonl(header.type);
+		if (is_local_iod_command(iod_type)) {
+			debug(LOG_INFO, "Local IOD command %d, len: %d", iod_type, len);
+			assert(len == sizeof(struct iod_header));
+			rx_ring_buffer_pop(rb, (uint8_t *)&header, sizeof(struct iod_header));
+			handle_local_iod_command(client, &header);
+			return len;
+		}
 
 		// create a new iod socket connection
 		struct in_addr addr;
@@ -350,7 +454,11 @@ uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len
 			return 0;
 		}
 
-		tx_ring_buffer_write(client->ctl_bev, rb, len);
+		// Setup callbacks and enable bufferevent
+		bufferevent_setcb(client->local_proxy_bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);
+		bufferevent_enable(client->local_proxy_bev, EV_READ | EV_WRITE);
+
+		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
 		client->iod_state = 1;
 	} else if (client->iod_state) {
 		tx_ring_buffer_write(client->local_proxy_bev, rb, len);

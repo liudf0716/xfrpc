@@ -106,6 +106,8 @@ void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 		const char *error_msg;
 		if (is_socks5_proxy(client->ps)) {
 			error_msg = "socks5 proxy";
+		} else if (is_iod_proxy(client->ps)) {
+			error_msg = "iod proxy";
 		} else {
 			error_msg = "server";
 		}

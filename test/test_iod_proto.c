@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <time.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #define IOD_MAGIC 0xEFEFB0B0
 
@@ -69,24 +70,15 @@ bool connectIODClient(IODClient* client, const char* serverIp, int port) {
 }
 
 // Send a packet
-bool sendIODPacket(IODClient* client, const struct iod_header* header, const void* payload) {
+bool sendIODPacket(IODClient* client, const struct iod_header* header, uint32_t length) {
     if (!client->isConnected) {
         fprintf(stderr, "Not connected to server\n");
         return false;
     }
-    
-    // Send header
-    if (send(client->sockfd, header, sizeof(struct iod_header), 0) != sizeof(struct iod_header)) {
-        fprintf(stderr, "Failed to send header\n");
+    uint32_t nsend = send(client->sockfd, header, length, 0);
+    if (nsend != length) {
+        fprintf(stderr, "Failed to send packet [%d] : %s\n", nsend, strerror(errno));
         return false;
-    }
-    
-    // Send payload if present
-    if (payload != NULL && header->length > 0) {
-        if (send(client->sockfd, payload, header->length, 0) != header->length) {
-            fprintf(stderr, "Failed to send payload\n");
-            return false;
-        }
     }
     
     return true;
@@ -142,7 +134,7 @@ int main() {
     // Set default values
     strcpy(serverIp, "192.168.10.185");
     port = 6431;
-    strcpy(vip4, "192.168.10.182");
+    strcpy(vip4, "192.168.10.181");
     type = 100000;
     
     char choice;
@@ -185,14 +177,20 @@ int main() {
         size_t messageLen = strlen(message) + 1;  // +1 for null terminator
         
         // Set up the header according to our struct definition
-        struct iod_header header;
-        header.magic = htonl(IOD_MAGIC);  // Using the defined magic number
-        header.type = htonl(type);
-        header.unique_id = (uint64_t)time(NULL);  // Use timestamp as unique ID
-        header.vip4 = vip4_nbo;
-        header.length = htonl(messageLen);
+        struct iod_header *header = (struct iod_header *)malloc(sizeof(struct iod_header) + messageLen);
+        if (!header) {
+            fprintf(stderr, "Failed to allocate memory for header\n");
+            disconnectIODClient(&client);
+            return 1;
+        }
+        header->magic = htonl(IOD_MAGIC);  // Using the defined magic number
+        header->type = htonl(type);
+        header->unique_id = (uint64_t)time(NULL);  // Use timestamp as unique ID
+        header->vip4 = vip4_nbo;
+        header->length = htonl(messageLen);
+        memcpy(header->data, message, messageLen);
         
-        if (sendIODPacket(&client, &header, message)) {
+        if (sendIODPacket(&client, header, sizeof(struct iod_header) + messageLen)) {
             printf("Packet sent successfully with message: %s\n", message);
             
             // Prepare for response

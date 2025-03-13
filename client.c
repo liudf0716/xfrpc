@@ -56,6 +56,13 @@ static int handle_post_connection_data(struct proxy_client *client) {
 	if (client->data_tail_size > 0) {
 		debug(LOG_DEBUG, "Sending pending client data");
 		return send_client_data_tail(client);
+	} else if (is_iod_proxy(client->ps)) {
+		struct ring_buffer *rb = &client->stream.rx_ring;
+		if (rb->sz > 0) {
+			tx_ring_buffer_write(client->local_proxy_bev, rb, rb->sz);
+		}
+		client->iod_state = 1;
+		return 0;
 	} else if (is_socks5_proxy(client->ps)) {
 		struct ring_buffer *rb = &client->stream.rx_ring;
 		if (rb->sz > 0) {
@@ -79,7 +86,7 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 								  const char *error_msg) {
 	if (!client || !client->ps) return;
 
-	debug(LOG_DEBUG, "Proxy close connection %s - stream_id %d: %s",
+	debug(LOG_INFO, "Proxy close connection %s - stream_id %d: %s",
 		  error_msg, client->stream_id, strerror(errno));
 
 	if (tmux_stream_close(client->ctl_bev, &client->stream)) {
@@ -204,10 +211,10 @@ static int setup_local_connection(struct proxy_client *client)
 	
 	if (is_udp_proxy(ps)) {
 		client->local_proxy_bev = connect_udp_server(client->base);
-	} else if (!is_socks5_proxy(ps)) {
+	} else if (!is_socks5_proxy(ps) && !is_iod_proxy(ps)) {
 		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port);
 	} else {
-		debug(LOG_DEBUG, "socks5 proxy client can't connect to remote server here ...");
+		debug(LOG_INFO, "socks5 proxy client or iod proxy client can't connect to remote server here ...");
 		return 0;
 	}
 

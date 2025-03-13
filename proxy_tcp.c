@@ -448,18 +448,15 @@ uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len
 		struct in_addr addr;
 		addr.s_addr = header.vip4;
 		char *iod_addr = inet_ntoa(addr);
-		client->local_proxy_bev = connect_server(client->base, iod_addr, client->ps->remote_port);
+		client->local_proxy_bev = connect_server(client->base, iod_addr, client->ps->local_port);
 		if (!client->local_proxy_bev) {
-			debug(LOG_ERR, "Failed to connect to iod server [%s:%d] bind_addr [%s]", iod_addr, client->ps->remote_port, client->ps->bind_addr);
+			debug(LOG_ERR, "Failed to connect to iod server [%s:%d] bind_addr [%s]", iod_addr, client->ps->local_port, client->ps->bind_addr);
 			return 0;
 		}
 
 		// Setup callbacks and enable bufferevent
 		bufferevent_setcb(client->local_proxy_bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);
 		bufferevent_enable(client->local_proxy_bev, EV_READ | EV_WRITE);
-
-		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
-		client->iod_state = 1;
 	} else if (client->iod_state) {
 		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
 	} else {

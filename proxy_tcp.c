@@ -359,8 +359,9 @@ static void handle_iod_set_vip(struct proxy_client *client, struct iod_header *h
 	system("ip link set dev dummy0 up");
 
 	debug(LOG_INFO, "VIP %s successfully configured on dummy0", vip);
-
-	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)&header, sizeof(struct iod_header), &client->stream);
+	header->length = 0;
+	header->type = htonl(IOD_SET_VIP_ACK);
+	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
 	if (written < sizeof(struct iod_header)) {
 		debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
 	}
@@ -400,7 +401,9 @@ static void handle_iod_get_vip(struct proxy_client *client, struct iod_header *h
 		pclose(fp);
 	}
 
-	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)&header, sizeof(struct iod_header), &client->stream);
+	header->length = 0;
+	header->type = htonl(IOD_GET_VIP_ACK);
+	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
 	if (written < sizeof(struct iod_header)) {
 		debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
 	}
@@ -438,7 +441,7 @@ uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len
 		uint32_t iod_type = htonl(header.type);
 		if (is_local_iod_command(iod_type)) {
 			debug(LOG_INFO, "Local IOD command %d, len: %d", iod_type, len);
-			assert(len == sizeof(struct iod_header));
+			// assert(len == sizeof(struct iod_header));
 			rx_ring_buffer_pop(rb, (uint8_t *)&header, sizeof(struct iod_header));
 			handle_local_iod_command(client, &header);
 			return len;

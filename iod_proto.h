@@ -7,10 +7,10 @@
 
 #define IOD_MAGIC       0xEFEFB0B0
 
-#define IOD_SET_VIP     0x102
-#define IOD_SET_VIP_ACK 0x202
-#define IOD_GET_VIP     0x104
-#define IOD_GET_VIP_ACK 0x204
+#define IOD_SET_VIP     102
+#define IOD_SET_VIP_ACK 202
+#define IOD_GET_VIP     104
+#define IOD_GET_VIP_ACK 204
 
 struct iod_header {
     uint32_t magic;

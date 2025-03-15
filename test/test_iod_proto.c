@@ -98,7 +98,11 @@ bool receiveIODResponse(IODClient* client, struct iod_header* header, char* payl
         return false;
     }
     
+    fprintf(stderr, "Received header: magic=%u, type=%u, unique_id=%lu, vip4=%u, length=%u\n",
+            ntohl(header->magic), ntohl(header->type), header->unique_id, ntohl(header->vip4), ntohl(header->length));
+
     // Receive payload if present
+    header->length = ntohl(header->length);
     if (header->length > 0) {
         if (header->length > maxPayloadSize) {
             fprintf(stderr, "Payload too large for buffer\n");

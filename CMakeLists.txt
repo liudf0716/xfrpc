@@ -121,7 +121,7 @@ if(DEBUG)
     add_definitions(-DDEBUG)
     message(STATUS "Debug mode: ON (-g -O0 flags added, DEBUG defined)")
 else()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O1")
     message(STATUS "Debug mode: OFF (optimized build)")
 endif()
 

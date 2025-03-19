@@ -57,6 +57,7 @@ static int handle_post_connection_data(struct proxy_client *client) {
 		debug(LOG_DEBUG, "Sending pending client data");
 		return send_client_data_tail(client);
 	} else if (is_iod_proxy(client->ps)) {
+		debug(LOG_INFO, "Sending IOD data: rb->sz is %d", client->stream.rx_ring.sz);
 		struct ring_buffer *rb = &client->stream.rx_ring;
 		if (rb->sz > 0) {
 			tx_ring_buffer_write(client->local_proxy_bev, rb, rb->sz);

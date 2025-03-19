@@ -430,6 +430,7 @@ static void handle_local_iod_command(struct proxy_client *client, struct iod_hea
 #define IOD_INIT_MAX_LEN 24
 uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len)
 {
+	debug(LOG_INFO, "iod state: %d, len: %d", client->iod_state, len);
 	if (!client->iod_state && len >= IOD_INIT_MAX_LEN) {
 		struct iod_header header;
 		rx_ring_buffer_peek(rb, (uint8_t *)&header, IOD_INIT_MAX_LEN);

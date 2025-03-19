@@ -203,7 +203,7 @@ int main() {
             header->data[i] = 'A' + (i % 26); // Fill with lowercase alphabets in a circular manner
         }
         printf("data is %s\n", header->data);
-        
+
         uint32_t hash = 0;
         if (dlen > 0) {
             for (int i = 0; i < dlen; i++) {
@@ -212,8 +212,25 @@ int main() {
             printf("Calculated data hash: 0x%08x\n", hash);
         }
 
+        if (sendIODPacket(&client, header, sizeof(struct iod_header))) {
+            printf("Packet sent successfully with header: %ld\n", sizeof(struct iod_header));
+            
+            // Prepare for response
+            struct iod_header responseHeader;
+            char responseBuffer[1024] = {0};
+            
+            if (receiveIODResponse(&client, &responseHeader, responseBuffer, sizeof(responseBuffer))) {
+                printf("Received response (type: %u, length: %u)\n", 
+                       responseHeader.type, responseHeader.length);
+                
+                if (responseHeader.length > 0) {
+                    printf("Response data: %s\n", responseBuffer);
+                }
+            }
+        }
+
         if (sendIODPacket(&client, header, sizeof(struct iod_header) + dlen)) {
-            printf("Packet sent successfully with message: %d\n", dlen);
+            printf("Packet sent successfully with header: %ld\n", sizeof(struct iod_header) + dlen);
             
             // Prepare for response
             struct iod_header responseHeader;

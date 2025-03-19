@@ -854,13 +854,16 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
                                               length);
     }
 
+    
+
+    struct bufferevent *bout = get_main_control()->connect_bev;
     if (bytes_processed != length) {
         debug(LOG_INFO, "Incomplete data transfer - processed: %u, expected: %u",
               bytes_processed, length);
+        tcp_mux_send_win_update_rst(bout, stream->id);
+    } else {
+        send_window_update(bout, stream, bytes_processed);
     }
-
-    struct bufferevent *bout = get_main_control()->connect_bev;
-    send_window_update(bout, stream, bytes_processed);
 
     return length;
 }

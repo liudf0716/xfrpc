@@ -448,6 +448,11 @@ uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len
 			return len;
 		}
 
+		if (iod_type != IOD_DATA && len != IOD_INIT_MAX_LEN) {
+			debug(LOG_ERR, "Invalid IOD type: %d len is %d", iod_type, len);
+			return 0;
+		}
+
 		// create a new iod socket connection
 		struct in_addr addr;
 		addr.s_addr = header.vip4;
@@ -457,6 +462,19 @@ uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len
 			debug(LOG_ERR, "Failed to connect to iod server [%s:%d] bind_addr [%s]", iod_addr, client->ps->local_port, client->ps->bind_addr);
 			return 0;
 		}
+
+		rx_ring_buffer_pop(rb, (uint8_t *)&header, sizeof(struct iod_header));
+		if (client->data_tail) {
+			free(client->data_tail);
+		}
+		client->data_tail = calloc(sizeof(struct iod_header), 1);
+		if (!client->data_tail) {
+			debug(LOG_ERR, "Failed to allocate memory for data tail");
+			return 0;
+		}
+		header.length = 0;
+		memcpy(client->data_tail, &header, sizeof(struct iod_header));
+		client->data_tail_size = sizeof(struct iod_header);
 
 		// Setup callbacks and enable bufferevent
 		bufferevent_setcb(client->local_proxy_bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);

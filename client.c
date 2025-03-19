@@ -53,15 +53,19 @@ static void xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
 static int handle_post_connection_data(struct proxy_client *client) {
 	if (!client) return -1;
 
-	if (client->data_tail_size > 0) {
+	if (!is_iod_proxy(client->ps) && client->data_tail_size > 0) {
 		debug(LOG_DEBUG, "Sending pending client data");
 		return send_client_data_tail(client);
 	} else if (is_iod_proxy(client->ps)) {
-		debug(LOG_INFO, "Sending IOD data: rb->sz is %d", client->stream.rx_ring.sz);
-		struct ring_buffer *rb = &client->stream.rx_ring;
-		if (rb->sz > 0) {
-			tx_ring_buffer_write(client->local_proxy_bev, rb, rb->sz);
+		assert(client->data_tail_size != 0);
+		debug(LOG_INFO, "Sending IOD data: data_tail_size is %d", client->data_tail_size);
+		uint32_t written = tmux_stream_write(client->ctl_bev, client->data_tail, client->data_tail_size, &client->stream);
+		if (written < client->data_tail_size) {
+			debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, client->data_tail_size);
 		}
+		free(client->data_tail);
+		client->data_tail = NULL;
+		client->data_tail_size = 0;
 		client->iod_state = 1;
 		return 0;
 	} else if (is_socks5_proxy(client->ps)) {

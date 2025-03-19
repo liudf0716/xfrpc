@@ -134,9 +134,10 @@ int main() {
     char vip4[64];  
     int port;
     int type;
+    int dlen;
     
     // Set default values
-    strcpy(serverIp, "192.168.10.185");
+    strcpy(serverIp, "192.168.10.184");
     port = 6431;
     strcpy(vip4, "192.168.10.181");
     type = 100000;
@@ -163,9 +164,13 @@ int main() {
         if (scanf("%d", &type) != 1)
             type = 100000; // Reset to default if invalid input
     }
+
+    printf("Enter data length: ");
+    if (scanf("%d", &dlen) != 1)
+        dlen = 0;
     
-    printf("Using: Server=%s, Port=%d, VIP4=%s, Type=%d\n", 
-           serverIp, port, vip4, type);
+    printf("Using: Server=%s, Port=%d, VIP4=%s, Type=%d dlen=%d\n", 
+           serverIp, port, vip4, type, dlen);
     
     // convert x.x.x.x to network byte order
     uint32_t vip4_nbo = inet_addr(vip4);
@@ -176,12 +181,14 @@ int main() {
     if (connectIODClient(&client, serverIp, port)) {
         printf("Connected to server\n");
         
-        // Prepare random data to send
-        const char *message = "Hello IOD Server!";
-        size_t messageLen = strlen(message) + 1;  // +1 for null terminator
-        
         // Set up the header according to our struct definition
-        struct iod_header *header = (struct iod_header *)malloc(sizeof(struct iod_header) + messageLen);
+        struct iod_header *header = (struct iod_header *)malloc(sizeof(struct iod_header) + dlen);
+        if (!header) {
+            fprintf(stderr, "Failed to allocate memory for header\n");
+            disconnectIODClient(&client);
+            return 1;
+        }
+        memset(header, 0, sizeof(struct iod_header) + dlen);
         if (!header) {
             fprintf(stderr, "Failed to allocate memory for header\n");
             disconnectIODClient(&client);
@@ -191,11 +198,22 @@ int main() {
         header->type = htonl(type);
         header->unique_id = (uint64_t)time(NULL);  // Use timestamp as unique ID
         header->vip4 = vip4_nbo;
-        header->length = htonl(messageLen);
-        memcpy(header->data, message, messageLen);
+        header->length = htonl(dlen);
+        for (int i = 0; i < dlen-1; i++) {
+            header->data[i] = 'A' + (i % 26); // Fill with lowercase alphabets in a circular manner
+        }
+        printf("data is %s\n", header->data);
         
-        if (sendIODPacket(&client, header, sizeof(struct iod_header) + messageLen)) {
-            printf("Packet sent successfully with message: %s\n", message);
+        uint32_t hash = 0;
+        if (dlen > 0) {
+            for (int i = 0; i < dlen; i++) {
+                hash = (hash << 5) + hash + header->data[i]; // A simple hash algorithm (similar to djb2)
+            }
+            printf("Calculated data hash: 0x%08x\n", hash);
+        }
+
+        if (sendIODPacket(&client, header, sizeof(struct iod_header) + dlen)) {
+            printf("Packet sent successfully with message: %d\n", dlen);
             
             // Prepare for response
             struct iod_header responseHeader;

@@ -10,7 +10,7 @@
 #include "iod_proto.h"
 
 #define MAX_CLIENTS 10
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024*1024
 
 typedef struct {
     int sockfd;
@@ -56,7 +56,7 @@ static bool initIODServer(IODServer* server, int port) {
 
 static void handleClient(int clientfd) {
     struct iod_header header;
-    uint8_t buffer[BUFFER_SIZE];
+    uint8_t buffer[BUFFER_SIZE] = {0};
     
     // Receive header
     ssize_t n = recv(clientfd, &header, sizeof(header), MSG_WAITALL);
@@ -73,14 +73,23 @@ static void handleClient(int clientfd) {
 
     // Handle payload if present
     uint32_t length = ntohl(header.length);
+    printf("Received header: type=%u, unique_id=%lu, vip4=%u, length=%u\n", 
+           ntohl(header.type), header.unique_id, ntohl(header.vip4), length);
     if (length > 0 && length < BUFFER_SIZE) {
         n = recv(clientfd, buffer, length, MSG_WAITALL);
         if (n != length) {
             perror("Payload receive failed");
             return;
         }
-        buffer[length] = '\0';
-        printf("Received payload: %s\n", buffer);
+        
+        uint32_t hash = 0;
+        if (length > 0) {
+            printf("received data is %s\n", buffer);
+            for (uint32_t i = 0; i < length; i++) {
+            hash = (hash << 5) + hash + buffer[i]; // A simple hash algorithm (similar to djb2)
+            }
+            printf("Calculated data hash: 0x%08x\n", hash);
+        }
     }
 
     // Prepare and send response

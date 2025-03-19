@@ -11,8 +11,8 @@
 #include <stdint.h>
 
 #define MAX_STREAM_WINDOW_SIZE (256 * 1024)
-#define RBUF_SIZE (32 * 1024)
-#define WBUF_SIZE (32 * 1024)
+#define RBUF_SIZE (64 * 1024)
+#define WBUF_SIZE (64 * 1024)
 
 struct ring_buffer {
     uint32_t cur;

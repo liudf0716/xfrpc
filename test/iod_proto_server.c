@@ -10,7 +10,7 @@
 #include "iod_proto.h"
 
 #define MAX_CLIENTS 10
-#define BUFFER_SIZE 1024*1024
+#define BUFFER_SIZE 10*1024
 
 typedef struct {
     int sockfd;
@@ -56,10 +56,9 @@ static bool initIODServer(IODServer* server, int port) {
 
 static void handleClient(int clientfd) {
     struct iod_header header;
-    uint8_t buffer[BUFFER_SIZE] = {0};
     
     // Receive header
-    ssize_t n = recv(clientfd, &header, sizeof(header), MSG_WAITALL);
+    size_t n = recv(clientfd, &header, sizeof(header), MSG_WAITALL);
     if (n != sizeof(header)) {
         perror("Header receive failed");
         return;
@@ -75,21 +74,53 @@ static void handleClient(int clientfd) {
     uint32_t length = ntohl(header.length);
     printf("Received header: type=%u, unique_id=%lu, vip4=%u, length=%u\n", 
            ntohl(header.type), header.unique_id, ntohl(header.vip4), length);
-    if (length > 0 && length < BUFFER_SIZE) {
-        n = recv(clientfd, buffer, length, MSG_WAITALL);
-        if (n != length) {
-            perror("Payload receive failed");
+    if (length > 0) {
+        uint8_t *buffer = (uint8_t *)malloc(BUFFER_SIZE);
+        if (!buffer) {
+            perror("Memory allocation failed");
             return;
         }
         
         uint32_t hash = 0;
-        if (length > 0) {
-            printf("received data is %s\n", buffer);
-            for (uint32_t i = 0; i < length; i++) {
-            hash = (hash << 5) + hash + buffer[i]; // A simple hash algorithm (similar to djb2)
+        size_t total_bytes_read = 0;
+        
+        while (total_bytes_read < length) {
+            size_t bytes_to_read = length - total_bytes_read;
+            if (bytes_to_read > BUFFER_SIZE)
+                bytes_to_read = BUFFER_SIZE;
+                
+            n = recv(clientfd, buffer, bytes_to_read, MSG_WAITALL);
+            if (n <= 0) {
+                perror("Payload receive failed");
+                free(buffer);
+                return;
             }
-            printf("Calculated data hash: 0x%08x\n", hash);
+            
+            // Update hash for this chunk
+            for (size_t i = 0; i < n; i++) {
+                hash = (hash << 5) + hash + buffer[i]; // Simple hash algorithm (similar to djb2)
+            }
+            
+            total_bytes_read += n;
+
+            // Generate random value between 1 and 10
+            int random_value = (rand() % 10) + 1;
+            printf("Random value: %d\n", random_value);
+            
+            // Run specific code when random value is 3 or 6
+            if (random_value == 3 || random_value == 6) {
+                // Check if received data size exceeds 100KB limit
+                if (total_bytes_read > 102400) {
+                    printf("Data size exceeds limit (100KB), closing connection\n");
+                    free(buffer);
+                    return;
+                }
+            }
+
         }
+        
+        printf("Received %zu bytes, calculated data hash: 0x%08x\n", total_bytes_read, hash);
+        free(buffer);
     }
 
     // Prepare and send response

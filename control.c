@@ -395,7 +395,7 @@ static void ping(void)
  * 3. Marshalling the work connection request
  * 4. Sending the request to the FRP server
  *
- * @param bev The bufferevent structure for network communication
+ * @param bev The bufferevent structure for connection to the FRP server
  * @param stream The tmux stream structure containing stream information
  *
  * @note This function performs cleanup of allocated resources before returning

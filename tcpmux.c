@@ -739,16 +739,42 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
  * around to the beginning.
  */
 int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
+    // Validate input parameters
     assert(ring->sz >= len);
-    assert(data);
 
+    // Special case: If data is NULL, just discard bytes from the buffer
+    if (data == NULL) {
+        debug(LOG_DEBUG, "Discarding %u bytes from ring buffer", len);
+        uint32_t remaining = len;
+        
+        while (remaining > 0) {
+            // Calculate maximum contiguous chunk that can be discarded
+            uint32_t chunk = MIN(remaining, RBUF_SIZE - ring->cur);
+            
+            // Update ring buffer state
+            ring->cur = (ring->cur + chunk) % RBUF_SIZE;
+            ring->sz -= chunk;
+            remaining -= chunk;
+        }
+        
+        return len;
+    }
+
+    // Normal case: Copy data from the buffer
     uint32_t remaining = len;
     uint8_t *dst = data;
 
     while (remaining > 0) {
+        // Calculate maximum contiguous chunk that can be copied
         uint32_t chunk = MIN(remaining, RBUF_SIZE - ring->cur);
+        
+        // Copy data from buffer to destination
         memcpy(dst, &ring->data[ring->cur], chunk);
+        
+        // Advance destination pointer
         dst += chunk;
+        
+        // Update ring buffer state
         ring->cur = (ring->cur + chunk) % RBUF_SIZE;
         ring->sz -= chunk;
         remaining -= chunk;
@@ -1063,9 +1089,10 @@ uint32_t tmux_stream_read(struct bufferevent *bev, struct tmux_stream *stream,
 
     // Check stream state
     if (stream->state != ESTABLISHED) {
-        debug(LOG_WARNING,
-              "Stream %d is in state %d (not ESTABLISHED). Reading %d bytes anyway.",
-              stream->id, stream->state, len);
+        debug(LOG_ERR,
+              "Stream %d is in state %d (not ESTABLISHED). Incoming data %d bytes, just pop %d.",
+              stream->id, stream->state, len, stream->rx_ring.sz);
+        rx_ring_buffer_pop(&stream->rx_ring, NULL, stream->rx_ring.sz);
     }
 
     // Perform the actual read operation
@@ -1426,7 +1453,7 @@ int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream) {
         return 1;
     }
 
-    debug(LOG_DEBUG, "del proxy client %d", stream->id);
+    debug(LOG_INFO, "del proxy client %d", stream->id);
     del_proxy_client_by_stream_id(stream->id);
     return 0;
 }

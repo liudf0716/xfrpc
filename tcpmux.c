@@ -887,6 +887,7 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
         debug(LOG_INFO, "Incomplete data transfer - processed: %u, expected: %u",
               bytes_processed, length);
         tcp_mux_send_win_update_rst(bout, stream->id);
+        stream->state = LOCAL_CLOSE;
     } else {
         send_window_update(bout, stream, bytes_processed);
     }

@@ -45,3 +45,6 @@ xfrp_test_server
 bin
 .vscode
 build
+test/iod_client
+test/iod_server
+test_iod_proto

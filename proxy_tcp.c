@@ -489,6 +489,7 @@ uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len
 	return len;
 }
 
+
 /**
  * @brief Callback function handling data transfer from client to server in TCP proxy
  *
@@ -540,6 +541,14 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	size_t nr = bufferevent_read(bev, buf, len);
 	if (nr != len) {
 		debug(LOG_ERR, "Failed to read complete data: expected %zu, got %zu", len, nr);
+		free(buf);
+		return;
+	}
+
+	// add to xdpi engine
+	int ret = xdpi_engine(client, buf, len);
+	if (ret < 0) {
+		debug(LOG_ERR, "XDPI engine failed");
 		free(buf);
 		return;
 	}

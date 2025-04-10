@@ -255,6 +255,8 @@ static struct proxy_service *new_proxy_service(const char *name)
 	ps->use_compression = 0;
 	ps->use_encryption = 0;
 
+	ps->service_type = NO_XDPI;
+
 	// HTTP/HTTPS specific fields
 	ps->custom_domains = NULL;
 	ps->subdomain = NULL;
@@ -506,6 +508,33 @@ static void process_plugin_conf(struct proxy_service *ps)
 	debug(LOG_INFO, "plugin %s is not supported", ps->plugin);
 }
 
+static enum xdpi_service_type convert_service_type(const char *value)
+{
+	if (strcmp(value, "ssh") == 0) {
+		return SERVICE_SSH;
+	}
+	else if (strcmp(value, "rdp") == 0) {
+		return SERVICE_RDP;
+	}
+	else if (strcmp(value, "vnc") == 0) {
+		return SERVICE_VNC;
+	}
+	else if (strcmp(value, "telnet") == 0) {
+		return SERVICE_TELNET;
+	}
+	else if (strcmp(value, "http") == 0) {
+		return SERVICE_HTTP;
+	}
+	else if (strcmp(value, "https") == 0) {
+		return SERVICE_HTTPS;
+	}
+	else if (strcmp(value, "mstsc") == 0) {
+		return SERVICE_MSTSC;
+	}
+	
+	return NO_XDPI;
+}
+
 /**
  * @brief Handles parsing of proxy service configuration sections
  *
@@ -573,6 +602,7 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("plugin_user")) SET_STRING_VALUE(plugin_user);
 	else if (MATCH_NAME("plugin_pwd")) SET_STRING_VALUE(plugin_pwd);
 	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
+	else if (MATCH_NAME("service_type")) ps->service_type = convert_service_type(value);
 	else {
 		debug(LOG_ERR, "Unknown option %s in section %s", nm, sect);
 		return 0;

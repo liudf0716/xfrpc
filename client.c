@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
@@ -486,4 +485,130 @@ void clear_all_proxy_client()
 	all_pc = NULL;
 
 	debug(LOG_DEBUG, "All proxy clients cleared successfully");
+}
+
+int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t len)
+{
+	if (!client || !data || len == 0) {
+		return -1;
+	}
+
+	struct proxy_service *ps = client->ps;
+	if (!ps) {
+		return -1;
+	}
+
+	if (client->xdpi_state == XDPI_BLOCKED) {
+		return -1;
+	}
+
+	// 如果已经确认过服务类型，直接返回成功
+	if (client->xdpi_state == XDPI_VERIFIED) {
+		return 0;
+	}
+
+	// 根据不同的服务类型进行特征检测
+	switch (ps->service_type) {
+		case SERVICE_SSH:
+			// SSH协议特征检测 - 只允许知名SSH客户端
+			if (len >= 20 && data[0] == 'S' && data[1] == 'S' && data[2] == 'H') {
+				// 检查知名SSH客户端标识
+				const char *known_clients[] = {
+					"OpenSSH",      // OpenSSH
+					"PuTTY",        // PuTTY
+					"WinSCP",       // WinSCP
+					"FileZilla",    // FileZilla
+					"SecureCRT",    // SecureCRT
+					"Xshell",       // Xshell
+					"Bitvise",      // Bitvise SSH Client
+					"SSH Tectia",   // SSH Tectia Client
+					"Tera Term",    // Tera Term
+					"KiTTY",        // KiTTY (PuTTY fork)
+					"Royal TSX",    // Royal TSX
+					"Termius",      // Termius
+					"Tabby",        // Tabby
+					"Cyberduck",    // Cyberduck
+					"ForkLift",     // ForkLift
+					"Transmit",     // Transmit
+					"CoreFTP",      // CoreFTP
+					"SmartFTP",     // SmartFTP
+					"FlashFXP",     // FlashFXP
+					"FTP Rush",     // FTP Rush
+					NULL
+				};
+
+				// 检查客户端标识
+				for (int i = 0; known_clients[i] != NULL; i++) {
+					if (strstr((const char *)data, known_clients[i]) != NULL) {
+						client->xdpi_state = XDPI_VERIFIED;
+						debug(LOG_INFO, "XDPI engine detected valid SSH client: %s", known_clients[i]);
+						return 0;
+					}
+				}
+
+				// 如果没有匹配到任何知名客户端，记录日志并阻止连接
+				debug(LOG_WARNING, "XDPI engine detected unknown SSH client, blocking connection");
+				debug(LOG_WARNING, "data: %s", data);
+				client->xdpi_state = XDPI_BLOCKED;
+				return -1;
+			}
+			break;
+
+		case SERVICE_HTTP:
+			// HTTP协议特征检测
+			if (len >= 4 && 
+				((data[0] == 'G' && data[1] == 'E' && data[2] == 'T' && data[3] == ' ') ||
+				 (data[0] == 'P' && data[1] == 'O' && data[2] == 'S' && data[3] == 'T') ||
+				 (data[0] == 'H' && data[1] == 'E' && data[2] == 'A' && data[3] == 'D') ||
+				 (data[0] == 'P' && data[1] == 'U' && data[2] == 'T' && data[3] == ' '))) {
+				client->xdpi_state = XDPI_VERIFIED;
+				return 0;
+			}
+			break;
+
+		case SERVICE_HTTPS:
+			// HTTPS协议特征检测 (TLS握手)
+			if (len >= 3 && data[0] == 0x16 && data[1] == 0x03) {
+				client->xdpi_state = XDPI_VERIFIED;
+				return 0;
+			}
+			break;
+		case SERVICE_MSTSC:
+		case SERVICE_RDP:
+			// RDP协议特征检测
+			if (len >= 3 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00) {
+				client->xdpi_state = XDPI_VERIFIED;
+				debug(LOG_INFO, "XDPI engine detected RDP protocol");
+				return 0;
+			}
+			break;
+
+		case SERVICE_VNC:
+			// VNC协议特征检测
+			if (len >= 4 && data[0] == 'R' && data[1] == 'F' && data[2] == 'B' && data[3] == ' ') {
+				client->xdpi_state = XDPI_VERIFIED;
+				return 0;
+			}
+			break;
+
+		case SERVICE_TELNET:
+			// Telnet协议特征检测
+			if (len >= 3 && data[0] == 0xFF && data[1] == 0xFB) {
+				client->xdpi_state = XDPI_VERIFIED;
+				return 0;
+			}
+			break;
+
+		case NO_XDPI:
+			// 不需要XDPI检测的服务直接通过
+			client->xdpi_state = XDPI_VERIFIED;
+			return 0;
+
+		default:
+			break;
+	}
+
+	// 如果检测失败，关闭连接
+	client->xdpi_state = XDPI_BLOCKED;
+	return -1;
 }

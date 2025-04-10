@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
@@ -15,6 +14,17 @@
 /* Constants */
 #define SOCKS5_ADDRES_LEN 20
 
+enum xdpi_service_type {
+	NO_XDPI,
+	SERVICE_MSTSC,
+	SERVICE_RDP,
+	SERVICE_VNC,
+	SERVICE_SSH,
+	SERVICE_TELNET,
+	SERVICE_HTTP,
+	SERVICE_HTTPS,
+};
+
 /* Data Structures */
 struct socks5_addr {
 	uint8_t     addr[SOCKS5_ADDRES_LEN];
@@ -28,6 +38,12 @@ enum socks5_state {
 	SOCKS5_HANDSHAKE,
 	SOCKS5_CONNECT,
 	SOCKS5_ESTABLISHED,
+};
+
+enum xdpi_state {
+	XDPI_INIT,      /* Initial state, waiting for first data */
+	XDPI_VERIFIED,  /* Protocol verified successfully */
+	XDPI_BLOCKED,   /* Protocol verification failed, connection blocked */
 };
 
 struct proxy_client {
@@ -49,6 +65,7 @@ struct proxy_client {
 	/* State flags */
 	int                 connected;
 	int                 work_started;
+	enum xdpi_state     xdpi_state;     /* XDPI verification state */
 	
 	/* SOCKS5 specific */
 	struct socks5_addr  remote_addr;
@@ -73,6 +90,9 @@ struct proxy_service {
 	int     remote_port;
 	int     remote_data_port;
 	int     local_port;
+
+	/* XDPI service type */
+	enum xdpi_service_type service_type;
 
 	/* HTTP/HTTPS specific */
 	char    *custom_domains;
@@ -111,5 +131,6 @@ int is_iod_proxy(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);
 void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx);
+int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t len);
 
 #endif // XFRPC_CLIENT_H

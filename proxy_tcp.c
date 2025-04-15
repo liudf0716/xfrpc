@@ -545,14 +545,6 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	// add to xdpi engine
-	int ret = xdpi_engine(client, buf, len);
-	if (ret < 0) {
-		debug(LOG_ERR, "XDPI engine failed");
-		free(buf);
-		return;
-	}
-
 	uint32_t written = tmux_stream_write(client->ctl_bev, buf, len, &client->stream);
 	if (written < len) {
 		debug(LOG_DEBUG, "Stream %d: Partial write %u/%zu bytes, disabling read",

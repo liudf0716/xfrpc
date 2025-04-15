@@ -863,7 +863,7 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
             debug(LOG_ERR, "Memory allocation failed for data buffer");
             return 0;
         }
-
+        
         bytes_processed = rx_ring_buffer_pop(&stream->rx_ring, data, length);
         handle_fn(data, bytes_processed, pc);
         free(data);
@@ -875,9 +875,30 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
         bytes_processed = handle_ss5(pc, &stream->rx_ring, length);
     } 
     else {
-        bytes_processed = tx_ring_buffer_write(pc->local_proxy_bev, 
-                                              &stream->rx_ring, 
-                                              length);
+        if (pc->xdpi_state == XDPI_INIT) {
+            debug(LOG_INFO, "XDPI engine detected  protocol, length: %u", length);
+            uint8_t *data = calloc(length, sizeof(uint8_t));
+            rx_ring_buffer_pop(&stream->rx_ring, data, length);
+            bytes_processed = length;
+            if (xdpi_engine(pc, data, length) < 0) {
+                debug(LOG_ERR, "XDPI engine failed");
+                free(data);
+                pc->xdpi_state = XDPI_BLOCKED;
+            } else {
+                if (bufferevent_write(pc->local_proxy_bev, data, length) < 0) {
+                    debug(LOG_ERR, "Failed to write data to local proxy bufferevent");
+                }
+                free(data);
+                pc->xdpi_state = XDPI_VERIFIED;
+            }
+        } else if (pc->xdpi_state == XDPI_VERIFIED) {
+            bytes_processed = tx_ring_buffer_write(pc->local_proxy_bev, 
+                                                  &stream->rx_ring, 
+                                                  length);
+        } else {
+            debug(LOG_ERR, "blocked by XDPI engine for insecure service");
+            bytes_processed = rx_ring_buffer_pop(&stream->rx_ring, NULL, length);
+        }
     }
 
     

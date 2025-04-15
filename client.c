@@ -574,15 +574,30 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 			}
 			break;
 		case SERVICE_MSTSC:
+			// MSTSC协议特征检测
+			if (len == 47 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00 && data[5] == 0xe0) {
+				if (memcmp((const char *)&data[11], "Cookie:", 7) == 0 && data[43] == 0x0b) {
+					client->xdpi_state = XDPI_VERIFIED;
+					debug(LOG_INFO, "XDPI engine verified the RDP protocol, len: %zu", len);
+					return 0;
+				} 
+			} 
+
+			debug(LOG_WARNING, "XDPI engine detected unknown RDP client, len: %zu", len);
+#if 0
+			for (int i = 0; i < len; i++) {
+				printf("%02X ", data[i]);
+			}
+			printf("\n");
+#endif
+			break;
 		case SERVICE_RDP:
 			// RDP协议特征检测
-			if (len >= 3 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00) {
+			if (len >= 19 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00) {
 				client->xdpi_state = XDPI_VERIFIED;
-				debug(LOG_INFO, "XDPI engine detected RDP protocol");
 				return 0;
 			}
 			break;
-
 		case SERVICE_VNC:
 			// VNC协议特征检测
 			if (len >= 4 && data[0] == 'R' && data[1] == 'F' && data[2] == 'B' && data[3] == ' ') {

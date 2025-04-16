@@ -18,8 +18,8 @@ RUN apk add --no-cache \
     gzip \
     cmake \
     json-c-dev \
-    zlib-dev
-
+    zlib-dev \
+    linux-headers
 # Create build directory
 WORKDIR /build
 

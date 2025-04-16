@@ -5,6 +5,16 @@ FROM alpine:latest
 ENV FRP_VERSION=0.61.0
 ENV XFRPC_VERSION=4.04.856
 
+# Define environment variables for xfrpc configuration
+ENV SERVER_ADDR=127.0.0.1
+ENV SERVER_PORT=7000
+ENV TOKEN=12345678
+ENV CCL_ADDRESS=127.0.0.1
+ENV CCL_LOCAL_PORT=12321
+ENV CCL_REMOTE_PORT=12322
+ENV DRL_LOCAL_PORT=12322
+ENV DRL_REMOTE_PORT=12321
+
 # Install required packages
 RUN apk add --no-cache \
     libevent \
@@ -19,11 +29,8 @@ RUN apk add --no-cache \
     tar \
     gzip \
     cmake \
-    linux-headers \
     json-c-dev \
-    musl-dev \
-    zlib-dev \
-    pcre-dev
+    zlib-dev 
 
 # Create necessary directories
 RUN mkdir -p /usr/local/frp /usr/local/xfrpc
@@ -40,7 +47,7 @@ RUN cd /tmp && \
     cd xfrpc && \
     mkdir build && \
     cd build && \
-    cmake -D THIRDPARTY_STATIC_BUILD=ON .. && \
+    cmake .. && \
     make && \
     mv xfrpc /usr/local/xfrpc/ && \
     rm -rf /tmp/xfrpc
@@ -50,23 +57,32 @@ RUN echo 'bindPort = 7000' > /usr/local/frp/frps.toml && \
     echo 'dashboardPort = 7500' >> /usr/local/frp/frps.toml && \
     echo 'dashboardUser = "admin"' >> /usr/local/frp/frps.toml && \
     echo 'dashboardPwd = "admin"' >> /usr/local/frp/frps.toml && \
-    echo 'auth.token = "12345678"' >> /usr/local/frp/frps.toml
+    echo 'auth.token = ${TOKEN}' >> /usr/local/frp/frps.toml
 
-# Create default xfrpc configuration
-RUN echo "[common]" > /usr/local/xfrpc/xfrpc.ini && \
-    echo "server_addr = 127.0.0.1" >> /usr/local/xfrpc/xfrpc.ini && \
-    echo "server_port = 7000" >> /usr/local/xfrpc/xfrpc.ini && \
-    echo "token = 12345678" >> /usr/local/xfrpc/xfrpc.ini
-
-# Create startup script
+# Create startup script with dynamic configuration
 RUN echo '#!/bin/sh' > /usr/local/bin/start.sh && \
+    echo 'cat > /usr/local/xfrpc/xfrpc.ini << EOF' >> /usr/local/bin/start.sh && \
+    echo '[common]' >> /usr/local/bin/start.sh && \
+    echo "server_addr = ${SERVER_ADDR}" >> /usr/local/bin/start.sh && \
+    echo "server_port = ${SERVER_PORT}" >> /usr/local/bin/start.sh && \
+    echo "token = ${TOKEN}" >> /usr/local/bin/start.sh && \
+    echo '[drl]' >> /usr/local/bin/start.sh && \
+    echo 'type = iod' >> /usr/local/bin/start.sh && \
+    echo "local_port = ${DRL_LOCAL_PORT}" >> /usr/local/bin/start.sh && \
+    echo "remote_port = ${DRL_REMOTE_PORT}" >> /usr/local/bin/start.sh && \
+    echo '[ccl]' >> /usr/local/bin/start.sh && \
+    echo 'type = tcp' >> /usr/local/bin/start.sh && \
+    echo "local_ip = ${CCL_ADDRESS}" >> /usr/local/bin/start.sh && \
+    echo "local_port = ${CCL_LOCAL_PORT}" >> /usr/local/bin/start.sh && \
+    echo "remote_port = ${CCL_REMOTE_PORT}" >> /usr/local/bin/start.sh && \
+    echo 'EOF' >> /usr/local/bin/start.sh && \
     echo 'cd /usr/local/frp && ./frps -c frps.toml &' >> /usr/local/bin/start.sh && \
     echo 'sleep 2' >> /usr/local/bin/start.sh && \
     echo 'cd /usr/local/xfrpc && ./xfrpc -c xfrpc.ini' >> /usr/local/bin/start.sh && \
     chmod +x /usr/local/bin/start.sh
 
 # Expose necessary ports
-EXPOSE 7000 7500
+EXPOSE ${DRL_REMOTE_PORT}
 
 # Set working directory
 WORKDIR /usr/local/xfrpc

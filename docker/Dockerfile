@@ -12,7 +12,6 @@ RUN apk add --no-cache \
     openssl \
     openssl-dev \
     libc-dev \
-    libjson-c-dev \
     gcc \
     make \
     git \
@@ -20,7 +19,11 @@ RUN apk add --no-cache \
     tar \
     gzip \
     cmake \
-    linux-headers
+    linux-headers \
+    json-c-dev \
+    musl-dev \
+    zlib-dev \
+    pcre-dev
 
 # Create necessary directories
 RUN mkdir -p /usr/local/frp /usr/local/xfrpc

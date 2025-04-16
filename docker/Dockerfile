@@ -20,6 +20,7 @@ RUN apk add --no-cache \
     json-c-dev \
     zlib-dev \
     linux-headers
+
 # Create build directory
 WORKDIR /build
 
@@ -34,7 +35,9 @@ RUN git clone https://github.com/liudf0716/xfrpc.git && \
     cd build && \
     cmake .. && \
     make && \
-    mv xfrpc /build/
+    cp xfrpc /build/xfrpc_binary && \
+    cd /build && \
+    rm -rf xfrpc
 
 # Runtime stage
 FROM alpine:latest
@@ -66,7 +69,7 @@ RUN mkdir -p /usr/local/frp /usr/local/xfrpc && \
 
 # Copy binaries from builder
 COPY --from=builder /build/frps /usr/local/frp/
-COPY --from=builder /build/xfrpc /usr/local/xfrpc/
+COPY --from=builder /build/xfrpc_binary /usr/local/xfrpc/xfrpc
 
 # Set permissions
 RUN chmod +x /usr/local/frp/frps /usr/local/xfrpc/xfrpc && \

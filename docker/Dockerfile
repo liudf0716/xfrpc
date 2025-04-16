@@ -77,10 +77,11 @@ RUN chmod +x /usr/local/frp/frps /usr/local/xfrpc/xfrpc && \
 
 # Create default frps configuration in TOML format
 RUN echo 'bindPort = 7000' > /usr/local/frp/frps.toml && \
-    echo 'dashboardPort = 7500' >> /usr/local/frp/frps.toml && \
-    echo 'dashboardUser = "admin"' >> /usr/local/frp/frps.toml && \
-    echo 'dashboardPwd = "admin"' >> /usr/local/frp/frps.toml && \
-    echo 'auth.token = ${TOKEN}' >> /usr/local/frp/frps.toml && \
+    echo 'webServer.addr = "127.0.0.1"' >> /usr/local/frp/frps.toml && \
+    echo 'webServer.port = 7500' >> /usr/local/frp/frps.toml && \
+    echo 'webServer.user = "admin"' >> /usr/local/frp/frps.toml && \
+    echo 'webServer.password = "admin"' >> /usr/local/frp/frps.toml && \
+    echo 'auth.token = "12345678"' >> /usr/local/frp/frps.toml && \
     chown xfrpc:xfrpc /usr/local/frp/frps.toml
 
 # Create startup script with dynamic configuration
@@ -102,7 +103,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/start.sh && \
     echo 'EOF' >> /usr/local/bin/start.sh && \
     echo 'cd /usr/local/frp && ./frps -c frps.toml &' >> /usr/local/bin/start.sh && \
     echo 'sleep 2' >> /usr/local/bin/start.sh && \
-    echo 'cd /usr/local/xfrpc && ./xfrpc -c xfrpc.ini' >> /usr/local/bin/start.sh && \
+    echo 'cd /usr/local/xfrpc && ./xfrpc -c xfrpc.ini -f -d 6' >> /usr/local/bin/start.sh && \
     chmod +x /usr/local/bin/start.sh && \
     chown xfrpc:xfrpc /usr/local/bin/start.sh
 

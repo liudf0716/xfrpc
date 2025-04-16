@@ -30,7 +30,8 @@ RUN apk add --no-cache \
     gzip \
     cmake \
     json-c-dev \
-    zlib-dev 
+    zlib-dev \
+    linux-headers
 
 # Create necessary directories
 RUN mkdir -p /usr/local/frp /usr/local/xfrpc

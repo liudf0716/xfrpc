@@ -36,7 +36,10 @@ yt_dlp_worker(void *param)
     // create directory yt-dlp and change current directory to it
     snprintf(cmd, sizeof(cmd), "mkdir -p yt-dlp && cd yt-dlp");
     debug(LOG_DEBUG, "yt-dlp: cmd: %s\n", cmd);
-    system(cmd);
+    int ret = system(cmd);
+    if (ret != 0) {
+        debug(LOG_ERR, "yt-dlp: failed to execute command: %s, error: %d", cmd, ret);
+    }
 
     if (strcmp(p->action, "download") == 0) {
         // download profile

@@ -56,7 +56,10 @@ httpd_thread(void *arg)
     // Do the conversion only if the root dir spec does not contain overrides
     if (strchr(ps->s_root_dir, ',') == NULL)
     {
-        realpath(ps->s_root_dir, path);
+        char *result = realpath(ps->s_root_dir, path);
+        if (result == NULL) {
+            debug(LOG_ERR, "Failed to resolve real path for %s: %s", ps->s_root_dir, strerror(errno));
+        }
         s_root_dir = path;
     }
 

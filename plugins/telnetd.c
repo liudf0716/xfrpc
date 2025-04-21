@@ -315,8 +315,14 @@ make_new_session(int sockfd)
 			syslog(LOG_ERR, "Could not open tty");
 			exit(1);
 		}
-		dup(0);
-		dup(0);
+		int fd1 = dup(0);
+		if (fd1 < 0) {
+			syslog(LOG_ERR, "Failed to duplicate fd 0 (first time): %s", strerror(errno));
+		}
+		int fd2 = dup(0);
+		if (fd2 < 0) {
+			syslog(LOG_ERR, "Failed to duplicate fd 0 (second time): %s", strerror(errno));
+		}
 
 		tcsetpgrp(0, getpid());
 

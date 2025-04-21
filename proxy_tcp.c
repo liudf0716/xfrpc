@@ -343,20 +343,36 @@ static void handle_iod_set_vip(struct proxy_client *client, struct iod_header *h
 	// Check if dummy0 interface exists
 	if (system("ip link show dummy0 > /dev/null 2>&1") != 0) {
 		// Create dummy0 interface if it doesn't exist
-		system("modprobe dummy");
-		system("ip link add dummy0 type dummy");
+		int ret = system("modprobe dummy");
+		if (ret != 0) {
+			debug(LOG_ERR, "Failed to load dummy module: %d", ret);
+		}
+		
+		ret = system("ip link add dummy0 type dummy");
+		if (ret != 0) {
+			debug(LOG_ERR, "Failed to create dummy0 interface: %d", ret);
+		}
 	}
 
 	// Remove any existing IP addresses from dummy0
-	system("ip addr flush dev dummy0");
+	int ret = system("ip addr flush dev dummy0");
+	if (ret != 0) {
+		debug(LOG_ERR, "Failed to flush addresses from dummy0: %d", ret);
+	}
 
 	// Set the IP address to the VIP
 	char cmd[128] = {0};
 	snprintf(cmd, sizeof(cmd), "ip addr add %s/32 dev dummy0", vip);
-	system(cmd);
+	ret = system(cmd);
+	if (ret != 0) {
+		debug(LOG_ERR, "Failed to add IP address to dummy0: %d", ret);
+	}
 
 	// Ensure the interface is up
-	system("ip link set dev dummy0 up");
+	ret = system("ip link set dev dummy0 up");
+	if (ret != 0) {
+		debug(LOG_ERR, "Failed to bring up dummy0 interface: %d", ret);
+	}
 
 	debug(LOG_INFO, "VIP %s successfully configured on dummy0", vip);
 	header->length = 0;

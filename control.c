@@ -869,7 +869,7 @@ static int is_service_available(struct proxy_service *ps)
     }
 
     // If both start_hour and end_hour are 0, service is always available
-    if (ps->start_hour == 0 && ps->end_hour == 0) {
+    if (ps->start_time == 0 && ps->end_time == 0) {
         return 1;
     }
 
@@ -878,12 +878,12 @@ static int is_service_available(struct proxy_service *ps)
     int current_hour = tm_now->tm_hour;
 
     // Handle case where service period crosses midnight
-    if (ps->end_hour < ps->start_hour) {
-        return (current_hour >= ps->start_hour || current_hour < ps->end_hour);
+    if (ps->end_time < ps->start_time) {
+        return (current_hour >= ps->start_time || current_hour < ps->end_time);
     }
 
     // Normal case: service period within same day
-    return (current_hour >= ps->start_hour && current_hour < ps->end_hour);
+    return (current_hour >= ps->start_time && current_hour < ps->end_time);
 }
 
 /**

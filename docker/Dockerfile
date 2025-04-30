@@ -28,9 +28,10 @@ WORKDIR /build
 RUN curl -L https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz | tar xz && \
     mv frp_${FRP_VERSION}_linux_amd64/frps /build/
 
-# Clone and build xfrpc
-RUN git clone https://github.com/liudf0716/xfrpc.git && \
-    cd xfrpc && \
+# Copy and build xfrpc
+COPY . /build/xfrpc/
+RUN cd /build/xfrpc && \
+    rm -rf build && \
     mkdir build && \
     cd build && \
     cmake .. && \
@@ -88,18 +89,18 @@ RUN echo 'bindPort = 7000' > /usr/local/frp/frps.toml && \
 RUN echo '#!/bin/sh' > /usr/local/bin/start.sh && \
     echo 'cat > /usr/local/xfrpc/xfrpc.ini << EOF' >> /usr/local/bin/start.sh && \
     echo '[common]' >> /usr/local/bin/start.sh && \
-    echo "server_addr = ${SERVER_ADDR}" >> /usr/local/bin/start.sh && \
-    echo "server_port = ${SERVER_PORT}" >> /usr/local/bin/start.sh && \
-    echo "token = ${TOKEN}" >> /usr/local/bin/start.sh && \
+    echo "server_addr = \${SERVER_ADDR:-127.0.0.1}" >> /usr/local/bin/start.sh && \
+    echo "server_port = \${SERVER_PORT:-7000}" >> /usr/local/bin/start.sh && \
+    echo "token = \${TOKEN:-12345678}" >> /usr/local/bin/start.sh && \
     echo '[drl]' >> /usr/local/bin/start.sh && \
     echo 'type = iod' >> /usr/local/bin/start.sh && \
-    echo "local_port = ${DRL_LOCAL_PORT}" >> /usr/local/bin/start.sh && \
-    echo "remote_port = ${DRL_REMOTE_PORT}" >> /usr/local/bin/start.sh && \
+    echo "local_port = \${DRL_LOCAL_PORT:-12321}" >> /usr/local/bin/start.sh && \
+    echo "remote_port = \${DRL_REMOTE_PORT:-12321}" >> /usr/local/bin/start.sh && \
     echo '[ccl]' >> /usr/local/bin/start.sh && \
     echo 'type = tcp' >> /usr/local/bin/start.sh && \
-    echo "local_ip = ${CCL_ADDRESS}" >> /usr/local/bin/start.sh && \
-    echo "local_port = ${CCL_LOCAL_PORT}" >> /usr/local/bin/start.sh && \
-    echo "remote_port = ${CCL_REMOTE_PORT}" >> /usr/local/bin/start.sh && \
+    echo "local_ip = \${CCL_ADDRESS:-127.0.0.1}" >> /usr/local/bin/start.sh && \
+    echo "local_port = \${CCL_LOCAL_PORT:-12322}" >> /usr/local/bin/start.sh && \
+    echo "remote_port = \${CCL_REMOTE_PORT:-12322}" >> /usr/local/bin/start.sh && \
     echo 'EOF' >> /usr/local/bin/start.sh && \
     echo 'cd /usr/local/frp && ./frps -c frps.toml &' >> /usr/local/bin/start.sh && \
     echo 'sleep 2' >> /usr/local/bin/start.sh && \
@@ -108,7 +109,7 @@ RUN echo '#!/bin/sh' > /usr/local/bin/start.sh && \
     chown xfrpc:xfrpc /usr/local/bin/start.sh
 
 # Expose necessary ports
-EXPOSE  7500 ${DRL_REMOTE_PORT} ${CCL_REMOTE_PORT}
+EXPOSE 7000 7500 ${DRL_REMOTE_PORT} ${CCL_REMOTE_PORT}
 
 # Set working directory
 WORKDIR /usr/local/xfrpc

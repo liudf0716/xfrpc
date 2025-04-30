@@ -91,6 +91,10 @@ struct proxy_service {
 	int     remote_data_port;
 	int     local_port;
 
+	/* Time control */
+	int     start_hour;    /* Start hour (0-23) */
+	int     end_hour;      /* End hour (0-23) */
+
 	/* XDPI service type */
 	enum xdpi_service_type service_type;
 

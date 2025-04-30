@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
@@ -858,6 +857,36 @@ static void handle_type_new_proxy_resp(struct msg_hdr *msg)
 }
 
 /**
+ * @brief Check if a proxy service is available based on time settings
+ * 
+ * @param ps The proxy service structure to check
+ * @return int Returns 1 if service is available, 0 if not
+ */
+static int is_service_available(struct proxy_service *ps)
+{
+    if (!ps) {
+        return 0;
+    }
+
+    // If both start_hour and end_hour are 0, service is always available
+    if (ps->start_hour == 0 && ps->end_hour == 0) {
+        return 1;
+    }
+
+    time_t now = time(NULL);
+    struct tm *tm_now = localtime(&now);
+    int current_hour = tm_now->tm_hour;
+
+    // Handle case where service period crosses midnight
+    if (ps->end_hour < ps->start_hour) {
+        return (current_hour >= ps->start_hour || current_hour < ps->end_hour);
+    }
+
+    // Normal case: service period within same day
+    return (current_hour >= ps->start_hour && current_hour < ps->end_hour);
+}
+
+/**
  * @brief Handles the start work connection message type
  *
  * @param msg Pointer to the message header structure
@@ -869,36 +898,43 @@ static void handle_type_new_proxy_resp(struct msg_hdr *msg)
  */
 static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
 {
-	struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data);
-	if (!sr) {
-		debug(LOG_ERR, "Failed to unmarshal TypeStartWorkConn");
-		return;
-	}
+    struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data);
+    if (!sr) {
+        debug(LOG_ERR, "Failed to unmarshal TypeStartWorkConn");
+        return;
+    }
 
-	struct proxy_service *ps = get_proxy_service(sr->proxy_name);
-	if (!ps) {
-		debug(LOG_ERR, "Proxy service [%s] not found for TypeStartWorkConn", sr->proxy_name);
-		SAFE_FREE(sr);
-		return;
-	}
+    struct proxy_service *ps = get_proxy_service(sr->proxy_name);
+    if (!ps) {
+        debug(LOG_ERR, "Proxy service [%s] not found for TypeStartWorkConn", sr->proxy_name);
+        SAFE_FREE(sr);
+        return;
+    }
 
-	assert(ctx);
-	struct proxy_client *client = (struct proxy_client *)ctx;
-	client->ps = ps;
+    // Check if service is available at current time
+    if (!is_service_available(ps)) {
+        debug(LOG_INFO, "Proxy service [%s] is not available at current time", sr->proxy_name);
+        SAFE_FREE(sr);
+        return;
+    }
 
-	int remaining_len = len - sizeof(struct msg_hdr) - msg_hton(msg->length);
-	debug(LOG_DEBUG, "Proxy service [%s] [%s:%d] starting work connection. Remaining data length %d",
-		  sr->proxy_name, ps->local_ip, ps->local_port, remaining_len);
+    assert(ctx);
+    struct proxy_client *client = (struct proxy_client *)ctx;
+    client->ps = ps;
 
-	if (remaining_len > 0) {
-		client->data_tail_size = remaining_len;
-		client->data_tail = msg->data + msg_hton(msg->length);
-		debug(LOG_DEBUG, "Data tail is %s", client->data_tail);
-	}
+    int remaining_len = len - sizeof(struct msg_hdr) - msg_hton(msg->length);
+    debug(LOG_DEBUG, "Proxy service [%s] [%s:%d] starting work connection. Remaining data length %d",
+          sr->proxy_name, ps->local_ip, ps->local_port, remaining_len);
 
-	start_xfrp_tunnel(client);
-	set_client_work_start(client, 1);
-	SAFE_FREE(sr);
+    if (remaining_len > 0) {
+        client->data_tail_size = remaining_len;
+        client->data_tail = msg->data + msg_hton(msg->length);
+        debug(LOG_DEBUG, "Data tail is %s", client->data_tail);
+    }
+
+    start_xfrp_tunnel(client);
+    set_client_work_start(client, 1);
+    SAFE_FREE(sr);
 }
 
 /**

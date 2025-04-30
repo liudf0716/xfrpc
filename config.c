@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
@@ -603,6 +602,22 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("plugin_pwd")) SET_STRING_VALUE(plugin_pwd);
 	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
 	else if (MATCH_NAME("service_type")) ps->service_type = convert_service_type(value);
+	else if (MATCH_NAME("start_hour")) {
+		int hour = atoi(value);
+		if (hour < 0 || hour > 23) {
+			debug(LOG_ERR, "Invalid start_hour value: %s", value);
+			exit(0);
+		}
+		ps->start_hour = hour;
+	}
+	else if (MATCH_NAME("end_hour")) {
+		int hour = atoi(value);
+		if (hour < 0 || hour > 23) {
+			debug(LOG_ERR, "Invalid end_hour value: %s", value);
+			exit(0);
+		}
+		ps->end_hour = hour;
+	}
 	else {
 		debug(LOG_ERR, "Unknown option %s in section %s", nm, sect);
 		return 0;

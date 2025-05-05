@@ -166,6 +166,8 @@ int is_iod_proxy(const struct proxy_service *ps) {
 }
 
 int has_service_type(const struct proxy_service *ps) {
+	if (!ps) return 0;
+
 	return ps->service_type != NO_XDPI;
 }
 

@@ -165,6 +165,10 @@ int is_iod_proxy(const struct proxy_service *ps) {
 	return is_proxy_type(ps, "iod", 1);
 }
 
+int has_service_type(const struct proxy_service *ps) {
+	return ps->service_type != NO_XDPI;
+}
+
 /**
  * @brief Check if proxy service is UDP type
  * @param ps Pointer to proxy service structure
@@ -215,7 +219,7 @@ static int setup_local_connection(struct proxy_client *client)
 	
 	if (is_udp_proxy(ps)) {
 		client->local_proxy_bev = connect_udp_server(client->base);
-	} else if (!is_socks5_proxy(ps) && !is_iod_proxy(ps)) {
+	} else if (!is_socks5_proxy(ps) && !is_iod_proxy(ps) && !has_service_type(ps)) {
 		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port);
 	} else {
 		debug(LOG_INFO, "socks5 proxy client or iod proxy client can't connect to remote server here ...");

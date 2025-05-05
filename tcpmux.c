@@ -857,7 +857,7 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
     struct proxy_client *pc = (struct proxy_client *)param;
     uint32_t bytes_processed = 0;
 
-    if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps) && !is_iod_proxy(pc->ps))) {
+    if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps) && !is_iod_proxy(pc->ps) && !has_service_type(pc->ps))) {
         uint8_t *data = calloc(length, sizeof(uint8_t));
         if (!data) {
             debug(LOG_ERR, "Memory allocation failed for data buffer");
@@ -867,40 +867,19 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
         bytes_processed = rx_ring_buffer_pop(&stream->rx_ring, data, length);
         handle_fn(data, bytes_processed, pc);
         free(data);
-    } 
-    else if (is_iod_proxy(pc->ps)) {
+    } else if (has_service_type(pc->ps)) {
+        bytes_processed = handle_xdpi(pc, &stream->rx_ring, length);
+    } else if (is_iod_proxy(pc->ps)) {
         bytes_processed = handle_iod(pc, &stream->rx_ring, length);
-    }
-    else if (is_socks5_proxy(pc->ps)) {
+    } else if (is_socks5_proxy(pc->ps)) {
         bytes_processed = handle_ss5(pc, &stream->rx_ring, length);
-    } 
-    else {
-        if (pc->xdpi_state == XDPI_INIT) {
-            debug(LOG_INFO, "XDPI engine detected  protocol, length: %u", length);
-            uint8_t *data = calloc(length, sizeof(uint8_t));
-            rx_ring_buffer_pop(&stream->rx_ring, data, length);
-            bytes_processed = length;
-            if (xdpi_engine(pc, data, length) < 0) {
-                debug(LOG_ERR, "XDPI engine failed");
-                free(data);
-                pc->xdpi_state = XDPI_BLOCKED;
-            } else {
-                if (bufferevent_write(pc->local_proxy_bev, data, length) < 0) {
-                    debug(LOG_ERR, "Failed to write data to local proxy bufferevent");
-                }
-                free(data);
-                pc->xdpi_state = XDPI_VERIFIED;
-            }
-        } else if (pc->xdpi_state == XDPI_VERIFIED) {
-            bytes_processed = tx_ring_buffer_write(pc->local_proxy_bev, 
-                                                  &stream->rx_ring, 
-                                                  length);
-        } else {
-            debug(LOG_ERR, "blocked by XDPI engine for insecure service");
-            bytes_processed = rx_ring_buffer_pop(&stream->rx_ring, NULL, length);
-        }
+    } else {
+        // Simple data forwarding logic
+        debug(LOG_DEBUG, "Forwarding data to local proxy, length: %u", length);
+        bytes_processed = tx_ring_buffer_write(pc->local_proxy_bev, 
+                                              &stream->rx_ring, 
+                                              length);
     }
-
     
 
     struct bufferevent *bout = get_main_control()->connect_bev;

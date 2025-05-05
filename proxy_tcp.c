@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
@@ -604,4 +603,85 @@ void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 	}
 
 	debug(LOG_ERR, "impossible to reach here");
+}
+
+/**
+ * @brief Handles data processing based on XDPI service type verification
+ * 
+ * This function processes incoming data through the XDPI engine to determine if
+ * the service type matches the configured service type. If there's a match, it
+ * establishes a connection and forwards the data; otherwise, it discards the data.
+ * 
+ * @param client The proxy client structure
+ * @param rb Ring buffer containing incoming data
+ * @param len Length of data in ring buffer
+ * @return Number of bytes processed, 0 on error
+ */
+uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int len)
+{
+	uint32_t bytes_processed = 0;
+	
+	// If connection already established, just forward data
+	if (client->xdpi_state == XDPI_VERIFIED && client->local_proxy_bev) {
+		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
+		return len;
+	}
+	
+	// Extract data for XDPI analysis
+	uint8_t *data = calloc(len, sizeof(uint8_t));
+	if (!data) {
+		debug(LOG_ERR, "Failed to allocate memory for XDPI analysis");
+		return bytes_processed;
+	}
+	
+	// Peek at data without removing it from buffer yet
+	rx_ring_buffer_peek(rb, data, len);
+	
+	// Analyze data with XDPI engine
+	if (xdpi_engine(client, data, len) < 0) {
+		debug(LOG_ERR, "XDPI verification failed for service type %d", client->ps->service_type);
+		free(data);
+		
+		// Pop data from buffer to discard it
+		rx_ring_buffer_pop(rb, NULL, len);
+		client->xdpi_state = XDPI_BLOCKED;
+		return len; // Return len to indicate we've handled the data by discarding it
+	}
+	
+	// XDPI verification succeeded, connect if not already connected
+	if (!client->local_proxy_bev) {
+		debug(LOG_INFO, "XDPI verification passed, establishing connection for service type %d", 
+			  client->ps->service_type);
+		
+		// Connect to the local IP and port defined in the proxy service
+		if (client->ps->local_ip == NULL || client->ps->local_port == 0) {
+			debug(LOG_ERR, "Invalid local IP or port for service type %d", client->ps->service_type);
+			free(data);
+			rx_ring_buffer_pop(rb, NULL, len);
+			return bytes_processed;
+		}
+		client->local_proxy_bev = connect_server(client->base, client->ps->local_ip, client->ps->local_port);
+		
+		if (!client->local_proxy_bev) {
+			debug(LOG_ERR, "Failed to establish connection to local service on IP %s and port %d", 
+				  client->ps->local_ip, client->ps->local_port);
+			free(data);
+			rx_ring_buffer_pop(rb, NULL, len);
+			return bytes_processed;
+		}
+		
+		// Setup callbacks
+		bufferevent_setcb(client->local_proxy_bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);
+		bufferevent_enable(client->local_proxy_bev, EV_READ | EV_WRITE);
+	}
+	
+	// Now consume the data from buffer
+	rx_ring_buffer_pop(rb, NULL, len);
+	
+	// Forward data
+	bufferevent_write(client->local_proxy_bev, data, len);
+	free(data);
+	client->xdpi_state = XDPI_VERIFIED;
+	
+	return len;
 }

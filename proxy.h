@@ -62,4 +62,7 @@ uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len
 
 uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len);
 
+// XDPI service type handler
+uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int len);
+
 #endif //XFRPC_PROXY_H

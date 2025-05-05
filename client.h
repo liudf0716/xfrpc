@@ -132,6 +132,7 @@ int is_ftp_proxy(const struct proxy_service *ps);
 int is_socks5_proxy(const struct proxy_service *ps);
 int is_udp_proxy(const struct proxy_service *ps);
 int is_iod_proxy(const struct proxy_service *ps);
+int has_service_type(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);
 void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx);

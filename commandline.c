@@ -139,6 +139,7 @@ static void usage(const char *appname)
         {"-c [filename]", "Specify config file to use"},
         {"-f",           "Run in foreground (don't daemonize)"},
         {"-d <level>",   "Set debug level"},
+        {"-s",           "Enable syslog for debug logging"},
         {"-h",           "Display this help message"},
         {"-v",           "Display version information"},
         {"-r",           "Display client run ID"}
@@ -167,7 +168,7 @@ void parse_commandline(int argc, char **argv)
     int c;
     int config_specified = 0;
 
-    while (-1 != (c = getopt(argc, argv, "c:hfd:vr"))) {
+    while (-1 != (c = getopt(argc, argv, "c:hfd:svr"))) {
         switch (c) {
             case 'h':
                 usage(argv[0]);
@@ -194,6 +195,10 @@ void parse_commandline(int argc, char **argv)
                 if (optarg) {
                     debugconf.debuglevel = atoi(optarg);
                 }
+                break;
+                
+            case 's':
+                debugconf.log_syslog = 1;
                 break;
 
             case 'v':

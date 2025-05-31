@@ -55,6 +55,8 @@ void load_config(const char *confile);
 /* Proxy service management functions */
 struct proxy_service *get_proxy_service(const char *proxy_name);
 struct proxy_service *get_all_proxy_services(void);
+void free_proxy_service(struct proxy_service *ps);
+void free_all_proxy_services(void);
 int validate_proxy(struct proxy_service *ps);
 
 /* FTP specific functions */

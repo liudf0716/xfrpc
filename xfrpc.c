@@ -84,4 +84,6 @@ void xfrpc_loop(void)
 	init_main_control();
 	run_control();
 	close_main_control();
+	free_all_proxy_services(); /* Clean up all proxy service configurations */
+	free_common_config();      /* Clean up common configuration */
 }

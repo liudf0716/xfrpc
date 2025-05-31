@@ -835,3 +835,55 @@ struct proxy_service *get_all_proxy_services()
 {
 	return all_ps;
 }
+
+/**
+ * @brief Frees memory used by a proxy_service structure
+ *
+ * Deallocates memory for dynamically allocated strings within the proxy_service
+ * structure and the structure itself.
+ *
+ * @param ps Pointer to the proxy_service structure to free
+ */
+void free_proxy_service(struct proxy_service *ps)
+{
+	if (!ps) {
+		return;
+	}
+
+	SAFE_FREE(ps->proxy_name);
+	SAFE_FREE(ps->ftp_cfg_proxy_name);
+	SAFE_FREE(ps->proxy_type);
+	SAFE_FREE(ps->local_ip);
+	SAFE_FREE(ps->custom_domains);
+	SAFE_FREE(ps->subdomain);
+	SAFE_FREE(ps->locations);
+	SAFE_FREE(ps->host_header_rewrite);
+	SAFE_FREE(ps->http_user);
+	SAFE_FREE(ps->http_pwd);
+	SAFE_FREE(ps->group);
+	SAFE_FREE(ps->group_key);
+	SAFE_FREE(ps->plugin);
+	SAFE_FREE(ps->plugin_user);
+	SAFE_FREE(ps->plugin_pwd);
+	SAFE_FREE(ps->s_root_dir);
+	SAFE_FREE(ps->bind_addr);
+	SAFE_FREE(ps);
+}
+
+/**
+ * @brief Frees all proxy_service structures from the all_ps hash table.
+ *
+ * Iterates through the all_ps hash table, removes each element,
+ * and frees the associated proxy_service structure using free_proxy_service.
+ * Finally, sets all_ps to NULL.
+ */
+void free_all_proxy_services(void)
+{
+	struct proxy_service *current_ps, *tmp;
+
+	HASH_ITER(hh, all_ps, current_ps, tmp) {
+		HASH_DEL(all_ps, current_ps);  /* delete it (all_ps advances to next) */
+		free_proxy_service(current_ps); /* free it */
+	}
+	all_ps = NULL; /* Ensure the hash table head is NULL after clearing */
+}

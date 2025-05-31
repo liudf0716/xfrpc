@@ -738,6 +738,10 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
  * are updated accordingly. When reaching the end of the buffer, it wraps
  * around to the beginning.
  */
+// PERFORMANCE: Ring buffer operations involve memcpy to decouple stream I/O from the
+// main connection. This is a common trade-off. The efficiency can be influenced by
+// RBUF_SIZE/WBUF_SIZE (defined in tcpmux.h) which could be tuned based on specific
+// workload characteristics (e.g., many small messages vs. bulk data transfer).
 int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
     // Validate input parameters
     assert(ring->sz >= len);

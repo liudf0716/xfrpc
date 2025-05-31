@@ -35,6 +35,7 @@ static struct control *main_ctl;
 static bool xfrpc_status;
 static int is_login;
 static time_t pong_time;
+static struct event *retry_timer = NULL; /* Timer for connection retries */
 
 static void new_work_connection(struct bufferevent *bev, struct tmux_stream *stream);
 static void recv_cb(struct bufferevent *bev, void *ctx);
@@ -42,6 +43,7 @@ static void clear_main_control(void);
 static void start_base_connect(void);
 static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
+static void retry_connection_cb(evutil_socket_t fd, short events, void *arg);
 
 /**
  * Check if xfrpc client is connected to server
@@ -1285,6 +1287,10 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
  */
 static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int len, void *ctx)
 {
+	// PERFORMANCE: Allocating 'buf' for every read via calloc can lead to memory churn,
+	// especially with frequent small messages. Consider optimizing by:
+	// 1. Processing directly from the input evbuffer using evbuffer_pullup() or similar.
+	// 2. Draining the input evbuffer to a reusable application-level buffer.
 	uint8_t *buf = calloc(len, 1);
 	assert(buf);
 	evbuffer_remove(input, buf, len);
@@ -1338,15 +1344,79 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
 
 	(*retry_times)++;
 	if (*retry_times >= MAX_RETRY_TIMES) {
-		debug(LOG_INFO, "Maximum retry attempts (%d) reached", MAX_RETRY_TIMES);
+		debug(LOG_INFO, "Maximum retry attempts (%d) reached, will not retry further using timer.", MAX_RETRY_TIMES);
+		// Optionally, could have different handling here like exiting or longer, non-timer based backoff
+		// For now, we just stop retrying with the timer.
+		// The original sleep() would block, this path now just stops retrying.
+		// To mimic blocking for the last attempt, one might re-add sleep here, but that defeats non-blocking.
+		// Or, simply let it be, and the application won't reconnect automatically after max retries.
+		return; // Stop retrying if max attempts reached
 	}
 
-	sleep(RETRY_DELAY_SECONDS);
+	debug(LOG_INFO, "Scheduling connection retry in %d seconds (attempt %d/%d)", RETRY_DELAY_SECONDS, *retry_times, MAX_RETRY_TIMES);
+
+	if (!main_ctl || !main_ctl->connect_base) {
+		debug(LOG_ERR, "Cannot schedule retry: main_ctl or connect_base is NULL.");
+		// Fallback to old behavior or handle error appropriately
+		// This situation suggests a severe issue if main_ctl is gone but we're trying to retry.
+		// For now, we'll log and attempt the original blocking sequence as a last resort,
+		// though this indicates a design problem if hit.
+		sleep(RETRY_DELAY_SECONDS);
+		reset_session_id();
+		clear_main_control();
+		run_control();
+		return;
+	}
+
+	if (retry_timer == NULL) {
+		retry_timer = evtimer_new(main_ctl->connect_base, retry_connection_cb, NULL);
+		if (!retry_timer) {
+			debug(LOG_ERR, "Failed to create retry_timer. Falling back to sleep.");
+			sleep(RETRY_DELAY_SECONDS);
+			reset_session_id();
+			clear_main_control();
+			run_control();
+			return;
+		}
+	} else {
+		// If timer already exists, ensure it's not pending before adding again
+		event_del(retry_timer);
+	}
 	
+	struct timeval tv;
+	tv.tv_sec = RETRY_DELAY_SECONDS;
+	tv.tv_usec = 0;
+	event_add(retry_timer, &tv);
+}
+
+/**
+ * @brief Callback function for the connection retry timer.
+ *
+ * This function is executed when the retry_timer elapses. It attempts to
+ * re-establish the connection by resetting necessary states and re-running
+ * the control loop.
+ *
+ * @param fd File descriptor (unused).
+ * @param events Event flags (unused).
+ * @param arg User-defined argument (unused).
+ */
+static void retry_connection_cb(evutil_socket_t fd, short events, void *arg)
+{
+	debug(LOG_INFO, "Retry timer elapsed. Attempting to reconnect...");
+
+	// It's good practice to make sure the timer is not active after it fires,
+	// especially if it could be manually deleted elsewhere.
+	// However, evtimer_new creates a non-persistent timer by default with event_add,
+	// meaning it becomes non-pending after firing. Re-adding it is fine.
+	// If we were to free it here, we'd need to NULL check in handle_connection_failure
+	// and re-create with evtimer_new if NULL.
+	// For now, keep it persistent but ensure event_del is called in clear_main_control.
+
 	reset_session_id();
+	// clear_main_control() will be called, which should also handle deleting and freeing retry_timer.
+	// This is important if clear_main_control can be called from other paths too.
 	clear_main_control();
 	run_control();
-}
 
 /**
  * @brief Handles successful connection events
@@ -2085,6 +2155,13 @@ static void clear_main_control()
 	// Clean up resources
 	clear_all_proxy_client();
 	free_crypto_resources();
+
+	// Clean up retry timer
+	if (retry_timer) {
+		event_del(retry_timer); // Make sure it's not active
+		event_free(retry_timer); // Free the event structure
+		retry_timer = NULL;    // Set to NULL to indicate it's freed
+	}
 
 	// Reinitialize TCP multiplexing if enabled
 	struct common_conf *conf = get_common_config();

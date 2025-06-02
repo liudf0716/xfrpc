@@ -4,13 +4,6 @@
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
  */
 
-// PERFORMANCE NOTE: This file uses JSON for control message serialization.
-// JSON provides readability and flexibility but incurs CPU overhead for parsing/generation
-// and can be more verbose than binary formats. If control message frequency becomes
-// a significant bottleneck, consider migrating performance-critical control messages
-// to a binary serialization format (e.g., Protocol Buffers, MessagePack) as a
-// long-term optimization strategy.
-
 #include <string.h>
 #include <stdio.h>
 #include <json-c/json.h>

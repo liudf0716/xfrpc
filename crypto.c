@@ -11,7 +11,6 @@
 #include <time.h>
 #include <syslog.h>
 #include <openssl/ssl.h>
-#include <openssl/rand.h> // Added for RAND_bytes
 
 #include "fastpbkdf2.h"
 #include "crypto.h"
@@ -292,7 +291,7 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 						 token_len, 
 						 (void *)salt, 
 						 strlen(salt), 
-						 100000,        // Number of iterations increased from 64
+						 64,            // Number of iterations 
 						 (void *)key, 
 						 block_size);
 	return key;
@@ -315,17 +314,9 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 		return NULL;
 	}
 
-	// srand((unsigned int)time(NULL)); // Removed: RAND_bytes does not need manual seeding with time()
-	// for (size_t i = 0; i < iv_len; i++) {
-	// 	iv_buf[i] = (rand() % 254) + 1;  // Generate values between 1 and 255 // Removed
-	// }
-
-	if (RAND_bytes(iv_buf, iv_len) != 1) {
-		debug(LOG_ERR, "RAND_bytes failed to generate IV");
-		// The original function did not explicitly clear iv_buf on error,
-		// but returning NULL is a clear indication of failure.
-		// Depending on caller expectations, memset(iv_buf, 0, iv_len) could be added.
-		return NULL;
+	srand((unsigned int)time(NULL));
+	for (size_t i = 0; i < iv_len; i++) {
+		iv_buf[i] = (rand() % 254) + 1;  // Generate values between 1 and 255
 	}
 
 	return iv_buf;
@@ -358,9 +349,6 @@ size_t encrypt_data(const uint8_t *src_data, size_t srclen,
 	}
 
 	// Allocate output buffer
-	// PERFORMANCE: Allocating 'outbuf' for each encryption operation can contribute to
-	// memory churn if called very frequently with small data. For high-frequency paths,
-	// consider a reusable buffer if max output size is predictable or operations can be batched.
 	outbuf = calloc(srclen + 1, 1);
 	if (!outbuf) {
 		debug(LOG_ERR, "Failed to allocate output buffer");
@@ -423,9 +411,6 @@ size_t decrypt_data(const uint8_t *enc_data, size_t enclen,
 	}
 
 	// Allocate output buffer
-	// PERFORMANCE: Allocating 'outbuf' for each decryption operation can contribute to
-	// memory churn if called very frequently with small data. For high-frequency paths,
-	// consider a reusable buffer if max output size is predictable or operations can be batched.
 	outbuf = calloc(enclen + 1, 1);
 	if (!outbuf) {
 		debug(LOG_ERR, "Failed to allocate output buffer");

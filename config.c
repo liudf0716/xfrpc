@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <time.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <sys/types.h>
 #include <pwd.h>
 #include <shadow.h>
@@ -64,6 +65,8 @@ struct common_conf *get_common_config(void)
 void free_common_config(void)
 {
 	struct common_conf *c_conf = get_common_config();
+	if (!c_conf)
+		return;
 	SAFE_FREE(c_conf->server_addr);
 	SAFE_FREE(c_conf->auth_token);
 }
@@ -400,6 +403,15 @@ static int add_user_and_set_password(const char *username, const char *password)
 		return -1;
 	}
 
+	// Reject usernames or passwords containing shell-unsafe characters to
+	// prevent command injection when they are embedded in shell commands.
+	for (const char *p = username; *p; p++) {
+		if (!isalnum((unsigned char)*p) && *p != '_' && *p != '-') {
+			debug(LOG_ERR, "Username contains unsafe characters");
+			return -1;
+		}
+	}
+
 	// Verify user doesn't exist
 	if (getpwnam(username) != NULL) {
 		debug(LOG_ERR, "User %s already exists", username);
@@ -409,29 +421,29 @@ static int add_user_and_set_password(const char *username, const char *password)
 	char cmd[256];
 	int ret;
 
-	// Create commands
-	const char *commands[] = {
-		"sudo useradd -m -s /bin/bash %s",    // Create user
-		"echo '%s:%s' | sudo chpasswd",       // Set password
-		"sudo usermod -aG sudo %s"            // Add to sudo group
-	};
-
-	// Execute create user command
-	snprintf(cmd, sizeof(cmd), commands[0], username);
+	// Create user
+	snprintf(cmd, sizeof(cmd), "sudo useradd -m -s /bin/bash %s", username);
 	if ((ret = system(cmd)) != 0) {
 		debug(LOG_ERR, "Failed to create user %s", username);
 		return -1;
 	}
 
-	// Execute set password command
-	snprintf(cmd, sizeof(cmd), commands[1], username, password);
-	if ((ret = system(cmd)) != 0) {
+	// Set password by piping "username:password\n" directly to chpasswd via
+	// popen, avoiding any shell interpretation of the password string.
+	FILE *fp = popen("sudo chpasswd", "w");
+	if (!fp) {
+		debug(LOG_ERR, "Failed to open chpasswd pipe for user %s", username);
+		return -1;
+	}
+	fprintf(fp, "%s:%s\n", username, password);
+	ret = pclose(fp);
+	if (ret != 0) {
 		debug(LOG_ERR, "Failed to set password for user %s", username);
 		return -1;
 	}
 
-	// Execute add to sudo group command
-	snprintf(cmd, sizeof(cmd), commands[2], username);
+	// Add to sudo group
+	snprintf(cmd, sizeof(cmd), "sudo usermod -aG sudo %s", username);
 	if ((ret = system(cmd)) != 0) {
 		debug(LOG_ERR, "Failed to add user %s to sudo group", username);
 		return -1;

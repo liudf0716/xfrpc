@@ -628,7 +628,10 @@ uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int le
 	}
 	
 	// Extract data for XDPI analysis
-	uint8_t *data = calloc(len, sizeof(uint8_t));
+	// Allocate len+1 bytes so the buffer is always null-terminated; this is
+	// required because xdpi_engine() uses strstr() on the data for SSH banner
+	// detection and strstr() needs a null terminator to stop scanning.
+	uint8_t *data = calloc(len + 1, sizeof(uint8_t));
 	if (!data) {
 		debug(LOG_ERR, "Failed to allocate memory for XDPI analysis");
 		return bytes_processed;

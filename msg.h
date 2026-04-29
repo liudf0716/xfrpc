@@ -119,5 +119,6 @@ struct work_conn *new_work_conn(void);
 // Cleanup functions
 void udp_packet_free(struct udp_packet *udp);
 void control_response_free(struct control_response *res);
+void new_proxy_resp_free(struct new_proxy_response *npr);
 
 #endif

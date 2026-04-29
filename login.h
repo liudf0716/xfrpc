@@ -47,5 +47,6 @@ char *get_run_id(void);
 login_t *get_common_login_config(void);
 int is_logged(void);
 int login_resp_check(login_resp_t *lr);
+void login_resp_free(login_resp_t *lr);
 
 #endif /* XFRPC_LOGIN_H_ */

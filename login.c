@@ -133,6 +133,25 @@ void init_login()
 }
 
 /**
+ * @brief Frees memory allocated for a login_resp structure
+ *
+ * Releases all nested heap strings (version, run_id, error) and
+ * the structure itself. Safe to call with NULL.
+ *
+ * @param lr Pointer to the login_resp structure to be freed
+ */
+void login_resp_free(struct login_resp *lr)
+{
+	if (!lr)
+		return;
+
+	SAFE_FREE(lr->version);
+	SAFE_FREE(lr->run_id);
+	SAFE_FREE(lr->error);
+	SAFE_FREE(lr);
+}
+
+/**
  * @brief Validates and processes the login response from the server
  *
  * This function checks if the login response is valid by verifying the run_id.

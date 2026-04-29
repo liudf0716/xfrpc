@@ -853,7 +853,7 @@ static void handle_type_new_proxy_resp(struct msg_hdr *msg)
 	}
 
 	proxy_service_resp_raw(npr);
-	SAFE_FREE(npr);
+	new_proxy_resp_free(npr); /* deep-free: releases run_id, proxy_name, error */
 }
 
 /**
@@ -968,7 +968,7 @@ static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
 	assert(client->ps);
 
 	handle_udp_packet(udp, client);
-	SAFE_FREE(udp);
+	udp_packet_free(udp); /* deep-free: releases content, laddr, raddr */
 }
 
 /**
@@ -1044,7 +1044,7 @@ static int process_login_response(const struct msg_hdr *mhdr) {
 	}
 
 	int success = login_resp_check(lres);
-	free(lres);
+	login_resp_free(lres); /* deep-free: releases version, run_id, error */
 
 	if (!success) {
 		debug(LOG_ERR, "Login validation failed");

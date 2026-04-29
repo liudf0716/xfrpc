@@ -704,6 +704,25 @@ error:
 }
 
 /**
+ * @brief Frees memory allocated for a new_proxy_response structure
+ *
+ * Releases all nested heap strings (run_id, proxy_name, error) and
+ * the structure itself. Safe to call with NULL.
+ *
+ * @param npr Pointer to the new_proxy_response structure to be freed
+ */
+void new_proxy_resp_free(struct new_proxy_response *npr)
+{
+	if (!npr)
+		return;
+
+	SAFE_FREE(npr->run_id);
+	SAFE_FREE(npr->proxy_name);
+	SAFE_FREE(npr->error);
+	SAFE_FREE(npr);
+}
+
+/**
  * @brief Frees memory allocated for a control response structure
  *
  * This function safely deallocates memory for:

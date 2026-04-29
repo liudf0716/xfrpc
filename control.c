@@ -927,9 +927,16 @@ static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
           sr->proxy_name, ps->local_ip, ps->local_port, remaining_len);
 
     if (remaining_len > 0) {
+        uint8_t *tail = malloc(remaining_len);
+        if (!tail) {
+            debug(LOG_ERR, "Failed to allocate data tail buffer");
+            SAFE_FREE(sr);
+            return;
+        }
+        memcpy(tail, msg->data + msg_hton(msg->length), remaining_len);
+        client->data_tail = tail;
         client->data_tail_size = remaining_len;
-        client->data_tail = msg->data + msg_hton(msg->length);
-        debug(LOG_DEBUG, "Data tail is %s", client->data_tail);
+        debug(LOG_DEBUG, "Data tail copied (%d bytes)", remaining_len);
     }
 
     start_xfrp_tunnel(client);
@@ -1196,8 +1203,16 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 			}
 
 			nr = bufferevent_read(bev, data, sizeof(tmux_hdr));
-			assert(nr == sizeof(tmux_hdr));
-			assert(validate_tcp_mux_protocol(&tmux_hdr) > 0);
+			if (nr != sizeof(tmux_hdr)) {
+				debug(LOG_ERR, "Failed to read complete TCP mux header: got %zu, expected %zu",
+					  nr, sizeof(tmux_hdr));
+				break;
+			}
+			if (!validate_tcp_mux_protocol(&tmux_hdr)) {
+				debug(LOG_ERR, "Invalid TCP mux protocol header (version=%d, type=%d)",
+					  tmux_hdr.version, tmux_hdr.type);
+				break;
+			}
 			len -= nr;
 
 			if (tmux_hdr.type == DATA) {

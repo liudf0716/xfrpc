@@ -266,7 +266,8 @@ int dns_unified(const char *dname, char *udname_buf, int udname_buf_len)
 	for (int i = 0; i < dlen; i++) {
 		if (dname[i] == '/') {
 			udname_buf[i] = '\0';
-			break;
+			// Domain must contain at least one dot
+			return has_dot ? 0 : 1;
 		}
 
 		if (dname[i] == '.' && i != dlen - 1) {
@@ -275,6 +276,9 @@ int dns_unified(const char *dname, char *udname_buf, int udname_buf_len)
 
 		udname_buf[i] = tolower(dname[i]);
 	}
+
+	// Ensure the output is always null-terminated when no '/' was found
+	udname_buf[dlen] = '\0';
 
 	// Domain must contain at least one dot
 	return has_dot ? 0 : 1;

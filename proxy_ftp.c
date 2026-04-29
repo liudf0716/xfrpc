@@ -106,6 +106,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 		if (r_fp->ftp_server_port <= 0) {
 			debug(LOG_ERR, "Error: Remote FTP data port not initialized");
+			free_ftp_pasv(r_fp);
 			goto cleanup;
 		}
 
@@ -115,6 +116,7 @@ void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		if (!pack_len) {
 			debug(LOG_ERR, "Error: FTP proxy PASV response creation failed");
 			SAFE_FREE(pasv_msg);
+			free_ftp_pasv(r_fp);
 			goto cleanup;
 		}
 

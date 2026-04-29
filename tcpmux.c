@@ -945,20 +945,24 @@ static int incr_send_window(struct bufferevent *bev,
               stream_id, increment, MAX_STREAM_WINDOW_SIZE);
         return 0;
     }
+
+    uint32_t old_window = stream->send_window;
     if (stream->send_window > MAX_STREAM_WINDOW_SIZE - increment) {
         debug(LOG_WARNING, "Stream %d: send_window would overflow, capping at %u",
               stream_id, MAX_STREAM_WINDOW_SIZE);
         stream->send_window = MAX_STREAM_WINDOW_SIZE;
     } else {
-        // Enable read events if window was previously zero (backpressure released)
-        if (stream->send_window == 0) {
-            debug(LOG_DEBUG, "Enabling read events for stream %d", stream_id);
-            bufferevent_enable(bev, EV_READ);
-        }
         stream->send_window += increment;
     }
     debug(LOG_DEBUG, "Stream %d send window increased by %u to %u",
           stream_id, increment, stream->send_window);
+
+    // Enable read events only after the window update, if we transitioned from
+    // zero to non-zero (i.e. backpressure is now released).
+    if (old_window == 0 && stream->send_window > 0) {
+        debug(LOG_DEBUG, "Enabling read events for stream %d", stream_id);
+        bufferevent_enable(bev, EV_READ);
+    }
 
     return 1;
 }

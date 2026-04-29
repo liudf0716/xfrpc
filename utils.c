@@ -262,7 +262,10 @@ int dns_unified(const char *dname, char *udname_buf, int udname_buf_len)
 	const int dlen = strlen(dname);
 	bool has_dot = false;
 
-	// Process each character until '/' or end of string
+	// Process each character until '/' or end of string.
+	// The two return points are intentional: when a '/' is found we must
+	// null-terminate at that position (stripping the path component), whereas
+	// if no '/' is present we null-terminate at the full string length below.
 	for (int i = 0; i < dlen; i++) {
 		if (dname[i] == '/') {
 			udname_buf[i] = '\0';

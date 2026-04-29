@@ -1208,7 +1208,7 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 					  nr, sizeof(tmux_hdr));
 				break;
 			}
-			if (!validate_tcp_mux_protocol(&tmux_hdr)) {
+			if (validate_tcp_mux_protocol(&tmux_hdr) <= 0) {
 				debug(LOG_ERR, "Invalid TCP mux protocol header (version=%d, type=%d)",
 					  tmux_hdr.version, tmux_hdr.type);
 				break;

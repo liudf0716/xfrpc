@@ -1413,23 +1413,30 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
         max_send -= send_from_buffer;
     }
 
-    // After draining the old buffer, max_send holds the window remaining for new data
-    uint32_t new_data_sent = max_send;
+    // After draining the old ring buffer, max_send is the remaining window
+    // available for bytes from the new 'data' buffer.  Record this as
+    // new_data_to_send before queuing; it doubles as the byte count returned to
+    // the caller and as the offset at which unqueued new bytes begin.
+    // Invariant: new_data_to_send <= length (proven: max_send <= total_data_size
+    // and send_from_buffer >= buffered_size when available_window >= buffered_size;
+    // when available_window < buffered_size, max_send reaches 0 before touching
+    // new data at all).
+    uint32_t new_data_to_send = max_send;
 
     // Send new data directly if there is remaining window; use bout consistently
-    if (new_data_sent > 0) {
-        bufferevent_write(bout, data, new_data_sent);
+    if (new_data_to_send > 0) {
+        bufferevent_write(bout, data, new_data_to_send);
     }
 
     // Buffer any new data that did not fit in the current send window.
-    // new_data_sent is the offset into 'data' from which unsent bytes start, so
-    // append exactly (length - new_data_sent) bytes starting at data[new_data_sent].
+    // new_data_to_send is the offset into 'data' from which unsent bytes start,
+    // so append exactly (length - new_data_to_send) bytes starting there.
     // This avoids the unsigned-underflow bug that occurred when available_window <
-    // buffered_size (the old "remaining_data" could exceed 'length', wrapping the
-    // pointer and corrupting the ring buffer).
-    uint32_t new_data_buffered = length - new_data_sent;
+    // buffered_size (the old "remaining_data" formula could exceed 'length',
+    // wrapping the pointer and corrupting the ring buffer).
+    uint32_t new_data_buffered = (new_data_to_send <= length) ? (length - new_data_to_send) : 0;
     if (new_data_buffered > 0) {
-        tx_ring_buffer_append(tx_ring, data + new_data_sent, new_data_buffered);
+        tx_ring_buffer_append(tx_ring, data + new_data_to_send, new_data_buffered);
     }
 
     // Decrement send_window by the total number of bytes queued to the network
@@ -1440,7 +1447,7 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     // Return only the number of new bytes from 'data' that were sent directly.
     // If this is less than 'length', the caller should apply backpressure (disable
     // reads) until the send window grows again via a WINDOW_UPDATE from the peer.
-    return new_data_sent;
+    return new_data_to_send;
 }
 
 /**

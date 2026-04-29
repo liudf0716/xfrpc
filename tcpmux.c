@@ -936,15 +936,28 @@ static int incr_send_window(struct bufferevent *bev,
     // Get window increment size
     uint32_t increment = ntohl(tmux_hdr->length);
 
-    // Enable read events if window was previously full
-    if (stream->send_window == 0) {
-        debug(LOG_DEBUG, "Enabling read events for stream %d", stream_id);
-        bufferevent_enable(bev, EV_READ);
+    // Validate increment: reject values that exceed the protocol maximum or
+    // would overflow the 32-bit send_window counter.  Malformed or repeated
+    // WINDOW_UPDATE frames from the peer must not be allowed to grow the
+    // window beyond MAX_STREAM_WINDOW_SIZE.
+    if (increment > MAX_STREAM_WINDOW_SIZE) {
+        debug(LOG_ERR, "Stream %d: WINDOW_UPDATE increment %u exceeds maximum %u",
+              stream_id, increment, MAX_STREAM_WINDOW_SIZE);
+        return 0;
     }
-
-    // Update send window
-    stream->send_window += increment;
-    debug(LOG_DEBUG, "Stream %d send window increased by %u to %u", 
+    if (stream->send_window > MAX_STREAM_WINDOW_SIZE - increment) {
+        debug(LOG_WARNING, "Stream %d: send_window would overflow, capping at %u",
+              stream_id, MAX_STREAM_WINDOW_SIZE);
+        stream->send_window = MAX_STREAM_WINDOW_SIZE;
+    } else {
+        // Enable read events if window was previously zero (backpressure released)
+        if (stream->send_window == 0) {
+            debug(LOG_DEBUG, "Enabling read events for stream %d", stream_id);
+            bufferevent_enable(bev, EV_READ);
+        }
+        stream->send_window += increment;
+    }
+    debug(LOG_DEBUG, "Stream %d send window increased by %u to %u",
           stream_id, increment, stream->send_window);
 
     return 1;
@@ -1169,8 +1182,9 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
         return 0;
     }
 
-    // Process data
-    int32_t length = ntohl(tmux_hdr->length);
+    // Process data; ntohl returns an unsigned value – keep it unsigned to avoid
+    // sign-extension issues with large (>2 GB cumulative) transfer scenarios.
+    uint32_t length = ntohl(tmux_hdr->length);
     if (!process_data(stream, length, flags, fn, (void *)pc)) {
         debug(LOG_ERR, "Protocol error while processing data");
         tcp_mux_send_go_away(bout, PROTO_ERR);
@@ -1382,34 +1396,47 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     uint16_t flags = get_send_flags(stream);
     struct bufferevent *bout = get_main_control()->connect_bev;
 
-    // Determine how much data we can send
+    // Determine how much data we can send (bounded by send window)
     uint32_t max_send = (available_window < total_data_size) ? available_window : total_data_size;
 
     // Send data header
     tcp_mux_send_data(bout, flags, stream->id, max_send);
 
-    // Send data from tx_ring buffer if any
+    // Send data from tx_ring buffer if any; always use the mux control connection (bout)
     if (buffered_size > 0) {
         uint32_t send_from_buffer = (max_send < buffered_size) ? max_send : buffered_size;
-        tx_ring_buffer_write(bev, tx_ring, send_from_buffer);
+        tx_ring_buffer_write(bout, tx_ring, send_from_buffer);
         max_send -= send_from_buffer;
     }
 
-    // Send new data if there is remaining window
-    if (max_send > 0) {
-        bufferevent_write(bev, data, max_send);
+    // After draining the old buffer, max_send holds the window remaining for new data
+    uint32_t new_data_sent = max_send;
+
+    // Send new data directly if there is remaining window; use bout consistently
+    if (new_data_sent > 0) {
+        bufferevent_write(bout, data, new_data_sent);
     }
 
-    // Buffer any remaining new data
-    if (total_data_size > available_window) {
-        uint32_t remaining_data = total_data_size - available_window;
-        tx_ring_buffer_append(tx_ring, data + (length - remaining_data), remaining_data);
+    // Buffer any new data that did not fit in the current send window.
+    // new_data_sent is the offset into 'data' from which unsent bytes start, so
+    // append exactly (length - new_data_sent) bytes starting at data[new_data_sent].
+    // This avoids the unsigned-underflow bug that occurred when available_window <
+    // buffered_size (the old "remaining_data" could exceed 'length', wrapping the
+    // pointer and corrupting the ring buffer).
+    uint32_t new_data_buffered = length - new_data_sent;
+    if (new_data_buffered > 0) {
+        tx_ring_buffer_append(tx_ring, data + new_data_sent, new_data_buffered);
     }
 
-    // Update send window
+    // Decrement send_window by the total number of bytes queued to the network
+    // (old buffered bytes drained + new bytes sent directly).  With the corrected
+    // tx_ring->sz this equals total_data_size minus what remains in the ring.
     stream->send_window -= (total_data_size - tx_ring->sz);
 
-    return (length - tx_ring->sz);
+    // Return only the number of new bytes from 'data' that were sent directly.
+    // If this is less than 'length', the caller should apply backpressure (disable
+    // reads) until the send window grows again via a WINDOW_UPDATE from the peer.
+    return new_data_sent;
 }
 
 /**

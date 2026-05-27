@@ -1206,8 +1206,8 @@ static struct tmux_stream abandon_stream;
  */
 static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 {
-	static struct tcp_mux_header tmux_hdr;
-	static uint32_t stream_len = 0;
+	struct tcp_mux_header tmux_hdr;
+	uint32_t stream_len = 0;
 
 	while (len > 0) {
 		struct tmux_stream *cur = get_cur_stream();
@@ -1340,12 +1340,22 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
  */
 static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int len, void *ctx)
 {
-	uint8_t *buf = calloc(len, 1);
-	assert(buf);
-	evbuffer_remove(input, buf, len);
-
-	handle_frps_msg(buf, len, ctx);
-	SAFE_FREE(buf);
+	/* Use evbuffer_peek for zero-copy access to the input data.
+	 * handle_frps_msg -> handle_control_work takes const buf, so the
+	 * data is read-only and safe to reference directly from the evbuffer. */
+	struct evbuffer_iovec iov;
+	int n = evbuffer_peek(input, len, NULL, &iov, 1);
+	if (n >= 1 && (int)iov.iov_len >= len) {
+		handle_frps_msg((uint8_t *)iov.iov_base, len, ctx);
+		evbuffer_drain(input, len);
+	} else {
+		/* Fallback: data spans multiple chunks, copy to contiguous buffer */
+		uint8_t *buf = malloc(len);
+		assert(buf);
+		evbuffer_remove(input, buf, len);
+		handle_frps_msg(buf, len, ctx);
+		free(buf);
+	}
 }
 
 /**

@@ -285,12 +285,16 @@ void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags,
  *         Returns 0 if configuration is not available
  */
 static uint32_t tcp_mux_flag() {
+    static int cached = -1;
+    if (__builtin_expect(cached >= 0, 1))
+        return cached;
     struct common_conf *c_conf = get_common_config();
     if (!c_conf) {
         debug(LOG_ERR, "Failed to get common configuration");
         return 0;
     }
-    return c_conf->tcp_mux;
+    cached = c_conf->tcp_mux;
+    return cached;
 }
 
 /**
@@ -848,6 +852,15 @@ int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
     }
 
     // Normal case: Copy data from the buffer
+    // Fast path: no wrap-around, single memcpy
+    if (ring->cur + len <= RBUF_SIZE) {
+        memcpy(data, &ring->data[ring->cur], len);
+        ring->cur = (ring->cur + len) % RBUF_SIZE;
+        ring->sz -= len;
+        return len;
+    }
+
+    // Slow path: data wraps around, copy in two chunks
     uint32_t remaining = len;
     uint8_t *dst = data;
 
@@ -1460,6 +1473,14 @@ uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring,
 
     // Adjust length if it exceeds available data
     len = MIN(len, ring->sz);
+
+    // Fast path: no wrap-around, single bufferevent_write
+    if (ring->cur + len <= WBUF_SIZE) {
+        bufferevent_write(bev, &ring->data[ring->cur], len);
+        ring->cur = (ring->cur + len) % WBUF_SIZE;
+        ring->sz -= len;
+        return len;
+    }
 
     uint32_t bytes_to_write = len;
     uint32_t contiguous_bytes;

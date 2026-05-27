@@ -1017,10 +1017,34 @@ static int incr_send_window(struct bufferevent *bev,
           stream_id, increment, old_window, stream->send_window);
 
     // Enable read events if backpressure was applied and is now released.
-    // Re-enable when send_window > 0 and tx_ring has buffered data.
-    if (stream->send_window > 0 && stream->tx_ring.sz > 0) {
+    // Re-enable when send_window transitions from 0 to non-zero.
+    if (stream->send_window > 0) {
         struct proxy_client *pc = get_proxy_client(stream_id);
-        if (pc && pc->local_proxy_bev) {
+        if (!pc) {
+            return 1;
+        }
+
+        if (pc->pending_close) {
+            // Local proxy is closed. Drain remaining tx_ring data.
+            if (stream->tx_ring.sz > 0) {
+                struct bufferevent *bout = get_main_control()->connect_bev;
+                if (bout) {
+                    enum tcp_mux_flag flags = get_send_flags(stream);
+                    uint32_t to_send = (stream->tx_ring.sz < stream->send_window)
+                                       ? stream->tx_ring.sz : stream->send_window;
+                    if (to_send > 0) {
+                        tcp_mux_send_data(bout, flags, stream->id, to_send);
+                        tx_ring_buffer_write(bout, &stream->tx_ring, to_send);
+                        stream->send_window -= to_send;
+                    }
+                    if (stream->tx_ring.sz == 0) {
+                        debug(LOG_INFO, "Stream %d: tx_ring drained via WUP, sending FIN", stream_id);
+                        tmux_stream_close(bout, stream);
+                        return 1;
+                    }
+                }
+            }
+        } else if (pc->local_proxy_bev) {
             bufferevent_enable(pc->local_proxy_bev, EV_READ);
         }
     }

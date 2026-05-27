@@ -93,10 +93,44 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 	debug(LOG_INFO, "Proxy close connection %s - stream_id %d: %s",
 		  error_msg, client->stream_id, strerror(errno));
 
-	if (tmux_stream_close(client->ctl_bev, &client->stream)) {
+	// Flush remaining data from the local proxy bufferevent into MUX stream.
+	// When nginx closes the connection (BEV_EVENT_EOF), there may still be
+	// data in the input buffer that hasn't been read yet.
+	if (bev && client->ctl_bev) {
+		struct evbuffer *src = bufferevent_get_input(bev);
+		size_t remaining = evbuffer_get_length(src);
+		if (remaining > 0) {
+			debug(LOG_INFO, "Flushing %zu remaining bytes from local proxy", remaining);
+			uint8_t *data = evbuffer_pullup(src, remaining);
+			if (data) {
+				uint32_t written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
+				evbuffer_drain(src, written);
+				if (written < remaining) {
+					debug(LOG_WARNING, "Could not flush all data: wrote %u/%zu bytes", written, remaining);
+				}
+			}
+		}
+	}
+
+	// Close the local proxy bufferevent
+	if (bev) {
 		bufferevent_free(bev);
 		client->local_proxy_bev = NULL;
 	}
+
+	// If there's still data in tx_ring (send_window was exhausted),
+	// mark as pending_close and wait for WINDOW_UPDATE to drain it.
+	// incr_send_window will send FIN when tx_ring is empty.
+	debug(LOG_INFO, "Stream %d: tx_ring.sz=%u at disconnect", client->stream.id, client->stream.tx_ring.sz);
+	if (client->stream.tx_ring.sz > 0) {
+		debug(LOG_INFO, "Stream %d: tx_ring has %u bytes, deferring close", 
+			  client->stream.id, client->stream.tx_ring.sz);
+		client->pending_close = 1;
+		return;
+	}
+
+	// tx_ring is empty, close the stream immediately
+	tmux_stream_close(client->ctl_bev, &client->stream);
 }
 
 /**

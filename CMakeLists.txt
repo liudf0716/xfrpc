@@ -118,8 +118,8 @@ set(EXTERNAL_LIBS
 # Set debug flags
 if(DEBUG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0")
-    add_definitions(-DDEBUG)
-    message(STATUS "Debug mode: ON (-g -O0 flags added, DEBUG defined)")
+    add_definitions(-DXFRPC_DEBUG)
+    message(STATUS "Debug mode: ON (-g -O0 flags added, XFRPC_DEBUG defined)")
 else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
     message(STATUS "Debug mode: OFF (optimized build)")

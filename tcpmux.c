@@ -195,11 +195,12 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
     }
 
     // Initialize stream properties
-    // Use initial window size matching yamux (256KB) for protocol compatibility
+    // recv_window: 8MB to match FRPS v0.68.1 large WINDOW_UPDATE increments
+    // send_window: 256KB initial (matches yamux protocol)
     stream->id = id;
     stream->state = state;
-    stream->recv_window = 256 * 1024;  // 256KB initial window (matches yamux/frps)
-    stream->send_window = 256 * 1024;  // 256KB initial window (matches yamux/frps)
+    stream->recv_window = MAX_STREAM_WINDOW_SIZE;  // 8MB
+    stream->send_window = 256 * 1024;  // 256KB initial send window
 
     // Clear ring buffers
     memset(&stream->tx_ring, 0, sizeof(struct ring_buffer));

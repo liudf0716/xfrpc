@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <json-c/json.h>
 #include <syslog.h>
@@ -513,6 +514,13 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 		debug(LOG_ERR, "No DNS base available for hostname resolution");
 		bufferevent_free(bev);
 		return NULL;
+	}
+
+	// Disable Nagle's algorithm for lower latency on all TCP connections
+	int fd = bufferevent_getfd(bev);
+	if (fd >= 0) {
+		int one = 1;
+		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 	}
 
 	return bev;

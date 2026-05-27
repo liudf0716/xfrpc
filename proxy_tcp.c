@@ -536,7 +536,6 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	struct evbuffer *src = bufferevent_get_input(bev);
 	size_t len = evbuffer_get_length(src);
 	if (len == 0) {
-		debug(LOG_DEBUG, "No data to read from client");
 		return;
 	}
 
@@ -547,35 +546,42 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	/* Process data in chunks directly from evbuffer to avoid calloc+memcpy.
-	 * evbuffer_pullup returns a pointer to contiguous data without copying
-	 * when the data fits in a single contiguous region. */
+	/* Use evbuffer_peek to iterate over contiguous chunks directly in the
+	 * input buffer without copying.  This avoids the memcpy that
+	 * evbuffer_pullup triggers when data spans multiple chunks.
+	 * Each chunk is passed to tmux_stream_write which handles flow control. */
 	size_t total_written = 0;
+	struct evbuffer_iovec iovec[16];
 	while (total_written < len) {
-		size_t chunk_len = len - total_written;
-		uint8_t *data = evbuffer_pullup(src, chunk_len);
-		if (!data) {
-			debug(LOG_ERR, "evbuffer_pullup failed");
-			evbuffer_drain(src, len - total_written);
+		int nvecs = evbuffer_peek(src, len - total_written, NULL, iovec, 16);
+		if (nvecs <= 0) {
 			break;
 		}
 
-		uint32_t written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
-		if (written == 0) {
-			debug(LOG_DEBUG, "Stream %d: backpressure, disabling read", client->stream.id);
-			bufferevent_disable(bev, EV_READ);
-			break;
-		}
+		for (int i = 0; i < nvecs && total_written < len; i++) {
+			uint8_t *data = (uint8_t *)iovec[i].iov_base;
+			size_t chunk_len = iovec[i].iov_len;
+			if (chunk_len == 0) continue;
 
-		evbuffer_drain(src, written);
-		total_written += written;
+			uint32_t written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
+			if (written == 0) {
+				evbuffer_drain(src, total_written);
+				bufferevent_disable(bev, EV_READ);
+				return;
+			}
 
-		if (written < chunk_len) {
-			debug(LOG_DEBUG, "Stream %d: Partial write %u/%zu bytes, disabling read",
-				  client->stream.id, written, chunk_len);
-			bufferevent_disable(bev, EV_READ);
-			break;
+			total_written += written;
+
+			if (written < chunk_len) {
+				evbuffer_drain(src, total_written);
+				bufferevent_disable(bev, EV_READ);
+				return;
+			}
 		}
+	}
+
+	if (total_written > 0) {
+		evbuffer_drain(src, total_written);
 	}
 }
 
@@ -636,26 +642,23 @@ uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int le
 		return len;
 	}
 	
-	// Extract data for XDPI analysis
 	// Allocate len+1 bytes so the buffer is always null-terminated; this is
 	// required because xdpi_engine() uses strstr() on the data for SSH banner
 	// detection and strstr() needs a null terminator to stop scanning.
+	// Use rx_ring_buffer_pop (not peek+pop) to copy data out in one operation.
 	uint8_t *data = calloc(len + 1, sizeof(uint8_t));
 	if (!data) {
 		debug(LOG_ERR, "Failed to allocate memory for XDPI analysis");
 		return bytes_processed;
 	}
 	
-	// Peek at data without removing it from buffer yet
-	rx_ring_buffer_peek(rb, data, len);
+	// Pop data from ring buffer (also removes it, avoiding a second copy later)
+	rx_ring_buffer_pop(rb, data, len);
 	
 	// Analyze data with XDPI engine
 	if (xdpi_engine(client, data, len) < 0) {
 		debug(LOG_ERR, "XDPI verification failed for service type %d", client->ps->service_type);
 		free(data);
-		
-		// Pop data from buffer to discard it
-		rx_ring_buffer_pop(rb, NULL, len);
 		client->xdpi_state = XDPI_BLOCKED;
 		return len; // Return len to indicate we've handled the data by discarding it
 	}
@@ -678,7 +681,6 @@ uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int le
 			debug(LOG_ERR, "Failed to establish connection to local service on IP %s and port %d", 
 				  client->ps->local_ip, client->ps->local_port);
 			free(data);
-			rx_ring_buffer_pop(rb, NULL, len);
 			return bytes_processed;
 		}
 		
@@ -687,10 +689,7 @@ uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int le
 		bufferevent_enable(client->local_proxy_bev, EV_READ | EV_WRITE);
 	}
 	
-	// Now consume the data from buffer
-	rx_ring_buffer_pop(rb, NULL, len);
-	
-	// Forward data
+	// Forward data (already popped from ring buffer above)
 	bufferevent_write(client->local_proxy_bev, data, len);
 	free(data);
 	client->xdpi_state = XDPI_VERIFIED;

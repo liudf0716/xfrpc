@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <sys/uio.h>
+#include <netinet/tcp.h>
 
 #include "client.h"
 #include "common.h"
@@ -200,7 +202,7 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
     stream->id = id;
     stream->state = state;
     stream->recv_window = MAX_STREAM_WINDOW_SIZE;  // 8MB
-    stream->send_window = 256 * 1024;  // 256KB initial send window
+    stream->send_window = 1024 * 1024;  // 1MB initial send window
 
     // Clear ring buffers
     memset(&stream->tx_ring, 0, sizeof(struct ring_buffer));
@@ -530,15 +532,44 @@ static int tcp_mux_send_data_with_payload(struct bufferevent *bout,
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(DATA, flags, stream_id, length, &tmux_hdr);
 
-    // Combine header + data into a single evbuffer write
     struct evbuffer *out = bufferevent_get_output(bout);
-    if (evbuffer_add(out, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
-        debug(LOG_ERR, "Failed to add header for stream %u", stream_id);
+
+    /* Use evbuffer_reserve_space for single-operation header+data write.
+     * This writes header and data into the evbuffer chain with minimal
+     * fragmentation, and libevent will flush via writev to the socket. */
+    struct evbuffer_iovec iovec[2];
+    int nvecs = evbuffer_reserve_space(out, sizeof(tmux_hdr) + length, iovec, 2);
+    if (nvecs < 1) {
+        debug(LOG_ERR, "evbuffer_reserve_space failed for stream %u", stream_id);
         return -1;
     }
-    if (evbuffer_add(out, data, length) < 0) {
-        debug(LOG_ERR, "Failed to add data for stream %u", stream_id);
-        return -1;
+
+    if (nvecs == 1 && iovec[0].iov_len >= sizeof(tmux_hdr) + length) {
+        memcpy(iovec[0].iov_base, &tmux_hdr, sizeof(tmux_hdr));
+        memcpy((uint8_t *)iovec[0].iov_base + sizeof(tmux_hdr), data, length);
+        iovec[0].iov_len = sizeof(tmux_hdr) + length;
+        evbuffer_commit_space(out, iovec, 1);
+    } else {
+        if (iovec[0].iov_len >= sizeof(tmux_hdr)) {
+            memcpy(iovec[0].iov_base, &tmux_hdr, sizeof(tmux_hdr));
+            size_t hdr_used = sizeof(tmux_hdr);
+            size_t space_in_first = iovec[0].iov_len - hdr_used;
+            size_t data_in_first = (space_in_first < length) ? space_in_first : length;
+            if (data_in_first > 0) {
+                memcpy((uint8_t *)iovec[0].iov_base + hdr_used, data, data_in_first);
+            }
+            iovec[0].iov_len = hdr_used + data_in_first;
+            if (data_in_first < length && nvecs > 1) {
+                memcpy(iovec[1].iov_base, data + data_in_first, length - data_in_first);
+                iovec[1].iov_len = length - data_in_first;
+                evbuffer_commit_space(out, iovec, 2);
+            } else {
+                evbuffer_commit_space(out, iovec, 1);
+            }
+        } else {
+            evbuffer_add(out, &tmux_hdr, sizeof(tmux_hdr));
+            evbuffer_add(out, data, length);
+        }
     }
     return 0;
 }

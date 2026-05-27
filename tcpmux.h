@@ -11,8 +11,8 @@
 #include <stdint.h>
 
 #define MAX_STREAM_WINDOW_SIZE (8 * 1024 * 1024)  // 8MB to match frps server
-#define RBUF_SIZE (1024 * 1024)  // 1MB ring buffer
-#define WBUF_SIZE (1024 * 1024)  // 1MB ring buffer
+#define RBUF_SIZE (2 * 1024 * 1024)  // 2MB ring buffer
+#define WBUF_SIZE (2 * 1024 * 1024)  // 2MB ring buffer
 
 struct ring_buffer {
     uint32_t cur;

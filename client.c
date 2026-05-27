@@ -160,6 +160,14 @@ void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 		handle_proxy_disconnect(client, bev, error_msg);
 	} else if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "Client %d connected", client->stream_id);
+		/* Set TCP_NODELAY on local proxy socket to reduce latency for
+		 * interactive protocols (SOCKS5, SSH, RDP) and small-packet
+		 * HTTP traffic.  Nagle's algorithm adds up to 40ms delay. */
+		int fd = bufferevent_getfd(bev);
+		if (fd >= 0) {
+			int one = 1;
+			setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+		}
 		handle_post_connection_data(client);
 	}
 }
@@ -308,6 +316,11 @@ void start_xfrp_tunnel(struct proxy_client *client)
 						 xfrp_worker_event_cb, client);
 		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	}
+
+	/* Set low watermark to 16KB so libevent batches small reads into
+	 * larger chunks.  This reduces the number of MUX frames created
+	 * and improves throughput by amortizing per-frame overhead. */
+	bufferevent_setwatermark(client->local_proxy_bev, EV_READ, 16384, 0);
 
 	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, NULL,
 					 xfrp_proxy_event_cb, client);

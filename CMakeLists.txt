@@ -121,7 +121,7 @@ if(DEBUG)
     add_definitions(-DDEBUG)
     message(STATUS "Debug mode: ON (-g -O0 flags added, DEBUG defined)")
 else()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O1")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
     message(STATUS "Debug mode: OFF (optimized build)")
 endif()
 
@@ -134,6 +134,9 @@ add_definitions(
 
 # Build target
 add_executable(xfrpc ${src_xfrpc})
+
+# Suppress stringop-truncation warnings from strncpy in legacy code
+target_compile_options(xfrpc PRIVATE -Wno-stringop-truncation)
 
 # Link libraries
 target_link_libraries(xfrpc PRIVATE

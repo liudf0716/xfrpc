@@ -11,6 +11,7 @@
 #include <time.h>
 #include <syslog.h>
 #include <openssl/ssl.h>
+#include <openssl/rand.h>
 
 #include "fastpbkdf2.h"
 #include "crypto.h"
@@ -314,9 +315,9 @@ unsigned char *encrypt_iv(unsigned char *iv_buf, size_t iv_len)
 		return NULL;
 	}
 
-	srand((unsigned int)time(NULL));
-	for (size_t i = 0; i < iv_len; i++) {
-		iv_buf[i] = (rand() % 254) + 1;  // Generate values between 1 and 255
+	if (RAND_bytes(iv_buf, iv_len) != 1) {
+		debug(LOG_ERR, "Failed to generate random IV");
+		return NULL;
 	}
 
 	return iv_buf;

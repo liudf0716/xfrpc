@@ -547,27 +547,36 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	uint8_t *buf = calloc(1, len);
-	if (!buf) {
-		debug(LOG_ERR, "Failed to allocate memory for buffer");
-		return;
-	}
+	/* Process data in chunks directly from evbuffer to avoid calloc+memcpy.
+	 * evbuffer_pullup returns a pointer to contiguous data without copying
+	 * when the data fits in a single contiguous region. */
+	size_t total_written = 0;
+	while (total_written < len) {
+		size_t chunk_len = len - total_written;
+		uint8_t *data = evbuffer_pullup(src, chunk_len);
+		if (!data) {
+			debug(LOG_ERR, "evbuffer_pullup failed");
+			evbuffer_drain(src, len - total_written);
+			break;
+		}
 
-	size_t nr = bufferevent_read(bev, buf, len);
-	if (nr != len) {
-		debug(LOG_ERR, "Failed to read complete data: expected %zu, got %zu", len, nr);
-		free(buf);
-		return;
-	}
+		uint32_t written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
+		if (written == 0) {
+			debug(LOG_DEBUG, "Stream %d: backpressure, disabling read", client->stream.id);
+			bufferevent_disable(bev, EV_READ);
+			break;
+		}
 
-	uint32_t written = tmux_stream_write(client->ctl_bev, buf, len, &client->stream);
-	if (written < len) {
-		debug(LOG_DEBUG, "Stream %d: Partial write %u/%zu bytes, disabling read",
-			  client->stream.id, written, len);
-		bufferevent_disable(bev, EV_READ);
-	}
+		evbuffer_drain(src, written);
+		total_written += written;
 
-	free(buf);
+		if (written < chunk_len) {
+			debug(LOG_DEBUG, "Stream %d: Partial write %u/%zu bytes, disabling read",
+				  client->stream.id, written, chunk_len);
+			bufferevent_disable(bev, EV_READ);
+			break;
+		}
+	}
 }
 
 /**

@@ -10,9 +10,9 @@
 #include "uthash.h"
 #include <stdint.h>
 
-#define MAX_STREAM_WINDOW_SIZE (256 * 1024)
-#define RBUF_SIZE (32 * 1024)
-#define WBUF_SIZE (32 * 1024)
+#define MAX_STREAM_WINDOW_SIZE (8 * 1024 * 1024)  // 8MB to match frps server
+#define RBUF_SIZE (1024 * 1024)  // 1MB ring buffer
+#define WBUF_SIZE (1024 * 1024)  // 1MB ring buffer
 
 struct ring_buffer {
     uint32_t cur;
@@ -155,7 +155,7 @@ void tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id);
  * @param stream_id Stream ID of the TCP MUX message.
  * @param length   Length of the TCP MUX message.
  */
-void tcp_mux_send_data(struct bufferevent *bout, uint16_t flags,
+void tcp_mux_send_data(struct bufferevent *bout, enum tcp_mux_flag flags,
                        uint32_t stream_id, uint32_t length);
 
 /**

@@ -918,7 +918,11 @@ static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
         return;
     }
 
-    assert(ctx);
+    if (!ctx) {
+        debug(LOG_ERR, "NULL context in TypeStartWorkConn");
+        SAFE_FREE(sr);
+        return;
+    }
     struct proxy_client *client = (struct proxy_client *)ctx;
     client->ps = ps;
 
@@ -963,9 +967,17 @@ static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
 	}
 
 	debug(LOG_DEBUG, "Received UDP packet from server, content: %s", udp->content);
-	assert(ctx);
+	if (!ctx) {
+		debug(LOG_ERR, "NULL context in TypeUDPPacket");
+		udp_packet_free(udp);
+		return;
+	}
 	struct proxy_client *client = (struct proxy_client *)ctx;
-	assert(client->ps);
+	if (!client->ps) {
+		debug(LOG_ERR, "NULL proxy service in TypeUDPPacket");
+		udp_packet_free(udp);
+		return;
+	}
 
 	handle_udp_packet(udp, client);
 	udp_packet_free(udp); /* deep-free: releases content, laddr, raddr */
@@ -1218,6 +1230,11 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 			if (tmux_hdr.type == DATA) {
 				uint32_t stream_id = ntohl(tmux_hdr.stream_id);
 				stream_len = ntohl(tmux_hdr.length);
+				if (stream_len > MAX_STREAM_WINDOW_SIZE) {
+					debug(LOG_ERR, "Stream %u: DATA length %u exceeds maximum %u, aborting",
+					      stream_id, stream_len, MAX_STREAM_WINDOW_SIZE);
+					break;
+				}
 				cur = get_stream_by_id(stream_id);
 				if (!cur) {
 					debug(LOG_INFO, "cur is NULL stream_id is %d, stream_len is %d len is %d",
@@ -1234,27 +1251,42 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 				}
 				if (len >= stream_len) {
 					nr = tmux_stream_read(bev, cur, stream_len);
-					assert(nr == stream_len);
+					if (nr != stream_len) {
+						debug(LOG_ERR, "Stream %u: read %zu != expected %u", cur->id, nr, stream_len);
+						break;
+					}
 					len -= stream_len;
 				} else {
 					nr = tmux_stream_read(bev, cur, len);
+					if (nr != len) {
+						debug(LOG_ERR, "Stream %u: read %zu != expected %d", cur->id, nr, len);
+						break;
+					}
 					stream_len -= len;
-					assert(nr == len);
 					set_cur_stream(cur);
 					len -= nr;
 					break;
 				}
 			}
 		} else {
-			assert(tmux_hdr.type == DATA);
+			if (tmux_hdr.type != DATA) {
+				debug(LOG_ERR, "Unexpected type %d in continuation frame", tmux_hdr.type);
+				break;
+			}
 			if (len >= stream_len) {
 				nr = tmux_stream_read(bev, cur, stream_len);
-				assert(nr == stream_len);
+				if (nr != stream_len) {
+					debug(LOG_ERR, "Stream %u: read %zu != expected %u", cur->id, nr, stream_len);
+					break;
+				}
 				len -= stream_len;
 			} else {
 				nr = tmux_stream_read(bev, cur, len);
+				if (nr != len) {
+					debug(LOG_ERR, "Stream %u: read %zu != expected %d", cur->id, nr, len);
+					break;
+				}
 				stream_len -= len;
-				assert(nr == len);
 				len -= nr;
 				break;
 			}

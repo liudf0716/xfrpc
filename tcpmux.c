@@ -195,10 +195,11 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
     }
 
     // Initialize stream properties
+    // Use initial window size matching yamux (256KB) for protocol compatibility
     stream->id = id;
     stream->state = state;
-    stream->recv_window = MAX_STREAM_WINDOW_SIZE;
-    stream->send_window = MAX_STREAM_WINDOW_SIZE;
+    stream->recv_window = 256 * 1024;  // 256KB initial window (matches yamux/frps)
+    stream->send_window = 256 * 1024;  // 256KB initial window (matches yamux/frps)
 
     // Clear ring buffers
     memset(&stream->tx_ring, 0, sizeof(struct ring_buffer));
@@ -484,7 +485,7 @@ void tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id) {
  * @param stream_id The ID of the stream to which the data belongs.
  * @param length The length of the data to be sent.
  */
-void tcp_mux_send_data(struct bufferevent *bout, uint16_t flags,
+void tcp_mux_send_data(struct bufferevent *bout, enum tcp_mux_flag flags,
                        uint32_t stream_id, uint32_t length) {
     // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
@@ -643,8 +644,17 @@ static int process_flags(uint16_t flags, struct tmux_stream *stream) {
                 stream->state = CLOSED;
                 should_close = true;
                 break;
+            case INIT:
+                debug(LOG_WARNING, "FIN received in INIT state for stream %d, treating as reset", stream->id);
+                stream->state = RESET;
+                should_close = true;
+                break;
+            case CLOSED:
+            case RESET:
+                debug(LOG_DEBUG, "FIN received in terminal state %d for stream %d, ignoring", stream->state, stream->id);
+                return 1;
             default:
-                debug(LOG_ERR, "unexpected FIN flag in state %d", stream->state);
+                debug(LOG_ERR, "unexpected FIN flag in state %d for stream %d", stream->state, stream->id);
                 return 0;
         }
     }
@@ -672,8 +682,8 @@ static int process_flags(uint16_t flags, struct tmux_stream *stream) {
  * @param stream A pointer to the tmux_stream structure.
  * @return A uint16_t value representing the flags to be sent.
  */
-static uint16_t get_send_flags(struct tmux_stream *stream) {
-    uint16_t flags = 0;
+static enum tcp_mux_flag get_send_flags(struct tmux_stream *stream) {
+    enum tcp_mux_flag flags = ZERO;
 
     if (!stream) {
         return flags;
@@ -706,18 +716,27 @@ static uint16_t get_send_flags(struct tmux_stream *stream) {
  * @param length Current receive buffer length.
  */
 void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, uint32_t length) {
-    const uint32_t max_window = MAX_STREAM_WINDOW_SIZE;
-    const uint32_t half_max_window = max_window / 2;
-    uint32_t delta = max_window > (length + stream->recv_window) 
-                     ? max_window - length - stream->recv_window 
-                     : 0;
-    uint16_t flags = get_send_flags(stream);
-
-    if (delta < half_max_window && flags == 0) {
+    // When called with length=0 during stream init, only send SYN flag if needed.
+    // Don't send a WINDOW_UPDATE — the peer hasn't sent any data yet.
+    if (length == 0) {
+        enum tcp_mux_flag flags = get_send_flags(stream);
+        if (flags != ZERO) {
+            tcp_mux_send_win_update(bout, flags, stream->id, 0);
+        }
         return;
     }
 
-    stream->recv_window = MIN(stream->recv_window + delta, max_window);
+    // Always replenish recv_window and send WINDOW_UPDATE when data is processed.
+    // The old threshold (quarter_max_window = 2MB) was larger than the ring buffer
+    // (1MB), causing updates to be skipped and the peer to stall.
+    const uint32_t max_window = MAX_STREAM_WINDOW_SIZE;
+    uint32_t delta = (stream->recv_window < max_window) ? (max_window - stream->recv_window) : 0;
+    if (delta == 0) {
+        return;
+    }
+
+    enum tcp_mux_flag flags = get_send_flags(stream);
+    stream->recv_window = max_window;
     tcp_mux_send_win_update(bout, flags, stream->id, delta);
 }
 
@@ -740,7 +759,10 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
  */
 int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
     // Validate input parameters
-    assert(ring->sz >= len);
+    if (ring->sz < len) {
+        debug(LOG_ERR, "Ring buffer underflow: requested %u bytes, available %u bytes", len, ring->sz);
+        return 0;
+    }
 
     // Special case: If data is NULL, just discard bytes from the buffer
     if (data == NULL) {
@@ -784,7 +806,10 @@ int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
 }
 
 int rx_ring_buffer_peek(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
-    assert(ring->sz >= len);
+    if (ring->sz < len) {
+        debug(LOG_ERR, "Ring buffer peek underflow: requested %u bytes, available %u bytes", len, ring->sz);
+        return 0;
+    }
     assert(data);
 
     uint32_t remaining = len;
@@ -954,14 +979,17 @@ static int incr_send_window(struct bufferevent *bev,
     } else {
         stream->send_window += increment;
     }
-    debug(LOG_DEBUG, "Stream %d send window increased by %u to %u",
-          stream_id, increment, stream->send_window);
 
-    // Enable read events only after the window update, if we transitioned from
-    // zero to non-zero (i.e. backpressure is now released).
-    if (old_window == 0 && stream->send_window > 0) {
-        debug(LOG_DEBUG, "Enabling read events for stream %d", stream_id);
-        bufferevent_enable(bev, EV_READ);
+    debug(LOG_DEBUG, "WUP recv stream=%u inc=%u sw %u->%u",
+          stream_id, increment, old_window, stream->send_window);
+
+    // Enable read events if backpressure was applied and is now released.
+    // Re-enable when window transitions from 0 to non-zero.
+    if (stream->send_window > 0 && stream->tx_ring.sz > 0) {
+        struct proxy_client *pc = get_proxy_client(stream_id);
+        if (pc && pc->local_proxy_bev) {
+            bufferevent_enable(pc->local_proxy_bev, EV_READ);
+        }
     }
 
     return 1;
@@ -1108,9 +1136,10 @@ uint32_t tmux_stream_read(struct bufferevent *bev, struct tmux_stream *stream,
     // Check stream state
     if (stream->state != ESTABLISHED) {
         debug(LOG_ERR,
-              "Stream %d is in state %d (not ESTABLISHED). Incoming data %d bytes, just pop %d.",
+              "Stream %d is in state %d (not ESTABLISHED). Incoming data %u bytes, just pop %u.",
               stream->id, stream->state, len, stream->rx_ring.sz);
         rx_ring_buffer_pop(&stream->rx_ring, NULL, stream->rx_ring.sz);
+        return 0;
     }
 
     // Perform the actual read operation
@@ -1158,7 +1187,10 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
     // Handle incoming SYN packets (unexpected for xfrpc client)
     if ((flags & SYN) == SYN) {
         debug(LOG_INFO, "Unexpected SYN flag received for stream %d in xfrpc", stream_id);
-        return incoming_stream(stream_id) ? 0 : 0;
+        if (!incoming_stream(stream_id)) {
+            debug(LOG_ERR, "Failed to handle incoming SYN for stream %d", stream_id);
+        }
+        return 0;
     }
 
     // Validate stream exists
@@ -1189,6 +1221,16 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
     // Process data; ntohl returns an unsigned value – keep it unsigned to avoid
     // sign-extension issues with large (>2 GB cumulative) transfer scenarios.
     uint32_t length = ntohl(tmux_hdr->length);
+
+    // Validate receive window: reject data that exceeds the peer's receive window.
+    // This matches yamux behavior: if length > recvWindow, return protocol error.
+    if (length > stream->recv_window) {
+        debug(LOG_ERR, "Stream %d: receive window exceeded (length=%u, recv_window=%u)",
+              stream_id, length, stream->recv_window);
+        tcp_mux_send_go_away(bout, PROTO_ERR);
+        return 0;
+    }
+
     if (!process_data(stream, length, flags, fn, (void *)pc)) {
         debug(LOG_ERR, "Protocol error while processing data");
         tcp_mux_send_go_away(bout, PROTO_ERR);
@@ -1267,9 +1309,10 @@ static int tx_ring_buffer_append(struct ring_buffer *ring, uint8_t *data, uint32
  */
 uint32_t rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring,
                              uint32_t len) {
-    // Check if buffer is full
-    if (ring->sz == RBUF_SIZE) {
-        debug(LOG_ERR, "ring buffer is full");
+    // Check if buffer is full - apply backpressure by returning 0
+    // The caller should handle this by not reading more data until buffer is consumed
+    if (ring->sz >= RBUF_SIZE) {
+        debug(LOG_DEBUG, "ring buffer is full, applying backpressure");
         return 0;
     }
 
@@ -1390,14 +1433,27 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     uint32_t buffered_size = tx_ring->sz;
     uint32_t total_data_size = buffered_size + length;
 
-    // If send window is zero, buffer the data
+    debug(LOG_DEBUG, "Stream %d: tmux_stream_write len=%u send_window=%u tx_ring=%u/%u",
+          stream->id, length, available_window, buffered_size, WBUF_SIZE);
+
+    // If send window is zero, we must buffer the data because callers free
+    // the data buffer immediately after this function returns.  However, if the
+    // tx_ring is also full, we cannot accept more data — return 0 to signal the
+    // caller to apply backpressure (disable reads).  The caller will retry when
+    // a WINDOW_UPDATE replenishes the send window.
     if (available_window == 0) {
-        debug(LOG_INFO, "stream %d send_window is zero, buffering data", stream->id);
+        uint32_t available_ring = WBUF_SIZE - tx_ring->sz;
+        if (available_ring < length) {
+            debug(LOG_DEBUG, "stream %d send_window=0 and tx_ring full (%u/%u), applying backpressure",
+                  stream->id, tx_ring->sz, WBUF_SIZE);
+            return 0;
+        }
+        debug(LOG_DEBUG, "stream %d send_window is zero, buffering %u bytes in tx_ring", stream->id, length);
         tx_ring_buffer_append(tx_ring, data, length);
-        return 0;
+        return length;
     }
 
-    uint16_t flags = get_send_flags(stream);
+    enum tcp_mux_flag flags = get_send_flags(stream);
     struct bufferevent *bout = get_main_control()->connect_bev;
 
     // Determine how much data we can send (bounded by send window)
@@ -1485,7 +1541,7 @@ int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream) {
             return 0;
     }
 
-    uint16_t flags = get_send_flags(stream) | FIN;
+    enum tcp_mux_flag flags = get_send_flags(stream) | FIN;
     tcp_mux_send_win_update(bout, flags, stream->id, 0);
 
     if (!should_close) {

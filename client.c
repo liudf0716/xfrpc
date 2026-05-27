@@ -105,10 +105,7 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 			uint8_t *data = evbuffer_pullup(src, remaining);
 			if (data) {
 				uint32_t written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
-				/* tmux_stream_write returns bytes sent to the network, but ALL
-				 * 'remaining' bytes are consumed (sent or buffered in tx_ring).
-				 * Drain the full amount to avoid losing buffered data on bev free. */
-				evbuffer_drain(src, remaining);
+				evbuffer_drain(src, written);
 				if (written < remaining) {
 					debug(LOG_INFO, "%zu bytes buffered in tx_ring (sent %u/%zu)",
 					      remaining - written, written, remaining);

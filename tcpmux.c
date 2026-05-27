@@ -1574,7 +1574,7 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
             tx_ring_buffer_append(tx_ring, data + to_send, to_buffer);
         }
         stream->send_window -= to_send;
-        return to_send;
+        return length;  // All 'length' bytes consumed (sent or buffered in tx_ring)
     }
 
     // Slow path: there's buffered data in tx_ring, drain it first
@@ -1604,7 +1604,7 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     // Decrement send_window by the total bytes queued to the network
     stream->send_window -= (total_data_size - tx_ring->sz);
 
-    return new_data_to_send;
+    return length;  // All 'length' bytes consumed (sent or buffered in tx_ring)
 }
 
 /**

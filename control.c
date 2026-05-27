@@ -1206,8 +1206,8 @@ static struct tmux_stream abandon_stream;
  */
 static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 {
-	struct tcp_mux_header tmux_hdr;
-	uint32_t stream_len = 0;
+	static struct tcp_mux_header tmux_hdr;
+	static uint32_t stream_len = 0;
 
 	while (len > 0) {
 		struct tmux_stream *cur = get_cur_stream();

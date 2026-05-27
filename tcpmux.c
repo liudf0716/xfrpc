@@ -961,7 +961,7 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
     uint32_t bytes_processed = 0;
 
     if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps) && !is_iod_proxy(pc->ps) && !has_service_type(pc->ps))) {
-        uint8_t *data = calloc(length, sizeof(uint8_t));
+        uint8_t *data = calloc(length + 1, sizeof(uint8_t));
         if (!data) {
             debug(LOG_ERR, "Memory allocation failed for data buffer");
             return 0;

@@ -510,6 +510,39 @@ void tcp_mux_send_data(struct bufferevent *bout, enum tcp_mux_flag flags,
 }
 
 /**
+ * @brief Sends a MUX DATA header and payload in a single write operation.
+ *
+ * This is more efficient than calling tcp_mux_send_data() followed by a
+ * separate bufferevent_write() for the payload, as it avoids two separate
+ * buffer insertions and the associated overhead.
+ */
+static int tcp_mux_send_data_with_payload(struct bufferevent *bout,
+                                           enum tcp_mux_flag flags,
+                                           uint32_t stream_id,
+                                           const uint8_t *data,
+                                           uint32_t length) {
+    if (!tcp_mux_flag() || !bout || length == 0) {
+        return -1;
+    }
+
+    struct tcp_mux_header tmux_hdr;
+    memset(&tmux_hdr, 0, sizeof(tmux_hdr));
+    tcp_mux_encode(DATA, flags, stream_id, length, &tmux_hdr);
+
+    // Combine header + data into a single evbuffer write
+    struct evbuffer *out = bufferevent_get_output(bout);
+    if (evbuffer_add(out, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+        debug(LOG_ERR, "Failed to add header for stream %u", stream_id);
+        return -1;
+    }
+    if (evbuffer_add(out, data, length) < 0) {
+        debug(LOG_ERR, "Failed to add data for stream %u", stream_id);
+        return -1;
+    }
+    return 0;
+}
+
+/**
  * @brief Sends a ping message over a TCP multiplexed connection
  *
  * This function constructs and sends a ping message with the SYN flag set
@@ -984,7 +1017,7 @@ static int incr_send_window(struct bufferevent *bev,
           stream_id, increment, old_window, stream->send_window);
 
     // Enable read events if backpressure was applied and is now released.
-    // Re-enable when window transitions from 0 to non-zero.
+    // Re-enable when send_window > 0 and tx_ring has buffered data.
     if (stream->send_window > 0 && stream->tx_ring.sz > 0) {
         struct proxy_client *pc = get_proxy_client(stream_id);
         if (pc && pc->local_proxy_bev) {
@@ -1433,9 +1466,6 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     uint32_t buffered_size = tx_ring->sz;
     uint32_t total_data_size = buffered_size + length;
 
-    debug(LOG_DEBUG, "Stream %d: tmux_stream_write len=%u send_window=%u tx_ring=%u/%u",
-          stream->id, length, available_window, buffered_size, WBUF_SIZE);
-
     // If send window is zero, we must buffer the data because callers free
     // the data buffer immediately after this function returns.  However, if the
     // tx_ring is also full, we cannot accept more data — return 0 to signal the
@@ -1444,11 +1474,8 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     if (available_window == 0) {
         uint32_t available_ring = WBUF_SIZE - tx_ring->sz;
         if (available_ring < length) {
-            debug(LOG_DEBUG, "stream %d send_window=0 and tx_ring full (%u/%u), applying backpressure",
-                  stream->id, tx_ring->sz, WBUF_SIZE);
             return 0;
         }
-        debug(LOG_DEBUG, "stream %d send_window is zero, buffering %u bytes in tx_ring", stream->id, length);
         tx_ring_buffer_append(tx_ring, data, length);
         return length;
     }
@@ -1459,50 +1486,47 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     // Determine how much data we can send (bounded by send window)
     uint32_t max_send = (available_window < total_data_size) ? available_window : total_data_size;
 
-    // Send data header
-    tcp_mux_send_data(bout, flags, stream->id, max_send);
-
-    // Send data from tx_ring buffer if any; always use the mux control connection (bout)
-    if (buffered_size > 0) {
-        uint32_t send_from_buffer = (max_send < buffered_size) ? max_send : buffered_size;
-        tx_ring_buffer_write(bout, tx_ring, send_from_buffer);
-        max_send -= send_from_buffer;
+    // Fast path: no buffered data, send header + new data in a single write
+    if (buffered_size == 0) {
+        uint32_t to_send = (max_send < length) ? max_send : length;
+        if (to_send > 0) {
+            tcp_mux_send_data_with_payload(bout, flags, stream->id, data, to_send);
+        }
+        uint32_t to_buffer = length - to_send;
+        if (to_buffer > 0) {
+            tx_ring_buffer_append(tx_ring, data + to_send, to_buffer);
+        }
+        stream->send_window -= to_send;
+        return to_send;
     }
 
+    // Slow path: there's buffered data in tx_ring, drain it first
+    // Send data header for the total amount
+    tcp_mux_send_data(bout, flags, stream->id, max_send);
+
+    // Send data from tx_ring buffer; always use the mux control connection (bout)
+    uint32_t send_from_buffer = (max_send < buffered_size) ? max_send : buffered_size;
+    tx_ring_buffer_write(bout, tx_ring, send_from_buffer);
+    max_send -= send_from_buffer;
+
     // After draining the old ring buffer, max_send is the remaining window
-    // available for bytes from the new 'data' buffer.  Record this as
-    // new_data_to_send before queuing; it doubles as the byte count returned to
-    // the caller and as the offset at which unqueued new bytes begin.
-    // Invariant: new_data_to_send <= length (proven: max_send <= total_data_size
-    // and send_from_buffer >= buffered_size when available_window >= buffered_size;
-    // when available_window < buffered_size, max_send reaches 0 before touching
-    // new data at all).
+    // available for bytes from the new 'data' buffer.
     uint32_t new_data_to_send = max_send;
 
-    // Send new data directly if there is remaining window; use bout consistently
+    // Send new data directly if there is remaining window
     if (new_data_to_send > 0) {
         bufferevent_write(bout, data, new_data_to_send);
     }
 
-    // Buffer any new data that did not fit in the current send window.
-    // new_data_to_send is the offset into 'data' from which unsent bytes start,
-    // so append exactly (length - new_data_to_send) bytes starting there.
-    // This avoids the unsigned-underflow bug that occurred when available_window <
-    // buffered_size (the old "remaining_data" formula could exceed 'length',
-    // wrapping the pointer and corrupting the ring buffer).
+    // Buffer any new data that did not fit in the current send window
     uint32_t new_data_buffered = (new_data_to_send <= length) ? (length - new_data_to_send) : 0;
     if (new_data_buffered > 0) {
         tx_ring_buffer_append(tx_ring, data + new_data_to_send, new_data_buffered);
     }
 
-    // Decrement send_window by the total number of bytes queued to the network
-    // (old buffered bytes drained + new bytes sent directly).  With the corrected
-    // tx_ring->sz this equals total_data_size minus what remains in the ring.
+    // Decrement send_window by the total bytes queued to the network
     stream->send_window -= (total_data_size - tx_ring->sz);
 
-    // Return only the number of new bytes from 'data' that were sent directly.
-    // If this is less than 'length', the caller should apply backpressure (disable
-    // reads) until the send window grows again via a WINDOW_UPDATE from the peer.
     return new_data_to_send;
 }
 

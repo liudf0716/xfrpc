@@ -1645,6 +1645,12 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
             tx_ring_buffer_append(tx_ring, data + to_send, to_buffer);
         }
         stream->send_window -= to_send;
+        /* Flush the mux output evbuffer immediately so the frame is sent
+         * without waiting for the next event-loop iteration.  This keeps
+         * the kernel TX pipe full and reduces latency between chunks. */
+        if (to_send > 0) {
+            bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+        }
         return length;  // All 'length' bytes consumed (sent or buffered in tx_ring)
     }
 
@@ -1684,6 +1690,9 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
           "Stream %u: tmux_stream_write slow path send_from_buffer=%u new_data_to_send=%u new_data_buffered=%u send_window %u->%u",
           stream->id, send_from_buffer, new_data_to_send, new_data_buffered,
           send_window_before, stream->send_window);
+
+    /* Flush after the slow path as well. */
+    bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
 
     return length;  // All 'length' bytes consumed (sent or buffered in tx_ring)
 }

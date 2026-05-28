@@ -1128,13 +1128,17 @@ static int incr_send_window(struct bufferevent *bev,
         }
     }
 
-    // Enable read events only when backpressure is released by a 0 -> non-zero
-    // send window transition.
+    /* Re-enable EV_READ only when:
+     * 1. The 0->nonzero send_window transition just happened (backpressure released), AND
+     * 2. The tx_ring is fully drained (no pending buffered data), AND
+     * 3. send_window is still > 0 after draining tx_ring.
+     * If tx_ring still has data or send_window hit zero again during drain,
+     * keep EV_READ disabled to avoid another overflow cycle. */
     if (!pc->pending_close && old_window == 0 && stream->send_window > 0 &&
-        pc->local_proxy_bev) {
+        stream->tx_ring.sz == 0 && pc->local_proxy_bev) {
         debug(LOG_DEBUG,
-              "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p tx_ring_sz=%u",
-              stream_id, pc->local_proxy_bev, stream->tx_ring.sz);
+              "Stream %u: re-enabling EV_READ after WINDOW_UPDATE (tx_ring empty) local_proxy_bev=%p",
+              stream_id, pc->local_proxy_bev);
         bufferevent_enable(pc->local_proxy_bev, EV_READ);
     }
 

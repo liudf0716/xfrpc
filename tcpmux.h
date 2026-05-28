@@ -11,6 +11,8 @@
 #include <stdint.h>
 
 #define MAX_STREAM_WINDOW_SIZE (8 * 1024 * 1024)  // 8MB to match frps server
+#define MAX_YAMUX_WINDOW_SIZE  (6 * 1024 * 1024)  // 6MB to match frps MaxStreamWindowSize
+#define DEFAULT_MAX_FRAME_SIZE (32 * 1024)         // 32KB max frame size (matches yamux/smux)
 #define RBUF_SIZE (2 * 1024 * 1024)  // 2MB ring buffer
 #define WBUF_SIZE (2 * 1024 * 1024)  // 2MB ring buffer
 

@@ -202,7 +202,7 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
     stream->id = id;
     stream->state = state;
     stream->recv_window = MAX_STREAM_WINDOW_SIZE;  // 8MB
-    stream->send_window = 1024 * 1024;  // 1MB initial send window
+    stream->send_window = 256 * 1024;  // 256KB initial (matches yamux initialStreamWindow)
 
     // Clear ring buffers
     memset(&stream->tx_ring, 0, sizeof(struct ring_buffer));
@@ -1097,6 +1097,21 @@ static int incr_send_window(struct bufferevent *bev,
         stream->send_window += increment;
     }
 
+    /* Cap send_window at MAX_YAMUX_WINDOW_SIZE to match frps's
+     * MaxStreamWindowSize (6MB).  Without this cap, xfrpc's send_window
+     * can grow to 8MB via WINDOW_UPDATE, but yamux's recvWindow is capped
+     * at 6MB.  When recvBuf accumulates (curl slow), recvWindow shrinks
+     * below 6MB.  If xfrpc then sends a frame larger than recvWindow,
+     * yamux returns ErrRecvWindowExceeded and RSTs the entire session.
+     *
+     * Capping at 6MB ensures xfrpc never sends a frame that yamux
+     * would reject under normal flow conditions. */
+    if (stream->send_window > MAX_YAMUX_WINDOW_SIZE) {
+        debug(LOG_DEBUG, "Stream %u: capping send_window %u to MAX_YAMUX_WINDOW_SIZE %u",
+              stream_id, stream->send_window, MAX_YAMUX_WINDOW_SIZE);
+        stream->send_window = MAX_YAMUX_WINDOW_SIZE;
+    }
+
     debug(LOG_DEBUG, "WUP recv stream=%u inc=%u sw %u->%u",
           stream_id, increment, old_window, stream->send_window);
 
@@ -1611,8 +1626,13 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     enum tcp_mux_flag flags = get_send_flags(stream);
     struct bufferevent *bout = get_main_control()->connect_bev;
 
-    // Determine how much data we can send (bounded by send window)
+    // Determine how much data we can send (bounded by send window and frame size limit).
+    // The frame size limit prevents sending frames that could exceed yamux's
+    // recvWindow when it's partially depleted (curl slow, recvBuf accumulating).
     uint32_t max_send = (available_window < total_data_size) ? available_window : total_data_size;
+    if (max_send > DEFAULT_MAX_FRAME_SIZE) {
+        max_send = DEFAULT_MAX_FRAME_SIZE;
+    }
 
     // Fast path: no buffered data, send header + new data in a single write
     if (buffered_size == 0) {

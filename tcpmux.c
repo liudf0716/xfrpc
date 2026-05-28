@@ -778,7 +778,7 @@ static enum tcp_mux_flag get_send_flags(struct tmux_stream *stream) {
  * @brief Sends a window update message for stream flow control.
  *
  * Updates the receive window for a stream and sends a window update message
- * if the delta exceeds half of the maximum window size or if there are flags to send.
+ * whenever processed data has reduced the advertised receive window.
  *
  * @param bout Buffered output event for sending data.
  * @param stream Pointer to the tmux stream to update.
@@ -796,8 +796,7 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
     }
 
     // Always replenish recv_window and send WINDOW_UPDATE when data is processed.
-    // The old threshold (quarter_max_window = 2MB) was larger than the ring buffer
-    // (1MB), causing updates to be skipped and the peer to stall.
+    // This keeps the peer from stalling behind a stale advertised window.
     const uint32_t max_window = MAX_STREAM_WINDOW_SIZE;
     uint32_t delta = (stream->recv_window < max_window) ? (max_window - stream->recv_window) : 0;
     if (delta == 0) {
@@ -1061,37 +1060,39 @@ static int incr_send_window(struct bufferevent *bev,
     debug(LOG_DEBUG, "WUP recv stream=%u inc=%u sw %u->%u",
           stream_id, increment, old_window, stream->send_window);
 
-    // Enable read events if backpressure was applied and is now released.
-    // Re-enable when send_window transitions from 0 to non-zero.
-    if (stream->send_window > 0) {
-        struct proxy_client *pc = get_proxy_client(stream_id);
-        if (!pc) {
-            return 1;
-        }
+    if (stream->send_window == 0) {
+        return 1;
+    }
 
-        if (pc->pending_close) {
-            // Local proxy is closed. Drain remaining tx_ring data.
-            if (stream->tx_ring.sz > 0) {
-                struct bufferevent *bout = get_main_control()->connect_bev;
-                if (bout) {
-                    enum tcp_mux_flag flags = get_send_flags(stream);
-                    uint32_t to_send = (stream->tx_ring.sz < stream->send_window)
-                                       ? stream->tx_ring.sz : stream->send_window;
-                    if (to_send > 0) {
-                        tcp_mux_send_data(bout, flags, stream->id, to_send);
-                        tx_ring_buffer_write(bout, &stream->tx_ring, to_send);
-                        stream->send_window -= to_send;
-                    }
-                    if (stream->tx_ring.sz == 0) {
-                        debug(LOG_INFO, "Stream %d: tx_ring drained via WUP, sending FIN", stream_id);
-                        tmux_stream_close(bout, stream);
-                        return 1;
-                    }
-                }
+    struct proxy_client *pc = get_proxy_client(stream_id);
+    if (!pc) {
+        return 1;
+    }
+
+    if (stream->tx_ring.sz > 0) {
+        struct bufferevent *bout = get_main_control()->connect_bev;
+        if (bout) {
+            enum tcp_mux_flag send_flags = get_send_flags(stream);
+            uint32_t to_send = MIN(stream->tx_ring.sz, stream->send_window);
+            if (to_send > 0) {
+                tcp_mux_send_data(bout, send_flags, stream->id, to_send);
+                tx_ring_buffer_write(bout, &stream->tx_ring, to_send);
+                stream->send_window -= to_send;
             }
-        } else if (pc->local_proxy_bev) {
-            bufferevent_enable(pc->local_proxy_bev, EV_READ);
+
+            if (pc->pending_close && stream->tx_ring.sz == 0) {
+                debug(LOG_INFO, "Stream %d: tx_ring drained via WUP, sending FIN", stream_id);
+                tmux_stream_close(bout, stream);
+                return 1;
+            }
         }
+    }
+
+    // Enable read events only when backpressure is released by a 0 -> non-zero
+    // send window transition.
+    if (!pc->pending_close && old_window == 0 && stream->send_window > 0 &&
+        pc->local_proxy_bev) {
+        bufferevent_enable(pc->local_proxy_bev, EV_READ);
     }
 
     return 1;

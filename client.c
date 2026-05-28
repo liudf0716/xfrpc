@@ -318,10 +318,9 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	}
 
-	/* Set low watermark to 16KB so libevent batches small reads into
-	 * larger chunks.  This reduces the number of MUX frames created
-	 * and improves throughput by amortizing per-frame overhead. */
-	bufferevent_setwatermark(client->local_proxy_bev, EV_READ, 16384, 0);
+	/* Use the default read low watermark so short tail data is forwarded
+	 * promptly instead of waiting for a 16KB batch. */
+	bufferevent_setwatermark(client->local_proxy_bev, EV_READ, 0, 0);
 
 	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, NULL,
 					 xfrp_proxy_event_cb, client);

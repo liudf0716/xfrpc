@@ -804,7 +804,10 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
     }
 
     enum tcp_mux_flag flags = get_send_flags(stream);
+    uint32_t old_recv_window = stream->recv_window;
     stream->recv_window = max_window;
+    debug(LOG_DEBUG, "WUP send stream=%u delta=%u rw %u->%u",
+          stream->id, delta, old_recv_window, stream->recv_window);
     tcp_mux_send_win_update(bout, flags, stream->id, delta);
 }
 
@@ -965,29 +968,66 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
             debug(LOG_ERR, "Memory allocation failed for data buffer");
             return 0;
         }
-        
+
+        debug(LOG_DEBUG, "Stream %u: entering default callback path length=%u",
+              stream_id, length);
         bytes_processed = rx_ring_buffer_pop(&stream->rx_ring, data, length);
         handle_fn(data, bytes_processed, pc);
+        debug(LOG_DEBUG, "Stream %u: leaving default callback path requested=%u processed=%u",
+              stream_id, length, bytes_processed);
         free(data);
     } else if (has_service_type(pc->ps)) {
+        debug(LOG_DEBUG, "Stream %u: entering xdpi path length=%u service_type=%d",
+              stream_id, length, pc->ps ? pc->ps->service_type : -1);
         bytes_processed = handle_xdpi(pc, &stream->rx_ring, length);
+        debug(LOG_DEBUG, "Stream %u: leaving xdpi path requested=%u processed=%u",
+              stream_id, length, bytes_processed);
     } else if (is_iod_proxy(pc->ps)) {
+        debug(LOG_DEBUG, "Stream %u: entering iod path length=%u",
+              stream_id, length);
         bytes_processed = handle_iod(pc, &stream->rx_ring, length);
+        debug(LOG_DEBUG, "Stream %u: leaving iod path requested=%u processed=%u",
+              stream_id, length, bytes_processed);
     } else if (is_socks5_proxy(pc->ps)) {
+        debug(LOG_DEBUG, "Stream %u: entering socks5 path length=%u",
+              stream_id, length);
         bytes_processed = handle_ss5(pc, &stream->rx_ring, length);
+        debug(LOG_DEBUG, "Stream %u: leaving socks5 path requested=%u processed=%u",
+              stream_id, length, bytes_processed);
     } else {
         // Simple data forwarding logic
-        debug(LOG_DEBUG, "Forwarding data to local proxy, length: %u", length);
+        debug(LOG_DEBUG, "Stream %u: entering local proxy path length=%u local_proxy_bev=%p",
+              stream_id, length, pc->local_proxy_bev);
         bytes_processed = tx_ring_buffer_write(pc->local_proxy_bev, 
                                               &stream->rx_ring, 
                                               length);
+        debug(LOG_DEBUG, "Stream %u: leaving local proxy path requested=%u processed=%u local_proxy_bev=%p",
+              stream_id, length, bytes_processed, pc->local_proxy_bev);
     }
     
 
     struct bufferevent *bout = get_main_control()->connect_bev;
     if (bytes_processed != length) {
-        debug(LOG_INFO, "Incomplete data transfer - processed: %u, expected: %u",
-              bytes_processed, length);
+        debug(LOG_ERR,
+              "Stream %u: incomplete transfer processed=%u expected=%u "
+              "pc=%p connected=%d work_started=%d pending_close=%d "
+              "xdpi_state=%d socks5_state=%d iod_state=%d stream_state=%d "
+              "local_proxy_bev=%p local_proxy_bev_valid=%d recv_window=%u "
+              "proxy_type=%s service_type=%d",
+              stream_id, bytes_processed, length,
+              pc,
+              pc ? pc->connected : -1,
+              pc ? pc->work_started : -1,
+              pc ? pc->pending_close : -1,
+              pc ? pc->xdpi_state : -1,
+              pc ? pc->state : -1,
+              pc ? pc->iod_state : -1,
+              stream->state,
+              pc ? pc->local_proxy_bev : NULL,
+              (pc && pc->local_proxy_bev) ? 1 : 0,
+              stream->recv_window,
+              (pc && pc->ps && pc->ps->proxy_type) ? pc->ps->proxy_type : "null",
+              (pc && pc->ps) ? pc->ps->service_type : -1);
         tcp_mux_send_win_update_rst(bout, stream->id);
         stream->state = LOCAL_CLOSE;
     } else {
@@ -1092,6 +1132,9 @@ static int incr_send_window(struct bufferevent *bev,
     // send window transition.
     if (!pc->pending_close && old_window == 0 && stream->send_window > 0 &&
         pc->local_proxy_bev) {
+        debug(LOG_DEBUG,
+              "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p tx_ring_sz=%u",
+              stream_id, pc->local_proxy_bev, stream->tx_ring.sz);
         bufferevent_enable(pc->local_proxy_bev, EV_READ);
     }
 
@@ -1551,6 +1594,9 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     // a WINDOW_UPDATE replenishes the send window.
     if (available_window == 0) {
         uint32_t available_ring = WBUF_SIZE - tx_ring->sz;
+        debug(LOG_DEBUG,
+              "Stream %u: tmux_stream_write buffering with zero send_window available_ring=%u length=%u",
+              stream->id, available_ring, length);
         if (available_ring < length) {
             return 0;
         }
@@ -1580,6 +1626,11 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
 
     // Slow path: there's buffered data in tx_ring, drain it first
     // Send data header for the total amount
+    uint32_t send_window_before = stream->send_window;
+    debug(LOG_DEBUG,
+          "Stream %u: tmux_stream_write slow path buffered_size=%u available_window=%u total_data_size=%u max_send=%u send_window=%u",
+          stream->id, buffered_size, available_window, total_data_size, max_send,
+          send_window_before);
     tcp_mux_send_data(bout, flags, stream->id, max_send);
 
     // Send data from tx_ring buffer; always use the mux control connection (bout)
@@ -1603,7 +1654,12 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     }
 
     // Decrement send_window by the total bytes queued to the network
-    stream->send_window -= (total_data_size - tx_ring->sz);
+    uint32_t send_window_consumed = total_data_size - tx_ring->sz;
+    stream->send_window -= send_window_consumed;
+    debug(LOG_DEBUG,
+          "Stream %u: tmux_stream_write slow path send_from_buffer=%u new_data_to_send=%u new_data_buffered=%u send_window %u->%u",
+          stream->id, send_from_buffer, new_data_to_send, new_data_buffered,
+          send_window_before, stream->send_window);
 
     return length;  // All 'length' bytes consumed (sent or buffered in tx_ring)
 }

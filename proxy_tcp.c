@@ -572,6 +572,17 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 			total_written += written;
 
+			/* send_window exhausted: data was only buffered into tx_ring, not sent.
+			 * Stop reading from the local proxy until a WINDOW_UPDATE from frps
+			 * re-opens the send window (incr_send_window will re-enable EV_READ). */
+			if (client->stream.send_window == 0) {
+				evbuffer_drain(src, total_written);
+				bufferevent_disable(bev, EV_READ);
+				debug(LOG_DEBUG, "Stream %u: send_window exhausted, disabling EV_READ",
+				      client->stream.id);
+				return;
+			}
+
 			if (written < chunk_len) {
 				evbuffer_drain(src, total_written);
 				bufferevent_disable(bev, EV_READ);

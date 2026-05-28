@@ -205,7 +205,6 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
     stream->send_window = 256 * 1024;  // 256KB initial (matches yamux initialStreamWindow)
 
     // Clear ring buffers
-    memset(&stream->tx_ring, 0, sizeof(struct ring_buffer));
     memset(&stream->rx_ring, 0, sizeof(struct ring_buffer));
 
     // Add stream to global tracking
@@ -1124,35 +1123,24 @@ static int incr_send_window(struct bufferevent *bev,
         return 1;
     }
 
-    if (stream->tx_ring.sz > 0) {
+    // No tx_ring to drain — data stays in nginx evbuffer.
+    // If pending_close, send FIN immediately.
+    if (pc->pending_close) {
         struct bufferevent *bout = get_main_control()->connect_bev;
         if (bout) {
-            enum tcp_mux_flag send_flags = get_send_flags(stream);
-            uint32_t to_send = MIN(stream->tx_ring.sz, stream->send_window);
-            if (to_send > 0) {
-                tcp_mux_send_data(bout, send_flags, stream->id, to_send);
-                tx_ring_buffer_write(bout, &stream->tx_ring, to_send);
-                stream->send_window -= to_send;
-            }
-
-            if (pc->pending_close && stream->tx_ring.sz == 0) {
-                debug(LOG_INFO, "Stream %d: tx_ring drained via WUP, sending FIN", stream_id);
-                tmux_stream_close(bout, stream);
-                return 1;
-            }
+            debug(LOG_INFO, "Stream %d: pending_close, sending FIN", stream_id);
+            tmux_stream_close(bout, stream);
         }
+        return 1;
     }
 
-    /* Re-enable EV_READ only when:
+    /* Re-enable EV_READ when:
      * 1. The 0->nonzero send_window transition just happened (backpressure released), AND
-     * 2. The tx_ring is fully drained (no pending buffered data), AND
-     * 3. send_window is still > 0 after draining tx_ring.
-     * If tx_ring still has data or send_window hit zero again during drain,
-     * keep EV_READ disabled to avoid another overflow cycle. */
-    if (!pc->pending_close && old_window == 0 && stream->send_window > 0 &&
-        stream->tx_ring.sz == 0 && pc->local_proxy_bev) {
+     * 2. send_window is still > 0.
+     * Data stays in nginx evbuffer — the callback will re-read it directly. */
+    if (old_window == 0 && stream->send_window > 0 && pc->local_proxy_bev) {
         debug(LOG_DEBUG,
-              "Stream %u: re-enabling EV_READ after WINDOW_UPDATE (tx_ring empty) local_proxy_bev=%p",
+              "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p",
               stream_id, pc->local_proxy_bev);
         bufferevent_enable(pc->local_proxy_bev, EV_READ);
     }
@@ -1406,57 +1394,6 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
 }
 
 /**
- * @brief Appends data to a ring buffer
- *
- * This function adds data to a ring buffer in a circular fashion. It handles buffer
- * wraparound when the end is reached. The function will stop appending if it catches
- * up with the current read position (cur).
- *
- * @param ring Pointer to the ring buffer structure
- * @param data Pointer to the data to be appended
- * @param len Length of data to append
- *
- * @pre len must be less than or equal to available space (WBUF_SIZE - ring->sz)
- * 
- * @return Number of bytes actually appended to the ring buffer
- */
-static int tx_ring_buffer_append(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
-    // Validate inputs and capacity
-    if (!ring || !data || len == 0) {
-        return 0;
-    }
-
-    uint32_t available_space = WBUF_SIZE - ring->sz;
-    if (available_space < len) {
-        return 0;
-    }
-
-    uint32_t bytes_written = 0;
-    while (bytes_written < len) {
-        // Calculate contiguous space until buffer wrap
-        uint32_t contiguous_space = MIN(len - bytes_written, 
-                                      WBUF_SIZE - ring->end);
-        
-        // Copy block of data
-        memcpy(&ring->data[ring->end], 
-               &data[bytes_written], 
-               contiguous_space);
-        
-        // Update ring buffer state
-        ring->end = (ring->end + contiguous_space) % WBUF_SIZE;
-        ring->sz += contiguous_space;
-        bytes_written += contiguous_space;
-
-        // Stop if we've caught up with read pointer
-        if (ring->cur == ring->end) {
-            break;
-        }
-    }
-
-    return bytes_written;
-}
-
-/**
  * @brief Reads data from a bufferevent into a ring buffer
  *
  * This function reads data from the given bufferevent into the ring buffer up to the specified length,
@@ -1588,7 +1525,7 @@ uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring,
  * - Returns 0 if stream is in CLOSED, LOCAL_CLOSE, or RESET state
  * - Buffers data if send window is 0
  * - Manages partial writes based on available send window size
- * - Handles buffered data in tx_ring along with new data
+ * - Sends data directly to mux (no intermediate buffer)
  *
  * Flow control is maintained through the stream's send_window, which is decremented
  * by the number of bytes processed.
@@ -1601,100 +1538,32 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
         return 0;
     }
 
-    struct ring_buffer *tx_ring = &stream->tx_ring;
-    uint32_t available_window = stream->send_window;
-    uint32_t buffered_size = tx_ring->sz;
-    uint32_t total_data_size = buffered_size + length;
-
-    // If send window is zero, we must buffer the data because callers free
-    // the data buffer immediately after this function returns.  However, if the
-    // tx_ring is also full, we cannot accept more data — return 0 to signal the
-    // caller to apply backpressure (disable reads).  The caller will retry when
+    // No send window available — return 0 to signal caller to apply backpressure.
+    // Data stays in the caller's buffer (nginx evbuffer). Caller will retry when
     // a WINDOW_UPDATE replenishes the send window.
-    if (available_window == 0) {
-        uint32_t available_ring = WBUF_SIZE - tx_ring->sz;
-        debug(LOG_DEBUG,
-              "Stream %u: tmux_stream_write buffering with zero send_window available_ring=%u length=%u",
-              stream->id, available_ring, length);
-        if (available_ring < length) {
-            return 0;
-        }
-        tx_ring_buffer_append(tx_ring, data, length);
-        return length;
+    if (stream->send_window == 0) {
+        debug(LOG_DEBUG, "Stream %u: tmux_stream_write blocked, send_window=0", stream->id);
+        return 0;
     }
 
     enum tcp_mux_flag flags = get_send_flags(stream);
     struct bufferevent *bout = get_main_control()->connect_bev;
 
-    // Determine how much data we can send (bounded by send window and frame size limit).
-    // The frame size limit prevents sending frames that could exceed yamux's
-    // recvWindow when it's partially depleted (curl slow, recvBuf accumulating).
-    uint32_t max_send = (available_window < total_data_size) ? available_window : total_data_size;
-    if (max_send > DEFAULT_MAX_FRAME_SIZE) {
-        max_send = DEFAULT_MAX_FRAME_SIZE;
-    }
+    // Send up to min(send_window, length, DEFAULT_MAX_FRAME_SIZE)
+    uint32_t to_send = length;
+    if (to_send > stream->send_window) to_send = stream->send_window;
+    if (to_send > DEFAULT_MAX_FRAME_SIZE) to_send = DEFAULT_MAX_FRAME_SIZE;
 
-    // Fast path: no buffered data, send header + new data in a single write
-    if (buffered_size == 0) {
-        uint32_t to_send = (max_send < length) ? max_send : length;
-        if (to_send > 0) {
-            tcp_mux_send_data_with_payload(bout, flags, stream->id, data, to_send);
-        }
-        uint32_t to_buffer = length - to_send;
-        if (to_buffer > 0) {
-            tx_ring_buffer_append(tx_ring, data + to_send, to_buffer);
-        }
+    if (to_send > 0) {
+        tcp_mux_send_data_with_payload(bout, flags, stream->id, data, to_send);
         stream->send_window -= to_send;
-        /* Flush the mux output evbuffer immediately so the frame is sent
-         * without waiting for the next event-loop iteration.  This keeps
-         * the kernel TX pipe full and reduces latency between chunks. */
-        if (to_send > 0) {
-            bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
-        }
-        return length;  // All 'length' bytes consumed (sent or buffered in tx_ring)
+        bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
     }
 
-    // Slow path: there's buffered data in tx_ring, drain it first
-    // Send data header for the total amount
-    uint32_t send_window_before = stream->send_window;
-    debug(LOG_DEBUG,
-          "Stream %u: tmux_stream_write slow path buffered_size=%u available_window=%u total_data_size=%u max_send=%u send_window=%u",
-          stream->id, buffered_size, available_window, total_data_size, max_send,
-          send_window_before);
-    tcp_mux_send_data(bout, flags, stream->id, max_send);
+    debug(LOG_DEBUG, "Stream %u: tmux_stream_write sent=%u/%u sw=%u",
+          stream->id, to_send, length, stream->send_window);
 
-    // Send data from tx_ring buffer; always use the mux control connection (bout)
-    uint32_t send_from_buffer = (max_send < buffered_size) ? max_send : buffered_size;
-    tx_ring_buffer_write(bout, tx_ring, send_from_buffer);
-    max_send -= send_from_buffer;
-
-    // After draining the old ring buffer, max_send is the remaining window
-    // available for bytes from the new 'data' buffer.
-    uint32_t new_data_to_send = max_send;
-
-    // Send new data directly if there is remaining window
-    if (new_data_to_send > 0) {
-        bufferevent_write(bout, data, new_data_to_send);
-    }
-
-    // Buffer any new data that did not fit in the current send window
-    uint32_t new_data_buffered = (new_data_to_send <= length) ? (length - new_data_to_send) : 0;
-    if (new_data_buffered > 0) {
-        tx_ring_buffer_append(tx_ring, data + new_data_to_send, new_data_buffered);
-    }
-
-    // Decrement send_window by the total bytes queued to the network
-    uint32_t send_window_consumed = total_data_size - tx_ring->sz;
-    stream->send_window -= send_window_consumed;
-    debug(LOG_DEBUG,
-          "Stream %u: tmux_stream_write slow path send_from_buffer=%u new_data_to_send=%u new_data_buffered=%u send_window %u->%u",
-          stream->id, send_from_buffer, new_data_to_send, new_data_buffered,
-          send_window_before, stream->send_window);
-
-    /* Flush after the slow path as well. */
-    bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
-
-    return length;  // All 'length' bytes consumed (sent or buffered in tx_ring)
+    return to_send;
 }
 
 /**

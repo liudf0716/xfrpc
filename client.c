@@ -107,7 +107,7 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 				uint32_t written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
 				evbuffer_drain(src, written);
 				if (written < remaining) {
-					debug(LOG_INFO, "%zu bytes buffered in tx_ring (sent %u/%zu)",
+					debug(LOG_INFO, "%zu bytes unsent, send_window exhausted (sent %u/%zu)",
 					      remaining - written, written, remaining);
 				}
 			}
@@ -120,18 +120,16 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 		client->local_proxy_bev = NULL;
 	}
 
-	// If there's still data in tx_ring (send_window was exhausted),
-	// mark as pending_close and wait for WINDOW_UPDATE to drain it.
-	// incr_send_window will send FIN when tx_ring is empty.
-	debug(LOG_INFO, "Stream %d: tx_ring.sz=%u at disconnect", client->stream.id, client->stream.tx_ring.sz);
-	if (client->stream.tx_ring.sz > 0) {
-		debug(LOG_INFO, "Stream %d: tx_ring has %u bytes, deferring close", 
-			  client->stream.id, client->stream.tx_ring.sz);
+	// If send_window is exhausted, mark as pending_close and wait for
+	// WINDOW_UPDATE to send FIN.  incr_send_window will send FIN on WUP.
+	if (client->stream.send_window == 0) {
+		debug(LOG_INFO, "Stream %d: send_window==0 at disconnect, deferring close",
+			  client->stream.id);
 		client->pending_close = 1;
 		return;
 	}
 
-	// tx_ring is empty, close the stream immediately
+	// send_window available, close the stream immediately
 	tmux_stream_close(client->ctl_bev, &client->stream);
 }
 

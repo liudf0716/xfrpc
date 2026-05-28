@@ -549,7 +549,12 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	/* Use evbuffer_peek to iterate over contiguous chunks directly in the
 	 * input buffer without copying.  This avoids the memcpy that
 	 * evbuffer_pullup triggers when data spans multiple chunks.
-	 * Each chunk is passed to tmux_stream_write which handles flow control. */
+	 * Each chunk is passed to tmux_stream_write which handles flow control.
+	 *
+	 * Design: no tx_ring intermediate buffer. Data stays in nginx evbuffer.
+	 * tmux_stream_write returns bytes actually sent. When send_window==0,
+	 * it returns 0 and we disable EV_READ. Data remains in evbuffer for
+	 * the next callback when WUP arrives and re-enables EV_READ. */
 	size_t total_written = 0;
 	struct evbuffer_iovec iovec[16];
 	while (total_written < len) {
@@ -565,17 +570,8 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 			uint32_t written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
 			if (written == 0) {
-				evbuffer_drain(src, total_written);
-				bufferevent_disable(bev, EV_READ);
-				return;
-			}
-
-			total_written += written;
-
-			/* send_window exhausted: data was only buffered into tx_ring, not sent.
-			 * Stop reading from the local proxy until a WINDOW_UPDATE from frps
-			 * re-opens the send window (incr_send_window will re-enable EV_READ). */
-			if (client->stream.send_window == 0) {
+				/* send_window == 0: backpressure. Drain what we've sent so far
+				 * and disable EV_READ. Unsent data stays in nginx evbuffer. */
 				evbuffer_drain(src, total_written);
 				bufferevent_disable(bev, EV_READ);
 				debug(LOG_DEBUG, "Stream %u: send_window exhausted, disabling EV_READ",
@@ -583,10 +579,16 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 				return;
 			}
 
+			total_written += written;
+
+			/* Partial write: send_window was smaller than chunk.
+				 * Drain sent bytes, disable EV_READ if window depleted. */
 			if (written < chunk_len) {
-				evbuffer_drain(src, total_written);
-				bufferevent_disable(bev, EV_READ);
-				return;
+				if (client->stream.send_window == 0) {
+					evbuffer_drain(src, total_written);
+					bufferevent_disable(bev, EV_READ);
+					return;
+				}
 			}
 		}
 	}

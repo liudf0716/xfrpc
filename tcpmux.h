@@ -78,7 +78,6 @@ struct tmux_stream {
     uint32_t recv_window;
     uint32_t send_window;
     enum tcp_mux_state state;
-    struct ring_buffer tx_ring;
     struct ring_buffer rx_ring;
 
     // private arguments

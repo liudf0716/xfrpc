@@ -65,7 +65,7 @@ struct proxy_client {
 	/* State flags */
 	int                 connected;
 	int                 work_started;
-	int                 pending_close;   /* local proxy closed, waiting to drain tx_ring */
+	int                 pending_close;   /* local proxy closed, waiting for WUP to send FIN */
 	enum xdpi_state     xdpi_state;     /* XDPI verification state */
 	
 	/* SOCKS5 specific */

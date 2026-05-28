@@ -1226,11 +1226,17 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 			if (nr != sizeof(tmux_hdr)) {
 				debug(LOG_ERR, "Failed to read complete TCP mux header: got %zu, expected %zu",
 					  nr, sizeof(tmux_hdr));
+				debug(LOG_ERR,
+				      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+				      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 				break;
 			}
 			if (validate_tcp_mux_protocol(&tmux_hdr) <= 0) {
 				debug(LOG_ERR, "Invalid TCP mux protocol header (version=%d, type=%d)",
 					  tmux_hdr.version, tmux_hdr.type);
+				debug(LOG_ERR,
+				      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+				      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 				break;
 			}
 			len -= nr;
@@ -1241,6 +1247,9 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 				if (stream_len > MAX_STREAM_WINDOW_SIZE) {
 					debug(LOG_ERR, "Stream %u: DATA length %u exceeds maximum %u, aborting",
 					      stream_id, stream_len, MAX_STREAM_WINDOW_SIZE);
+					debug(LOG_ERR,
+					      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+					      len, stream_len, tmux_hdr.type, stream_id);
 					break;
 				}
 				cur = get_stream_by_id(stream_id);
@@ -1261,6 +1270,9 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 					nr = tmux_stream_read(bev, cur, stream_len);
 					if (nr != stream_len) {
 						debug(LOG_ERR, "Stream %u: read %zu != expected %u", cur->id, nr, stream_len);
+						debug(LOG_ERR,
+						      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+						      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 						break;
 					}
 					len -= stream_len;
@@ -1268,6 +1280,9 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 					nr = tmux_stream_read(bev, cur, len);
 					if (nr != len) {
 						debug(LOG_ERR, "Stream %u: read %zu != expected %d", cur->id, nr, len);
+						debug(LOG_ERR,
+						      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+						      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 						break;
 					}
 					stream_len -= len;
@@ -1279,12 +1294,18 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 		} else {
 			if (tmux_hdr.type != DATA) {
 				debug(LOG_ERR, "Unexpected type %d in continuation frame", tmux_hdr.type);
+				debug(LOG_ERR,
+				      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+				      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 				break;
 			}
 			if (len >= stream_len) {
 				nr = tmux_stream_read(bev, cur, stream_len);
 				if (nr != stream_len) {
 					debug(LOG_ERR, "Stream %u: read %zu != expected %u", cur->id, nr, stream_len);
+					debug(LOG_ERR,
+					      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+					      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 					break;
 				}
 				len -= stream_len;
@@ -1292,6 +1313,9 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 				nr = tmux_stream_read(bev, cur, len);
 				if (nr != len) {
 					debug(LOG_ERR, "Stream %u: read %zu != expected %d", cur->id, nr, len);
+					debug(LOG_ERR,
+					      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
+					      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 					break;
 				}
 				stream_len -= len;
@@ -1456,6 +1480,7 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		debug(LOG_ERR, "connect_event_cb disconnect event: what=0x%x", what);
 		handle_connection_failure(c_conf, &retry_times);
 	} 
 	else if (what & BEV_EVENT_CONNECTED) {
@@ -2201,5 +2226,4 @@ void run_control()
 {
 	start_base_connect();
 }
-
 

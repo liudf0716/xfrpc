@@ -1,0 +1,1292 @@
+CMake Deprecation Warning at thirdparty/CMakeLists.txt:2 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- PROJECT PATH IS: :/tmp/workspace/liudf0716/xfrpc
+-- architecture is::ON
+-- compiling openssl
+CMake Warning (dev) in thirdparty/CMakeLists.txt:
+  A logical block opening on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:38 (if)
+
+  closes on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:48 (endif)
+
+  with mis-matching arguments.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+Operating system: x86_64-whatever-linux2
+Configuring OpenSSL version 1.1.1m (0x101010dfL) for linux-x86_64
+Using os-specific seed configuration
+Creating configdata.pm
+Creating Makefile
+
+**********************************************************************
+***                                                                ***
+***   OpenSSL has been successfully configured                     ***
+***                                                                ***
+***   If you encounter a problem while building, please open an    ***
+***   issue on GitHub <https://github.com/openssl/openssl/issues>  ***
+***   and include the output from the following command:           ***
+***                                                                ***
+***       perl configdata.pm --dump                                ***
+***                                                                ***
+***   (If you are new to OpenSSL, you might want to consult the    ***
+***   'Troubleshooting' section in the INSTALL file first)         ***
+***                                                                ***
+**********************************************************************
+/usr/bin/perl "-I." -Mconfigdata "util/dofile.pl" \
+    "-oMakefile" include/crypto/bn_conf.h.in > include/crypto/bn_conf.h
+/usr/bin/perl "-I." -Mconfigdata "util/dofile.pl" \
+    "-oMakefile" include/crypto/dso_conf.h.in > include/crypto/dso_conf.h
+/usr/bin/perl "-I." -Mconfigdata "util/dofile.pl" \
+    "-oMakefile" include/openssl/opensslconf.h.in > include/openssl/opensslconf.h
+make depend && make _all
+make[1]: Entering directory '/tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m'
+make[1]: Leaving directory '/tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m'
+make[1]: Entering directory '/tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m'
+/usr/bin/perl util/mkbuildinf.pl "gcc -fPIC -pthread -m64 -Wa,--noexecstack -Wall -O3 --static -DOPENSSL_USE_NODELETE -DL_ENDIAN -DOPENSSL_PIC -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_BN_ASM_GF2m -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DKECCAK1600_ASM -DRC4_ASM -DMD5_ASM -DAESNI_ASM -DVPAES_ASM -DGHASH_ASM -DECP_NISTZ256_ASM -DX25519_ASM -DPOLY1305_ASM -DNDEBUG" "linux-x86_64" > crypto/buildinf.h
+gcc  -I. -Iinclude -Icrypto -fPIC -pthread -m64 -Wa,--noexecstack -Wall -O3 --static -DOPENSSL_USE_NODELETE -DL_ENDIAN -DOPENSSL_PIC -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_BN_ASM_GF2m -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DKECCAK1600_ASM -DRC4_ASM -DMD5_ASM -DAESNI_ASM -DVPAES_ASM -DGHASH_ASM -DECP_NISTZ256_ASM -DX25519_ASM -DPOLY1305_ASM -DOPENSSLDIR="\"/usr/local/ssl\"" -DENGINESDIR="\"/usr/local/lib/engines-1.1\"" -DNDEBUG  -MMD -MF crypto/cversion.d.tmp -MT crypto/cversion.o -c -o crypto/cversion.o crypto/cversion.c
+ar r libcrypto.a crypto/cversion.o
+gcc -fPIC -pthread -m64 -Wa,--noexecstack -Wall -O3 --static -L. -Wl,-znodelete -shared -Wl,-Bsymbolic   -Wl,-soname=libcrypto.so.1.1 \
+	-o libcrypto.so.1.1 -Wl,--version-script=libcrypto.map crypto/aes/aes_cbc.o crypto/aes/aes_cfb.o crypto/aes/aes_core.o crypto/aes/aes_ecb.o crypto/aes/aes_ige.o crypto/aes/aes_misc.o crypto/aes/aes_ofb.o crypto/aes/aes_wrap.o crypto/aes/aesni-mb-x86_64.o crypto/aes/aesni-sha1-x86_64.o crypto/aes/aesni-sha256-x86_64.o crypto/aes/aesni-x86_64.o crypto/aes/vpaes-x86_64.o crypto/aria/aria.o crypto/asn1/a_bitstr.o crypto/asn1/a_d2i_fp.o crypto/asn1/a_digest.o crypto/asn1/a_dup.o crypto/asn1/a_gentm.o crypto/asn1/a_i2d_fp.o crypto/asn1/a_int.o crypto/asn1/a_mbstr.o crypto/asn1/a_object.o crypto/asn1/a_octet.o crypto/asn1/a_print.o crypto/asn1/a_sign.o crypto/asn1/a_strex.o crypto/asn1/a_strnid.o crypto/asn1/a_time.o crypto/asn1/a_type.o crypto/asn1/a_utctm.o crypto/asn1/a_utf8.o crypto/asn1/a_verify.o crypto/asn1/ameth_lib.o crypto/asn1/asn1_err.o crypto/asn1/asn1_gen.o crypto/asn1/asn1_item_list.o crypto/asn1/asn1_lib.o crypto/asn1/asn1_par.o crypto/asn1/asn_mime.o crypto/asn1/asn_moid.o crypto/asn1/asn_mstbl.o crypto/asn1/asn_pack.o crypto/asn1/bio_asn1.o crypto/asn1/bio_ndef.o crypto/asn1/d2i_pr.o crypto/asn1/d2i_pu.o crypto/asn1/evp_asn1.o crypto/asn1/f_int.o crypto/asn1/f_string.o crypto/asn1/i2d_pr.o crypto/asn1/i2d_pu.o crypto/asn1/n_pkey.o crypto/asn1/nsseq.o crypto/asn1/p5_pbe.o crypto/asn1/p5_pbev2.o crypto/asn1/p5_scrypt.o crypto/asn1/p8_pkey.o crypto/asn1/t_bitst.o crypto/asn1/t_pkey.o crypto/asn1/t_spki.o crypto/asn1/tasn_dec.o crypto/asn1/tasn_enc.o crypto/asn1/tasn_fre.o crypto/asn1/tasn_new.o crypto/asn1/tasn_prn.o crypto/asn1/tasn_scn.o crypto/asn1/tasn_typ.o crypto/asn1/tasn_utl.o crypto/asn1/x_algor.o crypto/asn1/x_bignum.o crypto/asn1/x_info.o crypto/asn1/x_int64.o crypto/asn1/x_long.o crypto/asn1/x_pkey.o crypto/asn1/x_sig.o crypto/asn1/x_spki.o crypto/asn1/x_val.o crypto/async/arch/async_null.o crypto/async/arch/async_posix.o crypto/async/arch/async_win.o crypto/async/async.o crypto/async/async_err.o crypto/async/async_wait.o crypto/bf/bf_cfb64.o crypto/bf/bf_ecb.o crypto/bf/bf_enc.o crypto/bf/bf_ofb64.o crypto/bf/bf_skey.o crypto/bio/b_addr.o crypto/bio/b_dump.o crypto/bio/b_print.o crypto/bio/b_sock.o crypto/bio/b_sock2.o crypto/bio/bf_buff.o crypto/bio/bf_lbuf.o crypto/bio/bf_nbio.o crypto/bio/bf_null.o crypto/bio/bio_cb.o crypto/bio/bio_err.o crypto/bio/bio_lib.o crypto/bio/bio_meth.o crypto/bio/bss_acpt.o crypto/bio/bss_bio.o crypto/bio/bss_conn.o crypto/bio/bss_dgram.o crypto/bio/bss_fd.o crypto/bio/bss_file.o crypto/bio/bss_log.o crypto/bio/bss_mem.o crypto/bio/bss_null.o crypto/bio/bss_sock.o crypto/blake2/blake2b.o crypto/blake2/blake2s.o crypto/blake2/m_blake2b.o crypto/blake2/m_blake2s.o crypto/bn/asm/x86_64-gcc.o crypto/bn/bn_add.o crypto/bn/bn_blind.o crypto/bn/bn_const.o crypto/bn/bn_ctx.o crypto/bn/bn_depr.o crypto/bn/bn_dh.o crypto/bn/bn_div.o crypto/bn/bn_err.o crypto/bn/bn_exp.o crypto/bn/bn_exp2.o crypto/bn/bn_gcd.o crypto/bn/bn_gf2m.o crypto/bn/bn_intern.o crypto/bn/bn_kron.o crypto/bn/bn_lib.o crypto/bn/bn_mod.o crypto/bn/bn_mont.o crypto/bn/bn_mpi.o crypto/bn/bn_mul.o crypto/bn/bn_nist.o crypto/bn/bn_prime.o crypto/bn/bn_print.o crypto/bn/bn_rand.o crypto/bn/bn_recp.o crypto/bn/bn_shift.o crypto/bn/bn_sqr.o crypto/bn/bn_sqrt.o crypto/bn/bn_srp.o crypto/bn/bn_word.o crypto/bn/bn_x931p.o crypto/bn/rsaz-avx2.o crypto/bn/rsaz-x86_64.o crypto/bn/rsaz_exp.o crypto/bn/x86_64-gf2m.o crypto/bn/x86_64-mont.o crypto/bn/x86_64-mont5.o crypto/buffer/buf_err.o crypto/buffer/buffer.o crypto/camellia/cmll-x86_64.o crypto/camellia/cmll_cfb.o crypto/camellia/cmll_ctr.o crypto/camellia/cmll_ecb.o crypto/camellia/cmll_misc.o crypto/camellia/cmll_ofb.o crypto/cast/c_cfb64.o crypto/cast/c_ecb.o crypto/cast/c_enc.o crypto/cast/c_ofb64.o crypto/cast/c_skey.o crypto/chacha/chacha-x86_64.o crypto/cmac/cm_ameth.o crypto/cmac/cm_pmeth.o crypto/cmac/cmac.o crypto/cms/cms_asn1.o crypto/cms/cms_att.o crypto/cms/cms_cd.o crypto/cms/cms_dd.o crypto/cms/cms_enc.o crypto/cms/cms_env.o crypto/cms/cms_err.o crypto/cms/cms_ess.o crypto/cms/cms_io.o crypto/cms/cms_kari.o crypto/cms/cms_lib.o crypto/cms/cms_pwri.o crypto/cms/cms_sd.o crypto/cms/cms_smime.o crypto/comp/c_zlib.o crypto/comp/comp_err.o crypto/comp/comp_lib.o crypto/conf/conf_api.o crypto/conf/conf_def.o crypto/conf/conf_err.o crypto/conf/conf_lib.o crypto/conf/conf_mall.o crypto/conf/conf_mod.o crypto/conf/conf_sap.o crypto/conf/conf_ssl.o crypto/cpt_err.o crypto/cryptlib.o crypto/ct/ct_b64.o crypto/ct/ct_err.o crypto/ct/ct_log.o crypto/ct/ct_oct.o crypto/ct/ct_policy.o crypto/ct/ct_prn.o crypto/ct/ct_sct.o crypto/ct/ct_sct_ctx.o crypto/ct/ct_vfy.o crypto/ct/ct_x509v3.o crypto/ctype.o crypto/cversion.o crypto/des/cbc_cksm.o crypto/des/cbc_enc.o crypto/des/cfb64ede.o crypto/des/cfb64enc.o crypto/des/cfb_enc.o crypto/des/des_enc.o crypto/des/ecb3_enc.o crypto/des/ecb_enc.o crypto/des/fcrypt.o crypto/des/fcrypt_b.o crypto/des/ofb64ede.o crypto/des/ofb64enc.o crypto/des/ofb_enc.o crypto/des/pcbc_enc.o crypto/des/qud_cksm.o crypto/des/rand_key.o crypto/des/set_key.o crypto/des/str2key.o crypto/des/xcbc_enc.o crypto/dh/dh_ameth.o crypto/dh/dh_asn1.o crypto/dh/dh_check.o crypto/dh/dh_depr.o crypto/dh/dh_err.o crypto/dh/dh_gen.o crypto/dh/dh_kdf.o crypto/dh/dh_key.o crypto/dh/dh_lib.o crypto/dh/dh_meth.o crypto/dh/dh_pmeth.o crypto/dh/dh_prn.o crypto/dh/dh_rfc5114.o crypto/dh/dh_rfc7919.o crypto/dsa/dsa_ameth.o crypto/dsa/dsa_asn1.o crypto/dsa/dsa_depr.o crypto/dsa/dsa_err.o crypto/dsa/dsa_gen.o crypto/dsa/dsa_key.o crypto/dsa/dsa_lib.o crypto/dsa/dsa_meth.o crypto/dsa/dsa_ossl.o crypto/dsa/dsa_pmeth.o crypto/dsa/dsa_prn.o crypto/dsa/dsa_sign.o crypto/dsa/dsa_vrf.o crypto/dso/dso_dl.o crypto/dso/dso_dlfcn.o crypto/dso/dso_err.o crypto/dso/dso_lib.o crypto/dso/dso_openssl.o crypto/dso/dso_vms.o crypto/dso/dso_win32.o crypto/ebcdic.o crypto/ec/curve25519.o crypto/ec/curve448/arch_32/f_impl.o crypto/ec/curve448/curve448.o crypto/ec/curve448/curve448_tables.o crypto/ec/curve448/eddsa.o crypto/ec/curve448/f_generic.o crypto/ec/curve448/scalar.o crypto/ec/ec2_oct.o crypto/ec/ec2_smpl.o crypto/ec/ec_ameth.o crypto/ec/ec_asn1.o crypto/ec/ec_check.o crypto/ec/ec_curve.o crypto/ec/ec_cvt.o crypto/ec/ec_err.o crypto/ec/ec_key.o crypto/ec/ec_kmeth.o crypto/ec/ec_lib.o crypto/ec/ec_mult.o crypto/ec/ec_oct.o crypto/ec/ec_pmeth.o crypto/ec/ec_print.o crypto/ec/ecdh_kdf.o crypto/ec/ecdh_ossl.o crypto/ec/ecdsa_ossl.o crypto/ec/ecdsa_sign.o crypto/ec/ecdsa_vrf.o crypto/ec/eck_prn.o crypto/ec/ecp_mont.o crypto/ec/ecp_nist.o crypto/ec/ecp_nistp224.o crypto/ec/ecp_nistp256.o crypto/ec/ecp_nistp521.o crypto/ec/ecp_nistputil.o crypto/ec/ecp_nistz256-x86_64.o crypto/ec/ecp_nistz256.o crypto/ec/ecp_oct.o crypto/ec/ecp_smpl.o crypto/ec/ecx_meth.o crypto/ec/x25519-x86_64.o crypto/engine/eng_all.o crypto/engine/eng_cnf.o crypto/engine/eng_ctrl.o crypto/engine/eng_dyn.o crypto/engine/eng_err.o crypto/engine/eng_fat.o crypto/engine/eng_init.o crypto/engine/eng_lib.o crypto/engine/eng_list.o crypto/engine/eng_openssl.o crypto/engine/eng_pkey.o crypto/engine/eng_rdrand.o crypto/engine/eng_table.o crypto/engine/tb_asnmth.o crypto/engine/tb_cipher.o crypto/engine/tb_dh.o crypto/engine/tb_digest.o crypto/engine/tb_dsa.o crypto/engine/tb_eckey.o crypto/engine/tb_pkmeth.o crypto/engine/tb_rand.o crypto/engine/tb_rsa.o crypto/err/err.o crypto/err/err_all.o crypto/err/err_prn.o crypto/evp/bio_b64.o crypto/evp/bio_enc.o crypto/evp/bio_md.o crypto/evp/bio_ok.o crypto/evp/c_allc.o crypto/evp/c_alld.o crypto/evp/cmeth_lib.o crypto/evp/digest.o crypto/evp/e_aes.o crypto/evp/e_aes_cbc_hmac_sha1.o crypto/evp/e_aes_cbc_hmac_sha256.o crypto/evp/e_aria.o crypto/evp/e_bf.o crypto/evp/e_camellia.o crypto/evp/e_cast.o crypto/evp/e_chacha20_poly1305.o crypto/evp/e_des.o crypto/evp/e_des3.o crypto/evp/e_idea.o crypto/evp/e_null.o crypto/evp/e_old.o crypto/evp/e_rc2.o crypto/evp/e_rc4.o crypto/evp/e_rc4_hmac_md5.o crypto/evp/e_rc5.o crypto/evp/e_seed.o crypto/evp/e_sm4.o crypto/evp/e_xcbc_d.o crypto/evp/encode.o crypto/evp/evp_cnf.o crypto/evp/evp_enc.o crypto/evp/evp_err.o crypto/evp/evp_key.o crypto/evp/evp_lib.o crypto/evp/evp_pbe.o crypto/evp/evp_pkey.o crypto/evp/m_md2.o crypto/evp/m_md4.o crypto/evp/m_md5.o crypto/evp/m_md5_sha1.o crypto/evp/m_mdc2.o crypto/evp/m_null.o crypto/evp/m_ripemd.o crypto/evp/m_sha1.o crypto/evp/m_sha3.o crypto/evp/m_sigver.o crypto/evp/m_wp.o crypto/evp/names.o crypto/evp/p5_crpt.o crypto/evp/p5_crpt2.o crypto/evp/p_dec.o crypto/evp/p_enc.o crypto/evp/p_lib.o crypto/evp/p_open.o crypto/evp/p_seal.o crypto/evp/p_sign.o crypto/evp/p_verify.o crypto/evp/pbe_scrypt.o crypto/evp/pmeth_fn.o crypto/evp/pmeth_gn.o crypto/evp/pmeth_lib.o crypto/ex_data.o crypto/getenv.o crypto/hmac/hm_ameth.o crypto/hmac/hm_pmeth.o crypto/hmac/hmac.o crypto/idea/i_cbc.o crypto/idea/i_cfb64.o crypto/idea/i_ecb.o crypto/idea/i_ofb64.o crypto/idea/i_skey.o crypto/init.o crypto/kdf/hkdf.o crypto/kdf/kdf_err.o crypto/kdf/scrypt.o crypto/kdf/tls1_prf.o crypto/lhash/lh_stats.o crypto/lhash/lhash.o crypto/md4/md4_dgst.o crypto/md4/md4_one.o crypto/md5/md5-x86_64.o crypto/md5/md5_dgst.o crypto/md5/md5_one.o crypto/mdc2/mdc2_one.o crypto/mdc2/mdc2dgst.o crypto/mem.o crypto/mem_dbg.o crypto/mem_sec.o crypto/modes/aesni-gcm-x86_64.o crypto/modes/cbc128.o crypto/modes/ccm128.o crypto/modes/cfb128.o crypto/modes/ctr128.o crypto/modes/cts128.o crypto/modes/gcm128.o crypto/modes/ghash-x86_64.o crypto/modes/ocb128.o crypto/modes/ofb128.o crypto/modes/wrap128.o crypto/modes/xts128.o crypto/o_dir.o crypto/o_fips.o crypto/o_fopen.o crypto/o_init.o crypto/o_str.o crypto/o_time.o crypto/objects/o_names.o crypto/objects/obj_dat.o crypto/objects/obj_err.o crypto/objects/obj_lib.o crypto/objects/obj_xref.o crypto/ocsp/ocsp_asn.o crypto/ocsp/ocsp_cl.o crypto/ocsp/ocsp_err.o crypto/ocsp/ocsp_ext.o crypto/ocsp/ocsp_ht.o crypto/ocsp/ocsp_lib.o crypto/ocsp/ocsp_prn.o crypto/ocsp/ocsp_srv.o crypto/ocsp/ocsp_vfy.o crypto/ocsp/v3_ocsp.o crypto/pem/pem_all.o crypto/pem/pem_err.o crypto/pem/pem_info.o crypto/pem/pem_lib.o crypto/pem/pem_oth.o crypto/pem/pem_pk8.o crypto/pem/pem_pkey.o crypto/pem/pem_sign.o crypto/pem/pem_x509.o crypto/pem/pem_xaux.o crypto/pem/pvkfmt.o crypto/pkcs12/p12_add.o crypto/pkcs12/p12_asn.o crypto/pkcs12/p12_attr.o crypto/pkcs12/p12_crpt.o crypto/pkcs12/p12_crt.o crypto/pkcs12/p12_decr.o crypto/pkcs12/p12_init.o crypto/pkcs12/p12_key.o crypto/pkcs12/p12_kiss.o crypto/pkcs12/p12_mutl.o crypto/pkcs12/p12_npas.o crypto/pkcs12/p12_p8d.o crypto/pkcs12/p12_p8e.o crypto/pkcs12/p12_sbag.o crypto/pkcs12/p12_utl.o crypto/pkcs12/pk12err.o crypto/pkcs7/bio_pk7.o crypto/pkcs7/pk7_asn1.o crypto/pkcs7/pk7_attr.o crypto/pkcs7/pk7_doit.o crypto/pkcs7/pk7_lib.o crypto/pkcs7/pk7_mime.o crypto/pkcs7/pk7_smime.o crypto/pkcs7/pkcs7err.o crypto/poly1305/poly1305-x86_64.o crypto/poly1305/poly1305.o crypto/poly1305/poly1305_ameth.o crypto/poly1305/poly1305_pmeth.o crypto/rand/drbg_ctr.o crypto/rand/drbg_lib.o crypto/rand/rand_egd.o crypto/rand/rand_err.o crypto/rand/rand_lib.o crypto/rand/rand_unix.o crypto/rand/rand_vms.o crypto/rand/rand_win.o crypto/rand/randfile.o crypto/rc2/rc2_cbc.o crypto/rc2/rc2_ecb.o crypto/rc2/rc2_skey.o crypto/rc2/rc2cfb64.o crypto/rc2/rc2ofb64.o crypto/rc4/rc4-md5-x86_64.o crypto/rc4/rc4-x86_64.o crypto/ripemd/rmd_dgst.o crypto/ripemd/rmd_one.o crypto/rsa/rsa_ameth.o crypto/rsa/rsa_asn1.o crypto/rsa/rsa_chk.o crypto/rsa/rsa_crpt.o crypto/rsa/rsa_depr.o crypto/rsa/rsa_err.o crypto/rsa/rsa_gen.o crypto/rsa/rsa_lib.o crypto/rsa/rsa_meth.o crypto/rsa/rsa_mp.o crypto/rsa/rsa_none.o crypto/rsa/rsa_oaep.o crypto/rsa/rsa_ossl.o crypto/rsa/rsa_pk1.o crypto/rsa/rsa_pmeth.o crypto/rsa/rsa_prn.o crypto/rsa/rsa_pss.o crypto/rsa/rsa_saos.o crypto/rsa/rsa_sign.o crypto/rsa/rsa_ssl.o crypto/rsa/rsa_x931.o crypto/rsa/rsa_x931g.o crypto/seed/seed.o crypto/seed/seed_cbc.o crypto/seed/seed_cfb.o crypto/seed/seed_ecb.o crypto/seed/seed_ofb.o crypto/sha/keccak1600-x86_64.o crypto/sha/sha1-mb-x86_64.o crypto/sha/sha1-x86_64.o crypto/sha/sha1_one.o crypto/sha/sha1dgst.o crypto/sha/sha256-mb-x86_64.o crypto/sha/sha256-x86_64.o crypto/sha/sha256.o crypto/sha/sha512-x86_64.o crypto/sha/sha512.o crypto/siphash/siphash.o crypto/siphash/siphash_ameth.o crypto/siphash/siphash_pmeth.o crypto/sm2/sm2_crypt.o crypto/sm2/sm2_err.o crypto/sm2/sm2_pmeth.o crypto/sm2/sm2_sign.o crypto/sm3/m_sm3.o crypto/sm3/sm3.o crypto/sm4/sm4.o crypto/srp/srp_lib.o crypto/srp/srp_vfy.o crypto/stack/stack.o crypto/store/loader_file.o crypto/store/store_err.o crypto/store/store_init.o crypto/store/store_lib.o crypto/store/store_register.o crypto/store/store_strings.o crypto/threads_none.o crypto/threads_pthread.o crypto/threads_win.o crypto/ts/ts_asn1.o crypto/ts/ts_conf.o crypto/ts/ts_err.o crypto/ts/ts_lib.o crypto/ts/ts_req_print.o crypto/ts/ts_req_utils.o crypto/ts/ts_rsp_print.o crypto/ts/ts_rsp_sign.o crypto/ts/ts_rsp_utils.o crypto/ts/ts_rsp_verify.o crypto/ts/ts_verify_ctx.o crypto/txt_db/txt_db.o crypto/ui/ui_err.o crypto/ui/ui_lib.o crypto/ui/ui_null.o crypto/ui/ui_openssl.o crypto/ui/ui_util.o crypto/uid.o crypto/whrlpool/wp-x86_64.o crypto/whrlpool/wp_dgst.o crypto/x509/by_dir.o crypto/x509/by_file.o crypto/x509/t_crl.o crypto/x509/t_req.o crypto/x509/t_x509.o crypto/x509/x509_att.o crypto/x509/x509_cmp.o crypto/x509/x509_d2.o crypto/x509/x509_def.o crypto/x509/x509_err.o crypto/x509/x509_ext.o crypto/x509/x509_lu.o crypto/x509/x509_meth.o crypto/x509/x509_obj.o crypto/x509/x509_r2x.o crypto/x509/x509_req.o crypto/x509/x509_set.o crypto/x509/x509_trs.o crypto/x509/x509_txt.o crypto/x509/x509_v3.o crypto/x509/x509_vfy.o crypto/x509/x509_vpm.o crypto/x509/x509cset.o crypto/x509/x509name.o crypto/x509/x509rset.o crypto/x509/x509spki.o crypto/x509/x509type.o crypto/x509/x_all.o crypto/x509/x_attrib.o crypto/x509/x_crl.o crypto/x509/x_exten.o crypto/x509/x_name.o crypto/x509/x_pubkey.o crypto/x509/x_req.o crypto/x509/x_x509.o crypto/x509/x_x509a.o crypto/x509v3/pcy_cache.o crypto/x509v3/pcy_data.o crypto/x509v3/pcy_lib.o crypto/x509v3/pcy_map.o crypto/x509v3/pcy_node.o crypto/x509v3/pcy_tree.o crypto/x509v3/v3_addr.o crypto/x509v3/v3_admis.o crypto/x509v3/v3_akey.o crypto/x509v3/v3_akeya.o crypto/x509v3/v3_alt.o crypto/x509v3/v3_asid.o crypto/x509v3/v3_bcons.o crypto/x509v3/v3_bitst.o crypto/x509v3/v3_conf.o crypto/x509v3/v3_cpols.o crypto/x509v3/v3_crld.o crypto/x509v3/v3_enum.o crypto/x509v3/v3_extku.o crypto/x509v3/v3_genn.o crypto/x509v3/v3_ia5.o crypto/x509v3/v3_info.o crypto/x509v3/v3_int.o crypto/x509v3/v3_lib.o crypto/x509v3/v3_ncons.o crypto/x509v3/v3_pci.o crypto/x509v3/v3_pcia.o crypto/x509v3/v3_pcons.o crypto/x509v3/v3_pku.o crypto/x509v3/v3_pmaps.o crypto/x509v3/v3_prn.o crypto/x509v3/v3_purp.o crypto/x509v3/v3_skey.o crypto/x509v3/v3_sxnet.o crypto/x509v3/v3_tlsf.o crypto/x509v3/v3_utl.o crypto/x509v3/v3err.o crypto/x86_64cpuid.o \
+                 -ldl -pthread 
+/usr/bin/ld: /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginT.o: relocation R_X86_64_32 against hidden symbol `__TMC_END__' can not be used when making a shared object
+/usr/bin/ld: failed to set dynamic section sizes: bad value
+collect2: error: ld returned 1 exit status
+make[1]: *** [Makefile:704: libcrypto.so] Error 1
+make[1]: *** Waiting for unfinished jobs....
+ranlib libcrypto.a || echo Never mind.
+make[1]: Leaving directory '/tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m'
+make: *** [Makefile:174: all] Error 2
+-- compiling libevnet
+CMake Warning (dev) in thirdparty/CMakeLists.txt:
+  A logical block opening on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:81 (if)
+
+  closes on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:91 (endif)
+
+  with mis-matching arguments.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+CMake Deprecation Warning at CMakeLists.txt:22 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- The C compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found Git: /usr/bin/git
+fatal: No names found, cannot describe anything.
+-- Performing Test check_c_compiler_flag__Wall
+-- Performing Test check_c_compiler_flag__Wall - Success
+-- Performing Test check_c_compiler_flag__Wextra
+-- Performing Test check_c_compiler_flag__Wextra - Success
+-- Performing Test check_c_compiler_flag__Wno_unused_parameter
+-- Performing Test check_c_compiler_flag__Wno_unused_parameter - Success
+-- Performing Test check_c_compiler_flag__Wstrict_aliasing
+-- Performing Test check_c_compiler_flag__Wstrict_aliasing - Success
+-- Performing Test check_c_compiler_flag__Wstrict_prototypes
+-- Performing Test check_c_compiler_flag__Wstrict_prototypes - Success
+-- Performing Test check_c_compiler_flag__fno_strict_aliasing
+-- Performing Test check_c_compiler_flag__fno_strict_aliasing - Success
+-- Performing Test check_c_compiler_flag__Wmissing_prototypes
+-- Performing Test check_c_compiler_flag__Wmissing_prototypes - Success
+-- Performing Test check_c_compiler_flag__Winit_self
+-- Performing Test check_c_compiler_flag__Winit_self - Success
+-- Performing Test check_c_compiler_flag__Wmissing_field_initializers
+-- Performing Test check_c_compiler_flag__Wmissing_field_initializers - Success
+-- Performing Test check_c_compiler_flag__Wdeclaration_after_statement
+-- Performing Test check_c_compiler_flag__Wdeclaration_after_statement - Success
+-- Performing Test check_c_compiler_flag__Waddress
+-- Performing Test check_c_compiler_flag__Waddress - Success
+-- Performing Test check_c_compiler_flag__Wnormalized_id
+-- Performing Test check_c_compiler_flag__Wnormalized_id - Success
+-- Performing Test check_c_compiler_flag__Woverride_init
+-- Performing Test check_c_compiler_flag__Woverride_init - Success
+-- Performing Test check_c_compiler_flag__Wlogical_op
+-- Performing Test check_c_compiler_flag__Wlogical_op - Success
+-- Performing Test check_c_compiler_flag__Wwrite_strings
+-- Performing Test check_c_compiler_flag__Wwrite_strings - Success
+-- Looking for __GNU_LIBRARY__
+-- Looking for __GNU_LIBRARY__ - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for sys/socket.h
+-- Looking for sys/socket.h - found
+-- Looking for netinet/in.h
+-- Looking for netinet/in.h - found
+-- Looking for sys/un.h
+-- Looking for sys/un.h - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Check size of struct sockaddr_un
+-- Check size of struct sockaddr_un - done
+-- Looking for netinet/in6.h
+-- Looking for netinet/in6.h - not found
+-- Looking for unistd.h
+-- Looking for unistd.h - found
+-- Looking for netdb.h
+-- Looking for netdb.h - found
+-- Looking for dlfcn.h
+-- Looking for dlfcn.h - found
+-- Looking for arpa/inet.h
+-- Looking for arpa/inet.h - found
+-- Looking for fcntl.h
+-- Looking for fcntl.h - found
+-- Looking for inttypes.h
+-- Looking for inttypes.h - found
+-- Looking for memory.h
+-- Looking for memory.h - found
+-- Looking for poll.h
+-- Looking for poll.h - found
+-- Looking for port.h
+-- Looking for port.h - not found
+-- Looking for signal.h
+-- Looking for signal.h - found
+-- Looking for stdarg.h
+-- Looking for stdarg.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stdlib.h
+-- Looking for stdlib.h - found
+-- Looking for strings.h
+-- Looking for strings.h - found
+-- Looking for string.h
+-- Looking for string.h - found
+-- Looking for sys/devpoll.h
+-- Looking for sys/devpoll.h - not found
+-- Looking for sys/epoll.h
+-- Looking for sys/epoll.h - found
+-- Looking for sys/eventfd.h
+-- Looking for sys/eventfd.h - found
+-- Looking for sys/event.h
+-- Looking for sys/event.h - not found
+-- Looking for sys/ioctl.h
+-- Looking for sys/ioctl.h - found
+-- Looking for sys/mman.h
+-- Looking for sys/mman.h - found
+-- Looking for sys/param.h
+-- Looking for sys/param.h - found
+-- Looking for sys/queue.h
+-- Looking for sys/queue.h - found
+-- Looking for sys/select.h
+-- Looking for sys/select.h - found
+-- Looking for sys/sendfile.h
+-- Looking for sys/sendfile.h - found
+-- Looking for sys/stat.h
+-- Looking for sys/stat.h - found
+-- Looking for sys/time.h
+-- Looking for sys/time.h - found
+-- Looking for sys/uio.h
+-- Looking for sys/uio.h - found
+-- Looking for include files sys/types.h, ifaddrs.h
+-- Looking for include files sys/types.h, ifaddrs.h - found
+-- Looking for mach/mach_time.h
+-- Looking for mach/mach_time.h - not found
+-- Looking for netinet/tcp.h
+-- Looking for netinet/tcp.h - found
+-- Looking for sys/wait.h
+-- Looking for sys/wait.h - found
+-- Looking for sys/resource.h
+-- Looking for sys/resource.h - found
+-- Looking for sys/sysctl.h
+-- Looking for sys/sysctl.h - not found
+-- Looking for sys/timerfd.h
+-- Looking for sys/timerfd.h - found
+-- Looking for errno.h
+-- Looking for errno.h - found
+-- Looking for epoll_create
+-- Looking for epoll_create - found
+-- Looking for epoll_ctl
+-- Looking for epoll_ctl - found
+-- Looking for eventfd
+-- Looking for eventfd - found
+-- Looking for clock_gettime
+-- Looking for clock_gettime - found
+-- Looking for fcntl
+-- Looking for fcntl - found
+-- Looking for getaddrinfo
+-- Looking for getaddrinfo - found
+-- Looking for getnameinfo
+-- Looking for getnameinfo - found
+-- Looking for gettimeofday
+-- Looking for gettimeofday - found
+-- Looking for getprotobynumber
+-- Looking for getprotobynumber - found
+-- Looking for getservbyname
+-- Looking for getservbyname - found
+-- Looking for inet_ntop
+-- Looking for inet_ntop - found
+-- Looking for inet_pton
+-- Looking for inet_pton - found
+-- Looking for kqueue
+-- Looking for kqueue - not found
+-- Looking for mmap
+-- Looking for mmap - found
+-- Looking for pipe
+-- Looking for pipe - found
+-- Looking for pipe2
+-- Looking for pipe2 - found
+-- Looking for poll
+-- Looking for poll - found
+-- Looking for port_create
+-- Looking for port_create - not found
+-- Looking for sendfile
+-- Looking for sendfile - found
+-- Looking for sigaction
+-- Looking for sigaction - found
+-- Looking for signal
+-- Looking for signal - found
+-- Looking for splice
+-- Looking for splice - found
+-- Looking for strlcpy
+-- Looking for strlcpy - found
+-- Looking for strsep
+-- Looking for strsep - found
+-- Looking for strtok_r
+-- Looking for strtok_r - found
+-- Looking for strtoll
+-- Looking for strtoll - found
+-- Looking for vasprintf
+-- Looking for vasprintf - found
+-- Looking for sysctl
+-- Looking for sysctl - not found
+-- Looking for accept4
+-- Looking for accept4 - found
+-- Looking for arc4random
+-- Looking for arc4random - found
+-- Looking for arc4random_buf
+-- Looking for arc4random_buf - found
+-- Looking for arc4random_addrandom
+-- Looking for arc4random_addrandom - not found
+-- Looking for epoll_create1
+-- Looking for epoll_create1 - found
+-- Looking for getegid
+-- Looking for getegid - found
+-- Looking for geteuid
+-- Looking for geteuid - found
+-- Looking for getifaddrs
+-- Looking for getifaddrs - found
+-- Looking for issetugid
+-- Looking for issetugid - not found
+-- Looking for mach_absolute_time
+-- Looking for mach_absolute_time - not found
+-- Looking for nanosleep
+-- Looking for nanosleep - found
+-- Looking for usleep
+-- Looking for usleep - found
+-- Looking for timeradd
+-- Looking for timeradd - not found
+-- Looking for timerclear
+-- Looking for timerclear - not found
+-- Looking for timercmp
+-- Looking for timercmp - not found
+-- Looking for timerfd_create
+-- Looking for timerfd_create - found
+-- Looking for timerisset
+-- Looking for timerisset - not found
+-- Looking for putenv
+-- Looking for putenv - found
+-- Looking for setenv
+-- Looking for setenv - found
+-- Looking for setrlimit
+-- Looking for setrlimit - found
+-- Looking for umask
+-- Looking for umask - found
+-- Looking for unsetenv
+-- Looking for unsetenv - found
+-- Looking for gethostbyname_r
+-- Looking for gethostbyname_r - found
+-- Checking prototype gethostbyname_r for EVENT__HAVE_GETHOSTBYNAME_R_3_ARG - False
+-- Checking prototype gethostbyname_r for EVENT__HAVE_GETHOSTBYNAME_R_5_ARG - False
+-- Checking prototype gethostbyname_r for EVENT__HAVE_GETHOSTBYNAME_R_6_ARG - True
+-- Looking for select
+-- Looking for select - found
+-- Check size of uint8_t
+-- Check size of uint8_t - done
+-- Check size of uint16_t
+-- Check size of uint16_t - done
+-- Check size of uint32_t
+-- Check size of uint32_t - done
+-- Check size of uint64_t
+-- Check size of uint64_t - done
+-- Check size of short
+-- Check size of short - done
+-- Check size of int
+-- Check size of int - done
+-- Check size of unsigned
+-- Check size of unsigned - done
+-- Check size of unsigned int
+-- Check size of unsigned int - done
+-- Check size of long
+-- Check size of long - done
+-- Check size of long long
+-- Check size of long long - done
+-- Performing Test HAVE_INLINE
+-- Performing Test HAVE_INLINE - Success
+-- Looking for __func__
+-- Looking for __func__ - found
+-- Looking for __FUNCTION__
+-- Looking for __FUNCTION__ - found
+-- Looking for TAILQ_FOREACH
+-- Looking for TAILQ_FOREACH - found
+-- Performing Test EVENT__HAVE_DECL_CTL_KERN
+-- Performing Test EVENT__HAVE_DECL_CTL_KERN - Failed
+-- Looking for CTL_KERN - not found
+-- Performing Test EVENT__HAVE_DECL_KERN_ARND
+-- Performing Test EVENT__HAVE_DECL_KERN_ARND - Failed
+-- Looking for KERN_ARND - not found
+-- Performing Test EVENT__HAVE_DECL_KERN_RANDOM
+-- Performing Test EVENT__HAVE_DECL_KERN_RANDOM - Failed
+-- Looking for KERN_RANDOM - not found
+-- Performing Test EVENT__HAVE_DECL_RANDOM_UUID
+-- Performing Test EVENT__HAVE_DECL_RANDOM_UUID - Failed
+-- Looking for RANDOM_UUID - not found
+-- Looking for F_SETFD
+-- Looking for F_SETFD - found
+-- Check size of fd_mask
+-- Check size of fd_mask - done
+-- Check size of size_t
+-- Check size of size_t - done
+-- Check size of off_t
+-- Check size of off_t - done
+-- Check size of ssize_t
+-- Check size of ssize_t - done
+-- Check size of SSIZE_T
+-- Check size of SSIZE_T - failed
+-- Check size of socklen_t
+-- Check size of socklen_t - done
+-- Check size of pid_t
+-- Check size of pid_t - done
+-- Check size of pthread_t
+-- Check size of pthread_t - done
+-- Check size of uintptr_t
+-- Check size of uintptr_t - done
+-- Check size of void *
+-- Check size of void * - done
+-- Check size of time_t
+-- Check size of time_t - done
+-- Check size of struct addrinfo
+-- Check size of struct addrinfo - done
+-- Check size of struct in6_addr
+-- Check size of struct in6_addr - done
+-- Performing Test EVENT__HAVE_STRUCT_IN6_ADDR_S6_ADDR16
+-- Performing Test EVENT__HAVE_STRUCT_IN6_ADDR_S6_ADDR16 - Success
+-- Performing Test EVENT__HAVE_STRUCT_IN6_ADDR_S6_ADDR32
+-- Performing Test EVENT__HAVE_STRUCT_IN6_ADDR_S6_ADDR32 - Success
+-- Check size of sa_family_t
+-- Check size of sa_family_t - done
+-- Check size of struct sockaddr_in6
+-- Check size of struct sockaddr_in6 - done
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_IN6_SIN6_LEN
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_IN6_SIN6_LEN - Failed
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_IN_SIN_LEN
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_IN_SIN_LEN - Failed
+-- Check size of struct sockaddr_storage
+-- Check size of struct sockaddr_storage - done
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_STORAGE_SS_FAMILY
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_STORAGE_SS_FAMILY - Success
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_STORAGE___SS_FAMILY
+-- Performing Test EVENT__HAVE_STRUCT_SOCKADDR_STORAGE___SS_FAMILY - Failed
+-- Check size of struct linger
+-- Check size of struct linger - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Found OpenSSL: /tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/libcrypto.a (found version "1.1.1m")
+-- OpenSSL include: /tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/include
+-- OpenSSL lib: /tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/libssl.a;/tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/libcrypto.a
+-- Found ZLIB: /usr/lib/x86_64-linux-gnu/libz.so (found version "1.3")
+CMake Warning (dev) at CMakeLists.txt:1031 (find_package):
+  Policy CMP0148 is not set: The FindPythonInterp and FindPythonLibs modules
+  are removed.  Run "cmake --help-policy CMP0148" for policy details.  Use
+  the cmake_policy command to set the policy and suppress this warning.
+
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Found PythonInterp: /usr/bin/python3 (found suitable version "3.12.3", minimum required is "3")
+-- Generating regress tests...
+-- 
+--         ---( Libevent 2.1.10-beta )---
+-- 
+-- Available event backends: EPOLL;SELECT;POLL
+-- CMAKE_BINARY_DIR:         /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/build
+-- CMAKE_CURRENT_BINARY_DIR: /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/build
+-- CMAKE_SOURCE_DIR:         /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10
+-- CMAKE_CURRENT_SOURCE_DIR: /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10
+-- PROJECT_BINARY_DIR:       /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/build
+-- PROJECT_SOURCE_DIR:       /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10
+-- CMAKE_MODULE_PATH:        /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/cmake/
+-- CMAKE_COMMAND:            /usr/local/bin/cmake
+-- CMAKE_ROOT:               /usr/local/share/cmake-3.31
+-- CMAKE_SYSTEM:             Linux-6.17.0-1013-azure
+-- CMAKE_SYSTEM_NAME:        Linux
+-- CMAKE_SYSTEM_VERSION:     6.17.0-1013-azure
+-- CMAKE_SYSTEM_PROCESSOR:   x86_64
+-- CMAKE_SKIP_RPATH:         NO
+-- CMAKE_VERBOSE_MAKEFILE:   FALSE
+-- CMAKE_C_FLAGS:             -Wall -Wextra -Wno-unused-parameter -Wstrict-aliasing -Wstrict-prototypes -fno-strict-aliasing -Wmissing-prototypes -Winit-self -Wmissing-field-initializers -Wdeclaration-after-statement -Waddress -Wnormalized=id -Woverride-init -Wlogical-op -Wwrite-strings
+-- CMAKE_BUILD_TYPE:         Release
+-- CMAKE_C_COMPILER:         /usr/bin/cc (id GNU, clang 0, GNUC 1)
+-- CMAKE_AR:                 /usr/bin/ar
+-- CMAKE_RANLIB:             /usr/bin/ranlib
+-- 
+-- Configuring done (9.1s)
+-- Generating done (0.1s)
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    OPENSSL_LIBRARES
+
+
+-- Build files have been written to: /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/build
+[  1%] Building C object CMakeFiles/event_core_static.dir/buffer.c.o
+[  2%] Building C object CMakeFiles/event_core_shared.dir/bufferevent.c.o
+[  2%] Building C object CMakeFiles/event_core_shared.dir/buffer.c.o
+[  3%] Building C object CMakeFiles/event_core_shared.dir/bufferevent_filter.c.o
+[  3%] Building C object CMakeFiles/event_extra_static.dir/http.c.o
+[  3%] Building C object CMakeFiles/event_core_static.dir/bufferevent_filter.c.o
+[  3%] Building C object CMakeFiles/event_core_static.dir/bufferevent_ratelim.c.o
+[  3%] Building C object CMakeFiles/event_pthreads_static.dir/evthread_pthread.c.o
+[  4%] Building C object CMakeFiles/event_extra_static.dir/event_tagging.c.o
+[  4%] Building C object CMakeFiles/event_core_static.dir/bufferevent.c.o
+[  5%] Building C object CMakeFiles/event_core_static.dir/event.c.o
+[  6%] Building C object CMakeFiles/event_core_static.dir/evmap.c.o
+[  7%] Building C object CMakeFiles/event_core_shared.dir/bufferevent_pair.c.o
+[  8%] Building C object CMakeFiles/event_core_shared.dir/bufferevent_ratelim.c.o
+[  9%] Building C object CMakeFiles/event_core_shared.dir/event.c.o
+[ 10%] Building C object CMakeFiles/event_core_shared.dir/evthread.c.o
+[  4%] Building C object CMakeFiles/event_core_shared.dir/evutil.c.o
+[ 11%] Building C object CMakeFiles/event_core_static.dir/bufferevent_pair.c.o
+[ 12%] Building C object CMakeFiles/event_core_static.dir/bufferevent_sock.c.o
+[  6%] Building C object CMakeFiles/event_core_static.dir/evutil.c.o
+[  6%] Building C object CMakeFiles/event_core_shared.dir/bufferevent_sock.c.o
+[  6%] Building C object CMakeFiles/event_core_shared.dir/evmap.c.o
+[ 13%] Building C object CMakeFiles/event_openssl_static.dir/bufferevent_openssl.c.o
+[ 13%] Building C object CMakeFiles/event_extra_static.dir/evrpc.c.o
+[ 14%] Building C object CMakeFiles/event_core_shared.dir/evutil_time.c.o
+[ 15%] Building C object CMakeFiles/event_core_static.dir/evthread.c.o
+[ 15%] Building C object CMakeFiles/event_core_shared.dir/listener.c.o
+[ 16%] Building C object CMakeFiles/event_core_static.dir/poll.c.o
+[ 17%] Building C object CMakeFiles/event_static.dir/bufferevent_sock.c.o
+[ 18%] Building C object CMakeFiles/event_shared.dir/evutil.c.o
+[ 19%] Building C object CMakeFiles/event_static.dir/signal.c.o
+[ 19%] Building C object CMakeFiles/event_static.dir/evthread.c.o
+[ 19%] Building C object CMakeFiles/event_static.dir/strlcpy.c.o
+[ 20%] Building C object CMakeFiles/event_core_shared.dir/log.c.o
+[ 20%] Building C object CMakeFiles/event_shared.dir/evutil_rand.c.o
+[ 21%] Building C object CMakeFiles/event_static.dir/bufferevent.c.o
+[ 22%] Building C object CMakeFiles/event_shared.dir/evutil_time.c.o
+[ 22%] Building C object CMakeFiles/event_static.dir/poll.c.o
+[ 23%] Building C object CMakeFiles/event_static.dir/select.c.o
+[ 24%] Building C object CMakeFiles/event_shared.dir/log.c.o
+[ 26%] Building C object CMakeFiles/event_static.dir/log.c.o
+[ 26%] Building C object CMakeFiles/event_shared.dir/event.c.o
+[ 27%] Building C object CMakeFiles/event_core_shared.dir/select.c.o
+[ 28%] Building C object CMakeFiles/event_core_static.dir/evutil_rand.c.o
+[ 29%] Building C object CMakeFiles/event_shared.dir/select.c.o
+[ 29%] Building C object CMakeFiles/event_static.dir/evrpc.c.o
+[ 29%] Building C object CMakeFiles/event_shared.dir/listener.c.o
+[ 29%] Building C object CMakeFiles/event_static.dir/http.c.o
+[ 30%] Building C object CMakeFiles/event_core_shared.dir/strlcpy.c.o
+[ 31%] Building C object CMakeFiles/event_core_static.dir/listener.c.o
+[ 32%] Building C object CMakeFiles/event_core_static.dir/log.c.o
+[ 33%] Building C object CMakeFiles/event_static.dir/epoll.c.o
+[ 34%] Building C object CMakeFiles/event_shared.dir/epoll.c.o
+[ 35%] Building C object CMakeFiles/event_static.dir/event_tagging.c.o
+[ 36%] Building C object CMakeFiles/event_core_static.dir/strlcpy.c.o
+[ 38%] Building C object CMakeFiles/event_static.dir/evdns.c.o
+[ 39%] Building C object CMakeFiles/event_shared.dir/bufferevent.c.o
+[ 40%] Building C object CMakeFiles/event_shared.dir/evdns.c.o
+[ 40%] Building C object CMakeFiles/event_shared.dir/strlcpy.c.o
+[ 41%] Building C object CMakeFiles/event_shared.dir/signal.c.o
+[ 41%] Building C object CMakeFiles/event_shared.dir/evrpc.c.o
+[ 17%] Building C object CMakeFiles/event_shared.dir/buffer.c.o
+[ 17%] Building C object CMakeFiles/event_core_static.dir/select.c.o
+[ 17%] Building C object CMakeFiles/event_extra_static.dir/evdns.c.o
+[ 17%] Building C object CMakeFiles/event_core_shared.dir/signal.c.o
+[ 17%] Building C object CMakeFiles/event_core_static.dir/signal.c.o
+[ 17%] Building C object CMakeFiles/event_core_static.dir/evutil_time.c.o
+[ 42%] Building C object CMakeFiles/event_core_shared.dir/poll.c.o
+[ 37%] Building C object CMakeFiles/event_shared.dir/http.c.o
+[ 43%] Building C object CMakeFiles/event_shared.dir/bufferevent_pair.c.o
+[ 44%] Building C object CMakeFiles/event_static.dir/event.c.o
+[ 45%] Building C object CMakeFiles/event_core_static.dir/epoll.c.o
+[ 46%] Building C object CMakeFiles/event_shared.dir/bufferevent_ratelim.c.o
+[ 47%] Building C object CMakeFiles/event_static.dir/evmap.c.o
+[ 48%] Building C object CMakeFiles/event_static.dir/bufferevent_ratelim.c.o
+[ 49%] Building C object CMakeFiles/event_core_shared.dir/epoll.c.o
+[ 50%] Building C object CMakeFiles/event_static.dir/evutil_time.c.o
+[ 51%] Building C object CMakeFiles/event_static.dir/evutil.c.o
+[ 52%] Building C object CMakeFiles/event_shared.dir/evthread.c.o
+[ 42%] Building C object CMakeFiles/event_shared.dir/bufferevent_sock.c.o
+[ 42%] Building C object CMakeFiles/event_static.dir/bufferevent_pair.c.o
+[ 42%] Building C object CMakeFiles/event_static.dir/evutil_rand.c.o
+[ 52%] Building C object CMakeFiles/event_shared.dir/event_tagging.c.o
+[ 42%] Building C object CMakeFiles/event_shared.dir/bufferevent_filter.c.o
+[ 42%] Building C object CMakeFiles/event_core_shared.dir/evutil_rand.c.o
+[ 42%] Building C object CMakeFiles/event_static.dir/buffer.c.o
+[ 42%] Building C object CMakeFiles/event_static.dir/listener.c.o
+[ 52%] Building C object CMakeFiles/event_shared.dir/poll.c.o
+[ 42%] Building C object CMakeFiles/event_shared.dir/evmap.c.o
+[ 52%] Building C object CMakeFiles/event_static.dir/bufferevent_filter.c.o
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c: In function ‘evutil_secure_rng_init’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c:56:16: warning: ignoring return value of ‘arc4random’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   56 |         (void) arc4random();
+      |                ^~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:208:21: warning: argument 4 of type ‘int[2]’ with mismatched bound [-Warray-parameter=]
+  208 |     evutil_socket_t fd[2])
+In file included from /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:80:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/include/event2/util.h:310:25: note: previously declared as ‘int[]’
+  310 | #define evutil_socket_t int
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/util-internal.h:300:47: note: in expansion of macro ‘evutil_socket_t’
+  300 | int evutil_ersatz_socketpair_(int, int , int, evutil_socket_t[]);
+      |                                               ^~~~~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c: In function ‘evutil_secure_rng_init’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c:56:16: warning: ignoring return value of ‘arc4random’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   56 |         (void) arc4random();
+      |                ^~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:208:21: warning: argument 4 of type ‘int[2]’ with mismatched bound [-Warray-parameter=]
+  208 |     evutil_socket_t fd[2])
+In file included from /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:80:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/include/event2/util.h:310:25: note: previously declared as ‘int[]’
+  310 | #define evutil_socket_t int
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/util-internal.h:300:47: note: in expansion of macro ‘evutil_socket_t’
+  300 | int evutil_ersatz_socketpair_(int, int , int, evutil_socket_t[]);
+      |                                               ^~~~~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:208:21: warning: argument 4 of type ‘int[2]’ with mismatched bound [-Warray-parameter=]
+  208 |     evutil_socket_t fd[2])
+In file included from /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:80:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/include/event2/util.h:310:25: note: previously declared as ‘int[]’
+  310 | #define evutil_socket_t int
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/util-internal.h:300:47: note: in expansion of macro ‘evutil_socket_t’
+  300 | int evutil_ersatz_socketpair_(int, int , int, evutil_socket_t[]);
+      |                                               ^~~~~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c: In function ‘evutil_secure_rng_init’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c:56:16: warning: ignoring return value of ‘arc4random’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   56 |         (void) arc4random();
+      |                ^~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c: In function ‘evutil_secure_rng_init’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil_rand.c:56:16: warning: ignoring return value of ‘arc4random’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   56 |         (void) arc4random();
+      |                ^~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:208:21: warning: argument 4 of type ‘int[2]’ with mismatched bound [-Warray-parameter=]
+  208 |     evutil_socket_t fd[2])
+In file included from /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/evutil.c:80:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/include/event2/util.h:310:25: note: previously declared as ‘int[]’
+  310 | #define evutil_socket_t int
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/util-internal.h:300:47: note: in expansion of macro ‘evutil_socket_t’
+  300 | int evutil_ersatz_socketpair_(int, int , int, evutil_socket_t[]);
+      |                                               ^~~~~~~~~~~~~~~
+[ 53%] Linking C static library lib/libevent_pthreads.a
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c: In function ‘event_signal_closure’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1363:32: warning: storing the address of local variable ‘ncalls’ in ‘*ev.ev_.ev_signal.ev_pncalls’ [-Wdangling-pointer=]
+ 1363 |                 ev->ev_pncalls = &ncalls;
+      |                 ~~~~~~~~~~~~~~~^~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1357:15: note: ‘ncalls’ declared here
+ 1357 |         short ncalls;
+      |               ^~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1355:61: note: ‘ev’ declared here
+ 1355 | event_signal_closure(struct event_base *base, struct event *ev)
+      |                                               ~~~~~~~~~~~~~~^~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c: In function ‘event_signal_closure’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1363:32: warning: storing the address of local variable ‘ncalls’ in ‘*ev.ev_.ev_signal.ev_pncalls’ [-Wdangling-pointer=]
+ 1363 |                 ev->ev_pncalls = &ncalls;
+      |                 ~~~~~~~~~~~~~~~^~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1357:15: note: ‘ncalls’ declared here
+ 1357 |         short ncalls;
+      |               ^~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1355:61: note: ‘ev’ declared here
+ 1355 | event_signal_closure(struct event_base *base, struct event *ev)
+      |                                               ~~~~~~~~~~~~~~^~
+In file included from /tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/include/openssl/ssl.h:18,
+                 from /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/bufferevent_openssl.c:66:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/bufferevent_openssl.c: In function ‘bufferevent_openssl_socket_new’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/include/openssl/bio.h:482:34: warning: value computed is not used [-Wunused-value]
+  482 | # define BIO_set_close(b,c)      (int)BIO_ctrl(b,BIO_CTRL_SET_CLOSE,(c),NULL)
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/bufferevent_openssl.c:1466:17: note: in expansion of macro ‘BIO_set_close’
+ 1466 |                 BIO_set_close(bio, 0);
+      |                 ^~~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c: In function ‘event_signal_closure’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1363:32: warning: storing the address of local variable ‘ncalls’ in ‘*ev.ev_.ev_signal.ev_pncalls’ [-Wdangling-pointer=]
+ 1363 |                 ev->ev_pncalls = &ncalls;
+      |                 ~~~~~~~~~~~~~~~^~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1357:15: note: ‘ncalls’ declared here
+ 1357 |         short ncalls;
+      |               ^~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1355:61: note: ‘ev’ declared here
+ 1355 | event_signal_closure(struct event_base *base, struct event *ev)
+      |                                               ~~~~~~~~~~~~~~^~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c: In function ‘event_signal_closure’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1363:32: warning: storing the address of local variable ‘ncalls’ in ‘*ev.ev_.ev_signal.ev_pncalls’ [-Wdangling-pointer=]
+ 1363 |                 ev->ev_pncalls = &ncalls;
+      |                 ~~~~~~~~~~~~~~~^~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1357:15: note: ‘ncalls’ declared here
+ 1357 |         short ncalls;
+      |               ^~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/event.c:1355:61: note: ‘ev’ declared here
+ 1355 | event_signal_closure(struct event_base *base, struct event *ev)
+      |                                               ~~~~~~~~~~~~~~^~
+[ 53%] Built target event_pthreads_static
+[ 53%] Linking C static library lib/libevent_openssl.a
+[ 53%] Built target event_openssl_static
+[ 54%] Linking C static library lib/libevent_extra.a
+[ 55%] Linking C shared library lib/libevent.so
+[ 55%] Built target event_extra_static
+[ 55%] Built target event_shared
+[ 56%] Linking C static library lib/libevent.a
+[ 56%] Linking C shared library lib/libevent_core.so
+[ 56%] Linking C static library lib/libevent_core.a
+[ 56%] Built target event_core_shared
+[ 57%] Building C object CMakeFiles/event_extra_shared.dir/event_tagging.c.o
+[ 58%] Building C object CMakeFiles/event_pthreads_shared.dir/evthread_pthread.c.o
+[ 58%] Building C object CMakeFiles/event_extra_shared.dir/http.c.o
+[ 59%] Building C object CMakeFiles/event_openssl_shared.dir/bufferevent_openssl.c.o
+[ 60%] Building C object CMakeFiles/event_extra_shared.dir/evdns.c.o
+[ 60%] Building C object CMakeFiles/event_extra_shared.dir/evrpc.c.o
+[ 60%] Built target event_static
+[ 60%] Built target event_core_static
+[ 61%] Linking C shared library lib/libevent_pthreads.so
+[ 61%] Built target event_pthreads_shared
+In file included from /tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/include/openssl/ssl.h:18,
+                 from /tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/bufferevent_openssl.c:66:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/bufferevent_openssl.c: In function ‘bufferevent_openssl_socket_new’:
+/tmp/workspace/liudf0716/xfrpc/thirdparty/openssl-1.1.1m/include/openssl/bio.h:482:34: warning: value computed is not used [-Wunused-value]
+  482 | # define BIO_set_close(b,c)      (int)BIO_ctrl(b,BIO_CTRL_SET_CLOSE,(c),NULL)
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/workspace/liudf0716/xfrpc/thirdparty/libevent-2.1.10/bufferevent_openssl.c:1466:17: note: in expansion of macro ‘BIO_set_close’
+ 1466 |                 BIO_set_close(bio, 0);
+      |                 ^~~~~~~~~~~~~
+[ 61%] Linking C shared library lib/libevent_openssl.so
+[ 61%] Built target event_openssl_shared
+[ 62%] Linking C shared library lib/libevent_extra.so
+[ 62%] Built target event_extra_shared
+[ 63%] Building C object CMakeFiles/hello-world.dir/sample/hello-world.c.o
+[ 64%] Building C object CMakeFiles/event-read-fifo.dir/sample/event-read-fifo.c.o
+[ 64%] Building C object CMakeFiles/signal-test.dir/sample/signal-test.c.o
+[ 65%] Building C object CMakeFiles/http-connect.dir/sample/http-connect.c.o
+[ 66%] Building C object CMakeFiles/time-test.dir/sample/time-test.c.o
+[ 67%] Building C object CMakeFiles/https-client.dir/sample/https-client.c.o
+[ 68%] Building C object CMakeFiles/https-client.dir/sample/hostcheck.c.o
+[ 68%] Building C object CMakeFiles/https-client.dir/sample/openssl_hostname_validation.c.o
+[ 68%] Building C object CMakeFiles/bench_http.dir/test/bench_http.c.o
+[ 69%] Building C object CMakeFiles/bench_httpclient.dir/test/bench_httpclient.c.o
+[ 70%] Building C object CMakeFiles/dns-example.dir/sample/dns-example.c.o
+[ 71%] Building C object CMakeFiles/le-proxy.dir/sample/le-proxy.c.o
+[ 71%] Building C object CMakeFiles/bench.dir/test/bench.c.o
+[ 71%] Building C object CMakeFiles/http-server.dir/sample/http-server.c.o
+[ 71%] Building C object CMakeFiles/test-init.dir/test/test-init.c.o
+[ 72%] Building C object CMakeFiles/test-eof.dir/test/test-eof.c.o
+[ 72%] Building C object CMakeFiles/regress.dir/test/regress_et.c.o
+[ 73%] Building C object CMakeFiles/test-fdleak.dir/test/test-fdleak.c.o
+[ 73%] Building C object CMakeFiles/regress.dir/test/regress_buffer.c.o
+[ 74%] Building C object CMakeFiles/test-weof.dir/test/test-weof.c.o
+[ 76%] Building C object CMakeFiles/regress.dir/test/regress_minheap.c.o
+[ 77%] Building C object CMakeFiles/regress.dir/test/regress.gen.c.o
+[ 77%] Building C object CMakeFiles/test-ratelim.dir/test/test-ratelim.c.o
+[ 78%] Building C object CMakeFiles/regress.dir/test/regress_listener.c.o
+[ 75%] Building C object CMakeFiles/regress.dir/test/regress_finalize.c.o
+[ 71%] Building C object CMakeFiles/regress.dir/test/regress.c.o
+[ 80%] Building C object CMakeFiles/test-changelist.dir/test/test-changelist.c.o
+[ 81%] Building C object CMakeFiles/test-dumpevents.dir/test/test-dumpevents.c.o
+[ 82%] Building C object CMakeFiles/regress.dir/test/regress_rpc.c.o
+[ 83%] Building C object CMakeFiles/regress.dir/test/regress_bufferevent.c.o
+[ 83%] Building C object CMakeFiles/regress.dir/test/regress_testutils.c.o
+[ 84%] Building C object CMakeFiles/regress.dir/test/regress_dns.c.o
+[ 84%] Building C object CMakeFiles/regress.dir/test/regress_main.c.o
+[ 79%] Building C object CMakeFiles/bench_cascade.dir/test/bench_cascade.c.o
+[ 84%] Building C object CMakeFiles/test-time.dir/test/test-time.c.o
+[ 84%] Building C object CMakeFiles/regress.dir/test/regress_http.c.o
+[ 85%] Building C object CMakeFiles/regress.dir/test/regress_util.c.o
+[ 86%] Building C object CMakeFiles/regress.dir/test/regress_zlib.c.o
+[ 87%] Building C object CMakeFiles/regress.dir/test/regress_thread.c.o
+[ 84%] Building C object CMakeFiles/regress.dir/test/tinytest.c.o
+[ 87%] Building C object CMakeFiles/regress.dir/test/regress_ssl.c.o
+[ 88%] Linking C executable bin/signal-test
+[ 89%] Linking C executable bin/time-test
+[ 90%] Linking C executable bin/test-init
+[ 90%] Linking C executable bin/hello-world
+[ 91%] Linking C executable bin/event-read-fifo
+[ 91%] Linking C executable bin/http-connect
+[ 92%] Linking C executable bin/bench_http
+[ 92%] Linking C executable bin/test-eof
+[ 92%] Built target signal-test
+[ 92%] Built target time-test
+[ 92%] Built target test-init
+[ 92%] Linking C executable bin/test-changelist
+[ 92%] Linking C executable bin/test-weof
+[ 92%] Linking C executable bin/bench_httpclient
+[ 93%] Linking C executable bin/dns-example
+[ 93%] Linking C executable bin/test-time
+[ 93%] Linking C executable bin/test-fdleak
+[ 93%] Built target test-weof
+[ 93%] Built target test-changelist
+[ 93%] Built target hello-world
+[ 93%] Built target bench_http
+[ 93%] Linking C executable bin/test-dumpevents
+[ 93%] Built target http-connect
+[ 93%] Built target test-eof
+[ 93%] Built target event-read-fifo
+[ 93%] Built target dns-example
+[ 93%] Built target test-fdleak
+[ 94%] Linking C executable bin/bench
+[ 95%] Linking C executable bin/bench_cascade
+[ 95%] Built target bench_httpclient
+[ 95%] Built target test-time
+[ 95%] Built target test-dumpevents
+[ 95%] Built target bench_cascade
+[ 95%] Built target bench
+[ 96%] Linking C executable bin/le-proxy
+[ 96%] Linking C executable bin/http-server
+[ 97%] Linking C executable bin/https-client
+[ 97%] Built target http-server
+[ 98%] Linking C executable bin/test-ratelim
+[ 98%] Built target test-ratelim
+[ 98%] Built target le-proxy
+[ 98%] Built target https-client
+[ 99%] Linking C executable bin/regress
+[100%] Built target regress
+-- compiling json-c
+CMake Warning (dev) in thirdparty/CMakeLists.txt:
+  A logical block opening on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:117 (if)
+
+  closes on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:127 (endif)
+
+  with mis-matching arguments.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+CMake Deprecation Warning at CMakeLists.txt:6 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- The C compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+CMake Deprecation Warning at CMakeLists.txt:33 (cmake_policy):
+  The OLD behavior for policy CMP0042 will be removed from a future version
+  of CMake.
+
+  The cmake-policies(7) manual explains that the OLD behaviors of all
+  policies are deprecated and that a policy should be set to OLD only under
+  specific short-term circumstances.  Projects should be ported to the NEW
+  behavior and not rely on setting a policy to OLD.
+
+
+-- Looking for fcntl.h
+-- Looking for fcntl.h - found
+-- Looking for inttypes.h
+-- Looking for inttypes.h - found
+-- Looking for stdarg.h
+-- Looking for stdarg.h - found
+-- Looking for strings.h
+-- Looking for strings.h - found
+-- Looking for string.h
+-- Looking for string.h - found
+-- Looking for syslog.h
+-- Looking for syslog.h - found
+-- Looking for 4 include files stdlib.h, ..., float.h
+-- Looking for 4 include files stdlib.h, ..., float.h - found
+-- Looking for unistd.h
+-- Looking for unistd.h - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for sys/resource.h
+-- Looking for sys/resource.h - found
+-- Looking for dlfcn.h
+-- Looking for dlfcn.h - found
+-- Looking for endian.h
+-- Looking for endian.h - found
+-- Looking for limits.h
+-- Looking for limits.h - found
+-- Looking for locale.h
+-- Looking for locale.h - found
+-- Looking for memory.h
+-- Looking for memory.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stdlib.h
+-- Looking for stdlib.h - found
+-- Looking for sys/cdefs.h
+-- Looking for sys/cdefs.h - found
+-- Looking for sys/param.h
+-- Looking for sys/param.h - found
+-- Looking for sys/random.h
+-- Looking for sys/random.h - found
+-- Looking for sys/stat.h
+-- Looking for sys/stat.h - found
+-- Looking for xlocale.h
+-- Looking for xlocale.h - not found
+-- Looking for _isnan
+-- Looking for _isnan - not found
+-- Looking for _finite
+-- Looking for _finite - not found
+-- Looking for INFINITY
+-- Looking for INFINITY - found
+-- Looking for isinf
+-- Looking for isinf - found
+-- Looking for isnan
+-- Looking for isnan - found
+-- Looking for nan
+-- Looking for nan - found
+-- Looking for _doprnt
+-- Looking for _doprnt - not found
+-- Looking for snprintf
+-- Looking for snprintf - found
+-- Looking for vasprintf
+-- Looking for vasprintf - found
+-- Looking for vsnprintf
+-- Looking for vsnprintf - found
+-- Looking for vprintf
+-- Looking for vprintf - found
+-- Looking for arc4random
+-- Looking for arc4random - found
+-- Looking for open
+-- Looking for open - found
+-- Looking for realloc
+-- Looking for realloc - found
+-- Looking for setlocale
+-- Looking for setlocale - found
+-- Looking for uselocale
+-- Looking for uselocale - found
+CMake Warning (dev) at CMakeLists.txt:210 (exec_program):
+  Policy CMP0153 is not set: The exec_program command should not be called.
+  Run "cmake --help-policy CMP0153" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+
+  Use execute_process() instead.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Looking for strcasecmp
+-- Looking for strcasecmp - found
+-- Looking for strncasecmp
+-- Looking for strncasecmp - found
+-- Looking for strdup
+-- Looking for strdup - found
+-- Looking for strerror
+-- Looking for strerror - found
+-- Looking for vsyslog
+-- Looking for vsyslog - found
+-- Looking for getrandom
+-- Looking for getrandom - found
+-- Looking for getrusage
+-- Looking for getrusage - found
+-- Looking for strtoll
+-- Looking for strtoll - found
+-- Looking for strtoull
+-- Looking for strtoull - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Check size of int
+-- Check size of int - done
+-- Check size of int64_t
+-- Check size of int64_t - done
+-- Check size of long
+-- Check size of long - done
+-- Check size of long long
+-- Check size of long long - done
+-- Check size of size_t
+-- Check size of size_t - done
+-- Check size of ssize_t
+-- Check size of ssize_t - done
+-- Performing Test HAS_GNU_WARNING_LONG
+-- Performing Test HAS_GNU_WARNING_LONG - Failed
+-- Performing Test HAVE_ATOMIC_BUILTINS
+-- Performing Test HAVE_ATOMIC_BUILTINS - Success
+-- Performing Test HAVE___THREAD
+-- Performing Test HAVE___THREAD - Success
+-- Wrote /tmp/workspace/liudf0716/xfrpc/thirdparty/json-c/build/config.h
+-- Wrote /tmp/workspace/liudf0716/xfrpc/thirdparty/json-c/build/json_config.h
+-- Performing Test REENTRANT_WORKS
+-- Performing Test REENTRANT_WORKS - Success
+-- Performing Test BSYMBOLIC_WORKS
+-- Performing Test BSYMBOLIC_WORKS - Success
+-- Performing Test VERSION_SCRIPT_WORKS
+-- Performing Test VERSION_SCRIPT_WORKS - Success
+-- Could NOT find Doxygen (missing: DOXYGEN_EXECUTABLE) 
+Warning: doxygen not found, the 'doc' target will not be included
+CMake Deprecation Warning at tests/CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+CMake Deprecation Warning at apps/CMakeLists.txt:2 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+
+-- Wrote /tmp/workspace/liudf0716/xfrpc/thirdparty/json-c/build/apps_config.h
+-- Configuring done (3.7s)
+-- Generating done (0.1s)
+-- Build files have been written to: /tmp/workspace/liudf0716/xfrpc/thirdparty/json-c/build
+[  1%] Building C object CMakeFiles/json-c.dir/arraylist.c.o
+[  2%] Building C object CMakeFiles/json-c-static.dir/arraylist.c.o
+[  3%] Building C object CMakeFiles/json-c.dir/debug.c.o
+[  4%] Building C object CMakeFiles/json-c-static.dir/json_c_version.c.o
+[  5%] Building C object CMakeFiles/json-c-static.dir/debug.c.o
+[  6%] Building C object CMakeFiles/json-c.dir/json_c_version.c.o
+[  8%] Building C object CMakeFiles/json-c.dir/json_object_iterator.c.o
+[  9%] Building C object CMakeFiles/json-c-static.dir/json_object_iterator.c.o
+[ 10%] Building C object CMakeFiles/json-c-static.dir/json_object.c.o
+[ 11%] Building C object CMakeFiles/json-c.dir/json_object.c.o
+[ 12%] Building C object CMakeFiles/json-c.dir/json_tokener.c.o
+[ 13%] Building C object CMakeFiles/json-c-static.dir/json_tokener.c.o
+[ 16%] Building C object CMakeFiles/json-c.dir/linkhash.c.o
+[ 15%] Building C object CMakeFiles/json-c.dir/json_util.c.o
+[ 17%] Building C object CMakeFiles/json-c.dir/json_visit.c.o
+[ 18%] Building C object CMakeFiles/json-c-static.dir/json_util.c.o
+[ 19%] Building C object CMakeFiles/json-c.dir/random_seed.c.o
+[ 22%] Building C object CMakeFiles/json-c-static.dir/json_visit.c.o
+[ 23%] Building C object CMakeFiles/json-c-static.dir/linkhash.c.o
+[ 24%] Building C object CMakeFiles/json-c-static.dir/random_seed.c.o
+[ 20%] Building C object CMakeFiles/json-c.dir/strerror_override.c.o
+[ 26%] Building C object CMakeFiles/json-c.dir/printbuf.c.o
+[ 26%] Building C object CMakeFiles/json-c.dir/json_pointer.c.o
+[ 27%] Building C object CMakeFiles/json-c-static.dir/json_pointer.c.o
+[ 29%] Building C object CMakeFiles/json-c-static.dir/printbuf.c.o
+[ 30%] Building C object CMakeFiles/json-c-static.dir/strerror_override.c.o
+[ 32%] Linking C static library libjson-c.a
+[ 32%] Linking C shared library libjson-c.so
+[ 32%] Built target json-c
+[ 33%] Building C object tests/CMakeFiles/test1Formatted.dir/test1.c.o
+[ 34%] Building C object tests/CMakeFiles/test2Formatted.dir/parse_flags.c.o
+[ 36%] Building C object tests/CMakeFiles/test2Formatted.dir/test2.c.o
+[ 37%] Building C object tests/CMakeFiles/test1.dir/test1.c.o
+[ 38%] Building C object tests/CMakeFiles/test2.dir/test2.c.o
+[ 39%] Building C object tests/CMakeFiles/test1Formatted.dir/parse_flags.c.o
+[ 41%] Building C object tests/CMakeFiles/test4.dir/test4.c.o
+[ 43%] Building C object tests/CMakeFiles/testReplaceExisting.dir/testReplaceExisting.c.o
+[ 43%] Building C object tests/CMakeFiles/test_cast.dir/test_cast.c.o
+[ 44%] Building C object tests/CMakeFiles/test_deep_copy.dir/test_deep_copy.c.o
+[ 45%] Building C object tests/CMakeFiles/test_float.dir/test_float.c.o
+[ 46%] Building C object tests/CMakeFiles/test_parse.dir/test_parse.c.o
+[ 47%] Building C object tests/CMakeFiles/test_compare.dir/test_compare.c.o
+[ 48%] Building C object tests/CMakeFiles/test_int_get.dir/test_int_get.c.o
+[ 50%] Building C object tests/CMakeFiles/test_strerror.dir/test_strerror.c.o
+[ 51%] Building C object tests/CMakeFiles/test_json_pointer.dir/test_json_pointer.c.o
+[ 52%] Building C object tests/CMakeFiles/test_printbuf.dir/test_printbuf.c.o
+[ 53%] Building C object tests/CMakeFiles/test_null.dir/test_null.c.o
+[ 54%] Building C object tests/CMakeFiles/test_visit.dir/test_visit.c.o
+[ 55%] Building C object tests/CMakeFiles/test_object_iterator.dir/test_object_iterator.c.o
+[ 58%] Building C object tests/CMakeFiles/test_strerror.dir/__/strerror_override.c.o
+[ 59%] Building C object tests/CMakeFiles/test_util_file.dir/test_util_file.c.o
+[ 60%] Building C object tests/CMakeFiles/test_int_add.dir/test_int_add.c.o
+[ 61%] Building C object tests/CMakeFiles/test_parse_int64.dir/test_parse_int64.c.o
+[ 56%] Building C object tests/CMakeFiles/test_double_serializer.dir/test_double_serializer.c.o
+[ 62%] Building C object tests/CMakeFiles/test_charcase.dir/test_charcase.c.o
+[ 63%] Building C object tests/CMakeFiles/test_locale.dir/test_locale.c.o
+[ 65%] Building C object tests/CMakeFiles/test_set_serializer.dir/test_set_serializer.c.o
+[ 66%] Building C object apps/CMakeFiles/json_parse.dir/json_parse.c.o
+[ 67%] Building C object tests/CMakeFiles/test_util_file.dir/__/strerror_override.c.o
+[ 68%] Building C object tests/CMakeFiles/test_set_value.dir/test_set_value.c.o
+[ 69%] Linking C executable test_float
+[ 70%] Linking C executable test_int_add
+[ 72%] Linking C executable test2
+[ 73%] Linking C executable test_strerror
+[ 74%] Linking C executable test2Formatted
+[ 75%] Linking C executable test_object_iterator
+[ 76%] Linking C executable test_charcase
+[ 77%] Linking C executable test_null
+[ 79%] Linking C executable test_set_serializer
+[ 80%] Linking C executable test_double_serializer
+[ 81%] Linking C executable test_cast
+[ 82%] Linking C executable test_printbuf
+[ 83%] Linking C executable test_parse_int64
+[ 86%] Linking C executable test4
+[ 87%] Linking C executable test_compare
+[ 84%] Linking C executable testReplaceExisting
+[ 87%] Built target test_int_add
+[ 88%] Built target test_strerror
+[ 88%] Linking C executable test_locale
+[ 89%] Linking C executable test_visit
+[ 91%] Linking C executable test1
+[ 90%] Linking C executable test1Formatted
+[ 93%] Linking C executable test_util_file
+[ 93%] Built target test_float
+[ 94%] Linking C executable test_deep_copy
+[ 95%] Linking C executable test_parse
+[ 96%] Linking C executable test_set_value
+[ 97%] Linking C executable json_parse
+[ 98%] Linking C executable test_int_get
+[ 98%] Built target test2
+[ 98%] Built target json-c-static
+[ 98%] Built target test2Formatted
+[ 98%] Built target test_null
+[ 98%] Built target test_charcase
+[ 98%] Built target test_object_iterator
+[ 98%] Built target test_set_serializer
+[ 98%] Built target test_double_serializer
+[ 98%] Built target test_cast
+[ 98%] Built target test_printbuf
+[ 98%] Built target test1Formatted
+[ 98%] Built target test_compare
+[100%] Linking C executable test_json_pointer
+[100%] Built target testReplaceExisting
+[100%] Built target test_parse_int64
+[100%] Built target test4
+[100%] Built target test_parse
+[100%] Built target test_visit
+[100%] Built target test_set_value
+[100%] Built target test_locale
+[100%] Built target test1
+[100%] Built target test_deep_copy
+[100%] Built target test_int_get
+[100%] Built target test_util_file
+[100%] Built target json_parse
+[100%] Built target test_json_pointer
+CMake Warning (dev) in thirdparty/CMakeLists.txt:
+  A logical block opening on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:146 (if)
+
+  closes on the line
+
+    /tmp/workspace/liudf0716/xfrpc/thirdparty/CMakeLists.txt:163 (endif)
+
+  with mis-matching arguments.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Sanitizer only available in Debug build
+-- Debug mode: OFF (optimized build)
+-- Configuring done (32.6s)
+-- Generating done (0.0s)
+-- Build files have been written to: /tmp/workspace/liudf0716/xfrpc/build-static
+[  3%] Building C object CMakeFiles/xfrpc.dir/control.c.o
+[  7%] Building C object CMakeFiles/xfrpc.dir/crypto.c.o
+[ 10%] Building C object CMakeFiles/xfrpc.dir/fastpbkdf2.c.o
+[ 14%] Building C object CMakeFiles/xfrpc.dir/msg.c.o
+[ 17%] Building C object CMakeFiles/xfrpc.dir/plugins/instaloader.c.o
+[ 21%] Building C object CMakeFiles/xfrpc.dir/plugins/youtubedl.c.o
+[ 25%] Linking C executable xfrpc
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `parse_udp_addr':
+msg.c:(.text+0x46): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x62): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x7e): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0xa6): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0xbb): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0xd1): undefined reference to `json_object_get_int'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `create_udp_addr_json':
+msg.c:(.text+0x143): undefined reference to `json_object_new_object'
+/usr/bin/ld: msg.c:(.text+0x154): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x16f): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x177): undefined reference to `json_object_new_int'
+/usr/bin/ld: msg.c:(.text+0x192): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x19e): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x1b5): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x1c9): undefined reference to `json_object_new_object'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `login_request_marshal':
+msg.c:(.text+0x57b): undefined reference to `json_object_new_object'
+/usr/bin/ld: msg.c:(.text+0x5ea): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x5fc): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x613): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x625): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x62e): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x640): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x649): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x65b): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x664): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x676): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x67e): undefined reference to `json_object_new_int'
+/usr/bin/ld: msg.c:(.text+0x690): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x699): undefined reference to `json_object_new_int64'
+/usr/bin/ld: msg.c:(.text+0x6ab): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x6b9): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x6cb): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x6d9): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x6eb): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x6f3): undefined reference to `json_object_to_json_string'
+/usr/bin/ld: msg.c:(.text+0x70a): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x72c): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x764): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `new_proxy_service_marshal':
+msg.c:(.text+0x7ab): undefined reference to `json_object_new_object'
+/usr/bin/ld: msg.c:(.text+0x7bf): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x7d1): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x7f8): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x80a): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x812): undefined reference to `json_object_new_boolean'
+/usr/bin/ld: msg.c:(.text+0x824): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x82c): undefined reference to `json_object_new_boolean'
+/usr/bin/ld: msg.c:(.text+0x83e): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x84f): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x861): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x872): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x884): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x8a6): undefined reference to `json_object_new_array'
+/usr/bin/ld: msg.c:(.text+0x93f): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x951): undefined reference to `json_object_array_add'
+/usr/bin/ld: msg.c:(.text+0x98c): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x99d): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x9b4): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x9c6): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x9cb): undefined reference to `json_object_new_array'
+/usr/bin/ld: msg.c:(.text+0xa21): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0xa2c): undefined reference to `json_object_array_add'
+/usr/bin/ld: msg.c:(.text+0xa5c): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xa73): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0xa85): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xa95): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0xaa7): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xab7): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0xac9): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xad1): undefined reference to `json_object_to_json_string'
+/usr/bin/ld: msg.c:(.text+0xaec): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0xb52): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0xb64): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xb6c): undefined reference to `json_object_new_boolean'
+/usr/bin/ld: msg.c:(.text+0xb7e): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xb86): undefined reference to `json_object_new_boolean'
+/usr/bin/ld: msg.c:(.text+0xb98): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xc1c): undefined reference to `json_object_new_int'
+/usr/bin/ld: msg.c:(.text+0xc2e): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xc4c): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xc5d): undefined reference to `json_object_new_int'
+/usr/bin/ld: msg.c:(.text+0xc6f): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xc8d): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xc95): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0xca9): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `new_work_conn_marshal':
+msg.c:(.text+0xcd9): undefined reference to `json_object_new_object'
+/usr/bin/ld: msg.c:(.text+0xcf7): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0xd09): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0xd11): undefined reference to `json_object_to_json_string'
+/usr/bin/ld: msg.c:(.text+0xd28): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `new_proxy_resp_unmarshal':
+msg.c:(.text+0xd94): undefined reference to `json_tokener_parse'
+/usr/bin/ld: msg.c:(.text+0xdd8): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0xdfd): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0xe0f): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0xe56): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0xe68): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0xe9a): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0xeaa): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0xed6): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0xf04): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0xf4e): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0xf7d): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `login_resp_unmarshal':
+msg.c:(.text+0xfb4): undefined reference to `json_tokener_parse'
+/usr/bin/ld: msg.c:(.text+0xff5): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x1006): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0x1037): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x1049): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0x1077): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x1083): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x10ae): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0x10d4): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x111b): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `start_work_conn_resp_unmarshal':
+msg.c:(.text+0x1154): undefined reference to `json_tokener_parse'
+/usr/bin/ld: msg.c:(.text+0x1195): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x11a2): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0x11bf): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x11e4): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x120c): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `control_response_unmarshal':
+msg.c:(.text+0x1244): undefined reference to `json_tokener_parse'
+/usr/bin/ld: msg.c:(.text+0x1285): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x1296): undefined reference to `json_object_get_int'
+/usr/bin/ld: msg.c:(.text+0x12b5): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x12c3): undefined reference to `json_object_get_int'
+/usr/bin/ld: msg.c:(.text+0x12e3): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x12f1): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0x130f): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x1334): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x135d): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `new_udp_packet_marshal':
+msg.c:(.text+0x1411): undefined reference to `json_object_new_object'
+/usr/bin/ld: msg.c:(.text+0x142b): undefined reference to `json_object_new_string'
+/usr/bin/ld: msg.c:(.text+0x1446): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x146a): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x148a): undefined reference to `json_object_object_add'
+/usr/bin/ld: msg.c:(.text+0x1492): undefined reference to `json_object_to_json_string'
+/usr/bin/ld: msg.c:(.text+0x14b0): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x14bf): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/msg.c.o: in function `udp_packet_unmarshal':
+msg.c:(.text+0x1644): undefined reference to `json_tokener_parse'
+/usr/bin/ld: msg.c:(.text+0x1685): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x1696): undefined reference to `json_object_get_string'
+/usr/bin/ld: msg.c:(.text+0x16c8): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x16fc): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: msg.c:(.text+0x171b): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x1744): undefined reference to `json_object_put'
+/usr/bin/ld: msg.c:(.text+0x175f): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/zip.c.o: in function `deflate_write':
+zip.c:(.text+0xc6): undefined reference to `deflateInit2_'
+/usr/bin/ld: zip.c:(.text+0x14c): undefined reference to `deflate'
+/usr/bin/ld: zip.c:(.text+0x15c): undefined reference to `deflateEnd'
+/usr/bin/ld: zip.c:(.text+0x1a2): undefined reference to `deflateInit_'
+/usr/bin/ld: zip.c:(.text+0x1b6): undefined reference to `deflateEnd'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/zip.c.o: in function `inflate_read':
+zip.c:(.text+0x295): undefined reference to `inflateInit2_'
+/usr/bin/ld: zip.c:(.text+0x319): undefined reference to `inflate'
+/usr/bin/ld: zip.c:(.text+0x329): undefined reference to `inflateEnd'
+/usr/bin/ld: zip.c:(.text+0x36d): undefined reference to `inflateInit_'
+/usr/bin/ld: zip.c:(.text+0x386): undefined reference to `inflateEnd'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/plugins/instaloader.c.o: in function `instaloader_read_cb.isra.0':
+instaloader.c:(.text+0x3d8): undefined reference to `json_tokener_parse'
+/usr/bin/ld: instaloader.c:(.text+0x3fe): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: instaloader.c:(.text+0x40f): undefined reference to `json_object_get_string'
+/usr/bin/ld: instaloader.c:(.text+0x456): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: instaloader.c:(.text+0x468): undefined reference to `json_object_get_string'
+/usr/bin/ld: instaloader.c:(.text+0x481): undefined reference to `json_object_put'
+/usr/bin/ld: instaloader.c:(.text+0x4f9): undefined reference to `json_object_put'
+/usr/bin/ld: instaloader.c:(.text+0x524): undefined reference to `json_object_put'
+/usr/bin/ld: CMakeFiles/xfrpc.dir/plugins/youtubedl.c.o: in function `yt_dlp_read_cb.isra.0':
+youtubedl.c:(.text+0x5f8): undefined reference to `json_tokener_parse'
+/usr/bin/ld: youtubedl.c:(.text+0x61e): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: youtubedl.c:(.text+0x62f): undefined reference to `json_object_get_string'
+/usr/bin/ld: youtubedl.c:(.text+0x676): undefined reference to `json_object_object_get_ex'
+/usr/bin/ld: youtubedl.c:(.text+0x688): undefined reference to `json_object_get_string'
+/usr/bin/ld: youtubedl.c:(.text+0x6a1): undefined reference to `json_object_put'
+/usr/bin/ld: youtubedl.c:(.text+0x719): undefined reference to `json_object_put'
+/usr/bin/ld: youtubedl.c:(.text+0x744): undefined reference to `json_object_put'
+collect2: error: ld returned 1 exit status
+gmake[2]: *** [CMakeFiles/xfrpc.dir/build.make:517: xfrpc] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:109: CMakeFiles/xfrpc.dir/all] Error 2
+gmake: *** [Makefile:136: all] Error 2

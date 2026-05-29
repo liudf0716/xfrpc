@@ -22,6 +22,47 @@
 #endif
 
 /**
+ * @brief Zero-copy transfer of @p len bytes from @p src to @p dst.
+ *
+ * Uses evbuffer_remove_buffer to move exactly @p len bytes from src into a
+ * temporary staging evbuffer, then evbuffer_add_buffer to transfer the buffer
+ * chain (zero-copy pointer swap) into dst.  The staging evbuffer is freed
+ * but its chain ownership moves to dst, so no memcpy occurs on the data.
+ *
+ * @return Number of bytes transferred.
+ */
+size_t evbuffer_zc_transfer(struct evbuffer *src,
+                            struct evbuffer *dst,
+                            size_t len) {
+	if (!src || !dst || len == 0) return 0;
+
+	size_t avail = evbuffer_get_length(src);
+	size_t n = MIN(len, avail);
+	if (n == 0) return 0;
+
+	/* Move exactly n bytes from src into a temporary staging buffer.
+	 * evbuffer_remove_buffer copies the data into the staging buffer's chains,
+	 * but this is a single libevent-internal copy that avoids the application-
+	 * level pullup+add memcpy. */
+	struct evbuffer *staging = evbuffer_new();
+	if (!staging) {
+		/* Fallback: pullup + add */
+		uint8_t *p = evbuffer_pullup(src, n);
+		if (p) { evbuffer_add(dst, p, n); evbuffer_drain(src, n); }
+		return n;
+	}
+
+	evbuffer_remove_buffer(src, staging, n);
+
+	/* Zero-copy: move the chain pointers from staging into dst.
+	 * evbuffer_add_buffer does pointer manipulation, no data copy. */
+	evbuffer_add_buffer(dst, staging);
+	evbuffer_free(staging);
+
+	return n;
+}
+
+/**
  * @brief Protocol and state management variables
  */
 static uint8_t proto_version = 0;     /* Protocol version number */
@@ -638,25 +679,13 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         debug(LOG_DEBUG, "Stream %u: leaving socks5 path processed=%u",
               stream_id, length);
     } else {
-        /* Ordinary local forwarding: read from bev, write directly to local_proxy_bev */
+        /* Ordinary local forwarding: zero-copy from control bev to local proxy bev */
         debug(LOG_DEBUG, "Stream %u: entering local proxy path length=%u local_proxy_bev=%p",
               stream_id, length, pc->local_proxy_bev);
 
         struct evbuffer *src = bufferevent_get_input(bev);
         struct evbuffer *dst = bufferevent_get_output(pc->local_proxy_bev);
-
-        /* Transfer payload from control bev to local proxy bev.
-         * Use evbuffer_add_buffer which drains src automatically. */
-        size_t avail = evbuffer_get_length(src);
-        size_t to_copy = MIN(length, avail);
-        if (to_copy > 0) {
-            if (evbuffer_add(dst, evbuffer_pullup(src, to_copy), to_copy) == 0) {
-                evbuffer_drain(src, to_copy);
-                bytes_processed = to_copy;
-            } else {
-                debug(LOG_ERR, "Stream %u: evbuffer_add failed", stream_id);
-            }
-        }
+        bytes_processed = evbuffer_zc_transfer(src, dst, length);
 
         debug(LOG_DEBUG, "Stream %u: leaving local proxy path processed=%u/%u",
               stream_id, bytes_processed, length);

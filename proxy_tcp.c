@@ -248,20 +248,12 @@ void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_
 		return;
 	}
 
-	/* ESTABLISHED: forward payload directly to local proxy */
+	/* ESTABLISHED: forward payload zero-copy to local proxy */
 	if (client->state == SOCKS5_ESTABLISHED) {
 		assert(client->local_proxy_bev);
 		struct evbuffer *src = bufferevent_get_input(bev);
-		size_t avail = evbuffer_get_length(src);
-		size_t to_copy = MIN(len, avail);
-		if (to_copy > 0) {
-			struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
-			uint8_t *tmp = evbuffer_pullup(src, to_copy);
-			if (tmp) {
-				evbuffer_add(dst, tmp, to_copy);
-				evbuffer_drain(src, to_copy);
-			}
-		}
+		struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+		evbuffer_zc_transfer(src, dst, len);
 		return;
 	}
 
@@ -355,19 +347,11 @@ void handle_xdpi(struct proxy_client *client, struct bufferevent *bev, uint32_t 
 		return;
 	}
 
-	/* Already verified: forward directly to local proxy */
+	/* Already verified: forward zero-copy to local proxy */
 	if (client->xdpi_state == XDPI_VERIFIED && client->local_proxy_bev) {
 		struct evbuffer *src = bufferevent_get_input(bev);
-		size_t avail = evbuffer_get_length(src);
-		size_t to_copy = MIN(len, avail);
-		if (to_copy > 0) {
-			struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
-			uint8_t *tmp = evbuffer_pullup(src, to_copy);
-			if (tmp) {
-				evbuffer_add(dst, tmp, to_copy);
-				evbuffer_drain(src, to_copy);
-			}
-		}
+		struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+		evbuffer_zc_transfer(src, dst, len);
 		return;
 	}
 

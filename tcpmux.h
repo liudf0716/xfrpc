@@ -200,6 +200,13 @@ struct tmux_stream *get_stream_by_id(uint32_t id);
 int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);
 
 /**
+ * @brief Zero-copy transfer of @p len bytes from @p src evbuffer to @p dst.
+ *
+ * @return Number of bytes transferred.
+ */
+size_t evbuffer_zc_transfer(struct evbuffer *src, struct evbuffer *dst, size_t len);
+
+/**
  * @brief Processes data from a tmux DATA frame and dispatches to protocol handlers.
  *
  * Reads the payload from the control bev and dispatches it to the appropriate

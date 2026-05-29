@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
@@ -42,20 +41,13 @@ static struct tmux_stream *all_stream = NULL;  /* Hash table of all streams */
 
 /**
  * @brief Adds a stream to the hash table of all streams.
- *
- * This function adds the given stream to the global hash table `all_stream`
- * using the stream's `id` as the key.
- *
- * @param stream A pointer to the `tmux_stream` structure to be added.
  */
 void add_stream(struct tmux_stream *stream) {
-    // Validate input parameter
     if (!stream) {
         debug(LOG_ERR, "Cannot add NULL stream");
         return;
     }
 
-    // Check if stream already exists
     struct tmux_stream *existing = NULL;
     HASH_FIND_INT(all_stream, &stream->id, existing);
     if (existing) {
@@ -63,52 +55,32 @@ void add_stream(struct tmux_stream *stream) {
         return;
     }
 
-    // Add stream to hash table
     HASH_ADD_INT(all_stream, id, stream);
     debug(LOG_DEBUG, "Added stream %u to hash table", stream->id);
 }
 
 /**
  * @brief Deletes a stream with the specified ID from the hash table.
- *
- * This function removes a stream identified by the given ID from the global
- * hash table `all_stream`. If the stream is found, it is deleted from the
- * hash table. Note that the stream itself is not freed in this function; it
- * will be freed when the associated proxy client is freed.
- *
- * @param id The ID of the stream to be deleted.
  */
 void del_stream(uint32_t id) {
-    // Early return if hash table is not initialized
     if (!all_stream) {
         debug(LOG_DEBUG, "Stream hash table not initialized");
         return;
     }
 
-    // Find stream in hash table
     struct tmux_stream *stream = NULL;
     HASH_FIND_INT(all_stream, &id, stream);
 
-    // Delete stream if found
     if (stream) {
         HASH_DEL(all_stream, stream);
         debug(LOG_DEBUG, "Stream %u removed from hash table", id);
     } else {
         debug(LOG_DEBUG, "Stream %u not found in hash table", id);
     }
-    
-    // Note: Stream memory is freed when associated proxy client is freed
 }
 
 /**
  * @brief Clears all streams from the global hash table.
- *
- * This function performs a complete cleanup of the global stream hash table.
- * It safely handles the case where the hash table is already empty.
- * After clearing, the global pointer is set to NULL to prevent dangling references.
- *
- * @note This function should be called during shutdown or when a complete reset is needed.
- * @note This is a destructive operation - all stream entries will be removed.
  */
 void clear_stream(void) {
     if (all_stream) {
@@ -120,21 +92,13 @@ void clear_stream(void) {
 
 /**
  * @brief Retrieves a stream from the global hash table by its ID.
- *
- * @param id The unique identifier of the stream to find
- * @return struct tmux_stream* Pointer to the found stream, or NULL if not found
- * 
- * @note This function is thread-safe since the hash table operations are atomic
- * @note Returns NULL if the global hash table is not initialized
  */
 struct tmux_stream *get_stream_by_id(uint32_t id) {
-    // Early return if hash table is not initialized
     if (!all_stream) {
         debug(LOG_DEBUG, "Stream hash table not initialized");
         return NULL;
     }
 
-    // Look up stream in hash table
     struct tmux_stream *stream = NULL;
     HASH_FIND_INT(all_stream, &id, stream);
 
@@ -147,11 +111,6 @@ struct tmux_stream *get_stream_by_id(uint32_t id) {
 
 /**
  * @brief Retrieves the current tmux stream.
- *
- * Returns a pointer to the current multiplexed TCP stream that is being processed.
- * This stream represents the active connection being handled by the TCP multiplexer.
- *
- * @return Pointer to the current tmux_stream structure, or NULL if no stream is active
  */
 struct tmux_stream *get_cur_stream() {
     return cur_stream;
@@ -159,33 +118,16 @@ struct tmux_stream *get_cur_stream() {
 
 /**
  * @brief Sets the current tmux stream.
- *
- * Sets the global current stream pointer. This function performs validation
- * to ensure we don't set an invalid stream pointer.
- *
- * @param stream Pointer to the tmux stream to set as current. Can be NULL to clear.
  */
 void set_cur_stream(struct tmux_stream *stream) {
-    // No validation needed since NULL is valid to clear current stream
     cur_stream = stream;
-    
-    debug(LOG_DEBUG, "Current stream %s", 
-          stream ? "updated" : "cleared");
+    debug(LOG_DEBUG, "Current stream %s", stream ? "updated" : "cleared");
 }
 
 /**
  * @brief Initializes a tmux stream with the given parameters.
- *
- * This function sets up a tmux stream by initializing its ID, state,
- * receive window, send window, and ring buffers. It also adds the stream
- * to the stream management system.
- *
- * @param stream Pointer to the tmux_stream structure to be initialized.
- * @param id The unique identifier for the stream.
- * @param state The initial state of the stream, specified by the tcp_mux_state enum.
  */
 void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_state state) {
-    // Validate input parameters
     if (!stream) {
         debug(LOG_ERR, "Invalid stream pointer");
         return;
@@ -196,33 +138,17 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
         return;
     }
 
-    // Initialize stream properties
-    // recv_window: 8MB to match FRPS v0.68.1 large WINDOW_UPDATE increments
-    // send_window: 256KB initial (matches yamux protocol)
     stream->id = id;
     stream->state = state;
     stream->recv_window = MAX_STREAM_WINDOW_SIZE;  // 8MB
     stream->send_window = 256 * 1024;  // 256KB initial (matches yamux initialStreamWindow)
 
-    // Clear ring buffers
-    memset(&stream->rx_ring, 0, sizeof(struct ring_buffer));
-
-    // Add stream to global tracking
     add_stream(stream);
-    
     debug(LOG_DEBUG, "Initialized stream %u with state %d", id, state);
 }
 
 /**
  * @brief Validates the TCP MUX protocol header.
- *
- * This function checks if the provided TCP MUX header has a valid version
- * and type. The header is considered valid if its version matches the
- * expected protocol version and its type does not exceed the maximum
- * allowed type (GO_AWAY).
- *
- * @param tmux_hdr Pointer to the TCP MUX header to be validated.
- * @return Returns 1 if the header is valid, 0 otherwise.
  */
 int validate_tcp_mux_protocol(struct tcp_mux_header *tmux_hdr) {
     if (tmux_hdr->version != proto_version)
@@ -236,23 +162,10 @@ int validate_tcp_mux_protocol(struct tcp_mux_header *tmux_hdr) {
 
 /**
  * @brief Encodes a TCP multiplexer header with the specified parameters
- *
- * This function fills a TCP multiplexer header structure with the provided values,
- * performing necessary network byte order conversions for cross-platform compatibility.
- *
- * @param type The type of TCP multiplexer message (e.g., DATA, WINDOW_UPDATE)
- * @param flags Control flags for the message
- * @param stream_id Identifier for the stream this message belongs to
- * @param length Length of the message payload
- * @param tmux_hdr Pointer to header structure to be filled
- *
- * @pre tmux_hdr must not be NULL
- * @pre type must be a valid tcp_mux_type enum value
  */
 void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags,
                     uint32_t stream_id, uint32_t length,
                     struct tcp_mux_header *tmux_hdr) {
-    // Validate input parameters
     if (!tmux_hdr) {
         debug(LOG_ERR, "NULL header pointer provided");
         return;
@@ -263,11 +176,8 @@ void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags,
         return;
     }
 
-    // Fill header fields with provided values
     tmux_hdr->version = proto_version;
     tmux_hdr->type = type;
-    
-    // Convert multi-byte fields to network byte order
     tmux_hdr->flags = htons(flags);
     tmux_hdr->stream_id = htonl(stream_id);
     tmux_hdr->length = length ? htonl(length) : 0;
@@ -275,13 +185,6 @@ void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags,
 
 /**
  * @brief Gets the TCP multiplexing configuration flag.
- *
- * Retrieves the TCP multiplexing flag from the common configuration.
- * This flag determines whether TCP multiplexing is enabled for the
- * current session.
- *
- * @return The TCP multiplexing flag value from configuration
- *         Returns 0 if configuration is not available
  */
 static uint32_t tcp_mux_flag() {
     static int cached = -1;
@@ -298,9 +201,6 @@ static uint32_t tcp_mux_flag() {
 
 /**
  * @brief Resets the global session ID to its initial value.
- *
- * This function sets the global session ID (g_session_id) to 1.
- * It is typically used to reinitialize the session ID counter.
  */
 void reset_session_id() {
     __atomic_store_n(&g_session_id, 1, __ATOMIC_SEQ_CST);
@@ -308,14 +208,6 @@ void reset_session_id() {
 
 /**
  * @brief Generates the next unique session ID.
- *
- * This function generates a monotonically increasing session ID by incrementing
- * the global session ID counter by 2. This ensures each new session gets a unique
- * odd-numbered ID, while even numbers are reserved for other purposes.
- *
- * @return The newly generated session ID
- * 
- * @note The function increments by 2 to maintain odd-numbered IDs
  */
 uint32_t get_next_session_id() {
     uint32_t current_id = __atomic_fetch_add(&g_session_id, 2, __ATOMIC_SEQ_CST);
@@ -324,33 +216,20 @@ uint32_t get_next_session_id() {
 
 /**
  * @brief Sends a TCP multiplexer window update message
- *
- * Constructs and sends a window update message through the specified bufferevent.
- * The message includes flags, stream ID and window size delta information.
- *
- * @param bout The bufferevent to write the window update to
- * @param flags Control flags for the window update
- * @param stream_id ID of the stream being updated
- * @param delta Change in window size
- *
- * @note Function silently returns if bufferevent is invalid
  */
 static void tcp_mux_send_win_update(struct bufferevent *bout,
                                    enum tcp_mux_flag flags,
                                    uint32_t stream_id,
                                    uint32_t delta) {
-    // Validate bufferevent
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for window update");
         return;
     }
 
-    // Prepare header
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(WINDOW_UPDATE, flags, stream_id, delta, &tmux_hdr);
 
-    // Send window update
     if (bufferevent_write(bout, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
         debug(LOG_ERR, "Failed to send window update for stream %u", stream_id);
         return;
@@ -362,150 +241,92 @@ static void tcp_mux_send_win_update(struct bufferevent *bout,
 
 /**
  * @brief Sends a window update with SYN flag for a TCP multiplexed stream.
- *
- * This function sends a window update message with the SYN flag set for 
- * a specified stream. The message is only sent if TCP multiplexing is enabled.
- *
- * @param bout The bufferevent to write the window update to
- * @param stream_id The ID of the stream to send the update for
- *
- * @note Function silently returns if TCP multiplexing is disabled
- *       or if bufferevent is invalid
  */
 void tcp_mux_send_win_update_syn(struct bufferevent *bout, uint32_t stream_id) {
-    // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
         debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
     }
 
-    // Validate bufferevent
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for SYN");
         return;
     }
 
-    // Send window update with SYN flag
     tcp_mux_send_win_update(bout, SYN, stream_id, 0);
     debug(LOG_DEBUG, "Sent SYN for stream %u", stream_id);
 }
 
 /**
  * @brief Sends a window update acknowledgment for a TCP multiplexed stream.
- *
- * This function sends a window update acknowledgment message for a specified stream
- * if TCP multiplexing is enabled. It includes validation checks and proper error handling.
- *
- * @param bout Pointer to the bufferevent structure to send the acknowledgment through
- * @param stream_id The ID of the stream being acknowledged
- * @param delta The window size delta (currently unused, kept for API compatibility)
- *
- * @note Function silently returns if TCP multiplexing is disabled or if bufferevent is invalid
  */
 void tcp_mux_send_win_update_ack(struct bufferevent *bout, uint32_t stream_id,
                                 uint32_t delta) {
-    // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
         debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
     }
 
-    // Validate bufferevent
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for ACK");
         return;
     }
 
-    // Send window update with ACK flag
     tcp_mux_send_win_update(bout, ACK, stream_id, 0);
     debug(LOG_DEBUG, "Sent ACK for stream %u", stream_id);
 }
 
 /**
  * Sends a window update with a FIN flag for a given stream.
- *
- * This function checks if the TCP multiplexing flag is enabled. If it is,
- * it sends a window update with the FIN flag for the specified stream ID.
- *
- * @param bout A pointer to the bufferevent structure where the window update will be sent.
- * @param stream_id The ID of the stream for which the window update with FIN flag is sent.
  */
 void tcp_mux_send_win_update_fin(struct bufferevent *bout, uint32_t stream_id) {
-    // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
         debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
     }
 
-    // Validate bufferevent
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for FIN");
         return;
     }
 
-    // Send window update with FIN flag
     tcp_mux_send_win_update(bout, FIN, stream_id, 0);
     debug(LOG_DEBUG, "Sent FIN for stream %u", stream_id);
 }
 
 /**
  * @brief Sends a window update with RST flag for a TCP multiplexed stream
- *
- * This function sends a window update message with the RST (reset) flag set for
- * the specified stream ID. The message is only sent if TCP multiplexing is enabled.
- *
- * @param bout The bufferevent to write the window update to
- * @param stream_id The ID of the stream to reset
- *
- * @note Function silently returns if TCP multiplexing is disabled
- *       or if bufferevent is invalid
  */
 void tcp_mux_send_win_update_rst(struct bufferevent *bout, uint32_t stream_id) {
-    // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
         debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
     }
 
-    // Validate bufferevent
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for RST");
         return;
     }
 
-    // Send window update with RST flag
     tcp_mux_send_win_update(bout, RST, stream_id, 0);
     debug(LOG_DEBUG, "Sent RST for stream %u", stream_id);
 }
 
 /**
  * @brief Sends data over a TCP multiplexed connection.
- *
- * This function sends data over a TCP multiplexed connection using the provided
- * bufferevent. It first checks if the TCP multiplexing flag is set. If not, it
- * returns immediately. Otherwise, it prepares a TCP multiplexing header, encodes
- * the provided data into the header, and writes the header to the bufferevent.
- *
- * @param bout The bufferevent to write the data to.
- * @param flags Flags indicating the status or type of the data.
- * @param stream_id The ID of the stream to which the data belongs.
- * @param length The length of the data to be sent.
  */
 void tcp_mux_send_data(struct bufferevent *bout, enum tcp_mux_flag flags,
                        uint32_t stream_id, uint32_t length) {
-    // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
         debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
     }
 
-    // Validate input parameters
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for sending data");
         return;
     }
 
-    // Prepare and send header
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(DATA, flags, stream_id, length, &tmux_hdr);
@@ -517,10 +338,6 @@ void tcp_mux_send_data(struct bufferevent *bout, enum tcp_mux_flag flags,
 
 /**
  * @brief Sends a MUX DATA header and payload in a single write operation.
- *
- * This is more efficient than calling tcp_mux_send_data() followed by a
- * separate bufferevent_write() for the payload, as it avoids two separate
- * buffer insertions and the associated overhead.
  */
 static int tcp_mux_send_data_with_payload(struct bufferevent *bout,
                                            enum tcp_mux_flag flags,
@@ -537,9 +354,6 @@ static int tcp_mux_send_data_with_payload(struct bufferevent *bout,
 
     struct evbuffer *out = bufferevent_get_output(bout);
 
-    /* Use evbuffer_reserve_space for single-operation header+data write.
-     * This writes header and data into the evbuffer chain with minimal
-     * fragmentation, and libevent will flush via writev to the socket. */
     struct evbuffer_iovec iovec[2];
     int nvecs = evbuffer_reserve_space(out, sizeof(tmux_hdr) + length, iovec, 2);
     if (nvecs < 1) {
@@ -579,31 +393,18 @@ static int tcp_mux_send_data_with_payload(struct bufferevent *bout,
 
 /**
  * @brief Sends a ping message over a TCP multiplexed connection
- *
- * This function constructs and sends a ping message with the SYN flag set
- * if TCP multiplexing is enabled. The ping message includes a unique ping ID
- * for tracking responses.
- *
- * @param bout The bufferevent to send the ping through
- * @param ping_id Unique identifier for this ping message
- * 
- * @note Function silently returns if TCP multiplexing is disabled
- *       or if bufferevent is invalid
  */
 void tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id) {
-    // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
         debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
     }
 
-    // Validate bufferevent
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for ping");
         return;
     }
 
-    // Prepare and send ping message
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(PING, SYN, 0, ping_id, &tmux_hdr);
@@ -615,31 +416,18 @@ void tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id) {
 
 /**
  * @brief Handles TCP multiplexer ping messages by sending an acknowledgment.
- *
- * This function responds to ping messages with a ping acknowledgment (ACK).
- * It validates input parameters and TCP multiplexing status before sending
- * the response.
- *
- * @param bout The bufferevent to write the ping acknowledgment to
- * @param ping_id The ID of the ping message to acknowledge
- *
- * @note The function will silently return if TCP multiplexing is disabled
- *       or if the bufferevent is invalid
  */
 static void tcp_mux_handle_ping(struct bufferevent *bout, uint32_t ping_id) {
-    // Early return if TCP multiplexing is disabled
     if (!tcp_mux_flag()) {
         debug(LOG_DEBUG, "TCP multiplexing is disabled");
         return;
     }
 
-    // Validate bufferevent
     if (!bout) {
         debug(LOG_ERR, "Invalid bufferevent for ping response");
         return;
     }
 
-    // Prepare and send ping acknowledgment
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(PING, ACK, 0, ping_id, &tmux_hdr);
@@ -651,27 +439,18 @@ static void tcp_mux_handle_ping(struct bufferevent *bout, uint32_t ping_id) {
 
 /**
  * @brief Sends a GO_AWAY message using the provided bufferevent.
- *
- * This function constructs a GO_AWAY message and sends it through the specified
- * bufferevent. The message is sent only if the tcp_mux_flag() returns true.
- *
- * @param bout The bufferevent through which the GO_AWAY message will be sent.
- * @param reason The reason code to be included in the GO_AWAY message.
  */
 static void tcp_mux_send_go_away(struct bufferevent *bout, uint32_t reason) {
-    // Early return if TCP multiplexing is disabled or buffer event is invalid
     if (!tcp_mux_flag() || !bout) {
         debug(LOG_ERR, "Cannot send GO_AWAY: invalid state or parameters");
         return;
     }
 
-    // Validate reason code
     if (reason > INTERNAL_ERR) {
         debug(LOG_WARNING, "Invalid GO_AWAY reason code: %u", reason);
         reason = INTERNAL_ERR;
     }
 
-    // Prepare and send header
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(GO_AWAY, 0, 0, reason, &tmux_hdr);
@@ -683,14 +462,6 @@ static void tcp_mux_send_go_away(struct bufferevent *bout, uint32_t reason) {
 
 /**
  * @brief Processes the given flags and updates the state of the tmux stream accordingly.
- *
- * This function handles the ACK, FIN, and RST flags and transitions the state of the 
- * tmux stream based on the current state and the received flags. It also handles the 
- * closing of the stream if necessary.
- *
- * @param flags The flags to process.
- * @param stream The tmux stream to update.
- * @return Returns 1 on success, 0 on failure.
  */
 static int process_flags(uint16_t flags, struct tmux_stream *stream) {
     bool should_close = false;
@@ -742,13 +513,6 @@ static int process_flags(uint16_t flags, struct tmux_stream *stream) {
 
 /**
  * @brief Get the flags to be sent based on the current state of the stream.
- *
- * This function determines the appropriate flags to be sent based on the 
- * current state of the given tmux_stream. It also updates the state of the 
- * stream accordingly.
- *
- * @param stream A pointer to the tmux_stream structure.
- * @return A uint16_t value representing the flags to be sent.
  */
 static enum tcp_mux_flag get_send_flags(struct tmux_stream *stream) {
     enum tcp_mux_flag flags = ZERO;
@@ -775,17 +539,8 @@ static enum tcp_mux_flag get_send_flags(struct tmux_stream *stream) {
 
 /**
  * @brief Sends a window update message for stream flow control.
- *
- * Updates the receive window for a stream and sends a window update message
- * whenever processed data has reduced the advertised receive window.
- *
- * @param bout Buffered output event for sending data.
- * @param stream Pointer to the tmux stream to update.
- * @param length Current receive buffer length.
  */
 void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, uint32_t length) {
-    // When called with length=0 during stream init, only send SYN flag if needed.
-    // Don't send a WINDOW_UPDATE — the peer hasn't sent any data yet.
     if (length == 0) {
         enum tcp_mux_flag flags = get_send_flags(stream);
         if (flags != ZERO) {
@@ -794,8 +549,6 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
         return;
     }
 
-    // Always replenish recv_window and send WINDOW_UPDATE when data is processed.
-    // This keeps the peer from stalling behind a stale advertised window.
     const uint32_t max_window = MAX_STREAM_WINDOW_SIZE;
     uint32_t delta = (stream->recv_window < max_window) ? (max_window - stream->recv_window) : 0;
     if (delta == 0) {
@@ -811,128 +564,14 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
 }
 
 /**
- * Pops data from a ring buffer.
- * 
- * @param ring  Pointer to the ring buffer structure to pop from
- * @param data  Pointer to buffer where popped data will be stored
- * @param len   Number of bytes to pop from the ring buffer
- * 
- * @pre   ring->sz must be >= len
- * @pre   data pointer must not be NULL
- * 
- * @return The number of bytes popped from the buffer (equal to len)
+ * @brief Processes data from a tmux DATA frame and dispatches to protocol handlers.
  *
- * This function removes len bytes from the ring buffer and copies them
- * to the provided data buffer. The ring buffer's current position and size
- * are updated accordingly. When reaching the end of the buffer, it wraps
- * around to the beginning.
+ * Reads the payload directly from the control bev (no intermediate ring buffer)
+ * and dispatches to the appropriate protocol handler.
  */
-int rx_ring_buffer_pop(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
-    // Validate input parameters
-    if (ring->sz < len) {
-        debug(LOG_ERR, "Ring buffer underflow: requested %u bytes, available %u bytes", len, ring->sz);
-        return 0;
-    }
-
-    // Special case: If data is NULL, just discard bytes from the buffer
-    if (data == NULL) {
-        debug(LOG_DEBUG, "Discarding %u bytes from ring buffer", len);
-        uint32_t remaining = len;
-        
-        while (remaining > 0) {
-            // Calculate maximum contiguous chunk that can be discarded
-            uint32_t chunk = MIN(remaining, RBUF_SIZE - ring->cur);
-            
-            // Update ring buffer state
-            ring->cur = (ring->cur + chunk) % RBUF_SIZE;
-            ring->sz -= chunk;
-            remaining -= chunk;
-        }
-        
-        return len;
-    }
-
-    // Normal case: Copy data from the buffer
-    // Fast path: no wrap-around, single memcpy
-    if (ring->cur + len <= RBUF_SIZE) {
-        memcpy(data, &ring->data[ring->cur], len);
-        ring->cur = (ring->cur + len) % RBUF_SIZE;
-        ring->sz -= len;
-        return len;
-    }
-
-    // Slow path: data wraps around, copy in two chunks
-    uint32_t remaining = len;
-    uint8_t *dst = data;
-
-    while (remaining > 0) {
-        // Calculate maximum contiguous chunk that can be copied
-        uint32_t chunk = MIN(remaining, RBUF_SIZE - ring->cur);
-        
-        // Copy data from buffer to destination
-        memcpy(dst, &ring->data[ring->cur], chunk);
-        
-        // Advance destination pointer
-        dst += chunk;
-        
-        // Update ring buffer state
-        ring->cur = (ring->cur + chunk) % RBUF_SIZE;
-        ring->sz -= chunk;
-        remaining -= chunk;
-    }
-
-    return len;
-}
-
-int rx_ring_buffer_peek(struct ring_buffer *ring, uint8_t *data, uint32_t len) {
-    if (ring->sz < len) {
-        debug(LOG_ERR, "Ring buffer peek underflow: requested %u bytes, available %u bytes", len, ring->sz);
-        return 0;
-    }
-    assert(data);
-
-    uint32_t remaining = len;
-    uint8_t *dst = data;
-    uint32_t cur = ring->cur; // Use a local copy of cursor, don't modify the original
-
-    while (remaining > 0) {
-        uint32_t chunk = MIN(remaining, RBUF_SIZE - cur);
-        memcpy(dst, &ring->data[cur], chunk);
-        dst += chunk;
-        cur = (cur + chunk) % RBUF_SIZE; // Only update local cursor
-        remaining -= chunk;
-    }
-
-    return len;
-}
-
-/**
- * @brief Processes data received from a tmux stream
- *
- * This function handles data received from a multiplexed stream, managing window size
- * and forwarding data to appropriate handlers based on proxy type.
- *
- * @param stream Pointer to the tmux_stream structure containing stream information
- * @param length Length of data to be processed
- * @param flags Stream control flags
- * @param fn Callback function to handle processed data
- * @param param Additional parameters (typically proxy client structure)
- *
- * @return Returns length of processed data on success, 0 on failure
- *
- * The function performs the following operations:
- * - Validates stream and flags
- * - Checks receive window capacity
- * - Updates receive window size
- * - Handles data forwarding based on proxy type:
- *   - Regular proxy: Uses provided callback function
- *   - SOCKS5 proxy: Forwards to SOCKS5 client
- *   - Local proxy: Writes to local proxy bufferevent
- * - Sends window update after processing
- */
-static int process_data(struct tmux_stream *stream, uint32_t length,
-                        uint16_t flags, void (*handle_fn)(uint8_t *, int, void *),
-                        void *param) {
+int process_data(struct bufferevent *bev, struct tmux_stream *stream,
+                 uint32_t length, uint16_t flags,
+                 void (*handle_fn)(uint8_t *, int, void *), void *param) {
     if (!stream || !handle_fn) {
         debug(LOG_ERR, "Invalid parameters in process_data");
         return 0;
@@ -961,57 +600,75 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
     struct proxy_client *pc = (struct proxy_client *)param;
     uint32_t bytes_processed = 0;
 
-    if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps) && !is_iod_proxy(pc->ps) && !has_service_type(pc->ps))) {
+    if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps) && !has_service_type(pc->ps))) {
+        /* Default callback path: read payload from bev and pass to handler */
         uint8_t *data = calloc(length + 1, sizeof(uint8_t));
         if (!data) {
             debug(LOG_ERR, "Memory allocation failed for data buffer");
             return 0;
         }
 
+        size_t nr = bufferevent_read(bev, data, length);
+        if (nr != length) {
+            debug(LOG_ERR, "Stream %u: short read %zu/%u in default path",
+                  stream_id, nr, length);
+            free(data);
+            return 0;
+        }
+
         debug(LOG_DEBUG, "Stream %u: entering default callback path length=%u",
               stream_id, length);
-        bytes_processed = rx_ring_buffer_pop(&stream->rx_ring, data, length);
-        handle_fn(data, bytes_processed, pc);
-        debug(LOG_DEBUG, "Stream %u: leaving default callback path requested=%u processed=%u",
-              stream_id, length, bytes_processed);
+        handle_fn(data, length, pc);
+        debug(LOG_DEBUG, "Stream %u: leaving default callback path processed=%u",
+              stream_id, length);
         free(data);
+        bytes_processed = length;
     } else if (has_service_type(pc->ps)) {
         debug(LOG_DEBUG, "Stream %u: entering xdpi path length=%u service_type=%d",
               stream_id, length, pc->ps ? pc->ps->service_type : -1);
-        bytes_processed = handle_xdpi(pc, &stream->rx_ring, length);
-        debug(LOG_DEBUG, "Stream %u: leaving xdpi path requested=%u processed=%u",
-              stream_id, length, bytes_processed);
-    } else if (is_iod_proxy(pc->ps)) {
-        debug(LOG_DEBUG, "Stream %u: entering iod path length=%u",
+        handle_xdpi(pc, bev, length);
+        bytes_processed = length;
+        debug(LOG_DEBUG, "Stream %u: leaving xdpi path processed=%u",
               stream_id, length);
-        bytes_processed = handle_iod(pc, &stream->rx_ring, length);
-        debug(LOG_DEBUG, "Stream %u: leaving iod path requested=%u processed=%u",
-              stream_id, length, bytes_processed);
     } else if (is_socks5_proxy(pc->ps)) {
         debug(LOG_DEBUG, "Stream %u: entering socks5 path length=%u",
               stream_id, length);
-        bytes_processed = handle_ss5(pc, &stream->rx_ring, length);
-        debug(LOG_DEBUG, "Stream %u: leaving socks5 path requested=%u processed=%u",
-              stream_id, length, bytes_processed);
+        handle_socks5(pc, bev, length);
+        bytes_processed = length;
+        debug(LOG_DEBUG, "Stream %u: leaving socks5 path processed=%u",
+              stream_id, length);
     } else {
-        // Simple data forwarding logic
+        /* Ordinary local forwarding: read from bev, write directly to local_proxy_bev */
         debug(LOG_DEBUG, "Stream %u: entering local proxy path length=%u local_proxy_bev=%p",
               stream_id, length, pc->local_proxy_bev);
-        bytes_processed = tx_ring_buffer_write(pc->local_proxy_bev, 
-                                              &stream->rx_ring, 
-                                              length);
-        debug(LOG_DEBUG, "Stream %u: leaving local proxy path requested=%u processed=%u local_proxy_bev=%p",
-              stream_id, length, bytes_processed, pc->local_proxy_bev);
+
+        struct evbuffer *src = bufferevent_get_input(bev);
+        struct evbuffer *dst = bufferevent_get_output(pc->local_proxy_bev);
+
+        /* Transfer payload from control bev to local proxy bev.
+         * Use evbuffer_add_buffer which drains src automatically. */
+        size_t avail = evbuffer_get_length(src);
+        size_t to_copy = MIN(length, avail);
+        if (to_copy > 0) {
+            if (evbuffer_add(dst, evbuffer_pullup(src, to_copy), to_copy) == 0) {
+                evbuffer_drain(src, to_copy);
+                bytes_processed = to_copy;
+            } else {
+                debug(LOG_ERR, "Stream %u: evbuffer_add failed", stream_id);
+            }
+        }
+
+        debug(LOG_DEBUG, "Stream %u: leaving local proxy path processed=%u/%u",
+              stream_id, bytes_processed, length);
     }
-    
 
     struct bufferevent *bout = get_main_control()->connect_bev;
     if (bytes_processed != length) {
         debug(LOG_ERR,
               "Stream %u: incomplete transfer processed=%u expected=%u "
               "pc=%p connected=%d work_started=%d pending_close=%d "
-              "xdpi_state=%d socks5_state=%d iod_state=%d stream_state=%d "
-              "local_proxy_bev=%p local_proxy_bev_valid=%d recv_window=%u "
+              "xdpi_state=%d socks5_state=%d stream_state=%d "
+              "local_proxy_bev=%p recv_window=%u "
               "proxy_type=%s service_type=%d",
               stream_id, bytes_processed, length,
               pc,
@@ -1020,10 +677,8 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
               pc ? pc->pending_close : -1,
               pc ? pc->xdpi_state : -1,
               pc ? pc->state : -1,
-              pc ? pc->iod_state : -1,
               stream->state,
               pc ? pc->local_proxy_bev : NULL,
-              (pc && pc->local_proxy_bev) ? 1 : 0,
               stream->recv_window,
               (pc && pc->ps && pc->ps->proxy_type) ? pc->ps->proxy_type : "null",
               (pc && pc->ps) ? pc->ps->service_type : -1);
@@ -1038,49 +693,29 @@ static int process_data(struct tmux_stream *stream, uint32_t length,
 
 /**
  * @brief Increases the send window of a multiplexed TCP stream.
- *
- * This function handles the send window increment for a TCP multiplexed stream.
- * It processes the flags, validates the stream exists, and updates its send window.
- * When the send window transitions from 0, it re-enables read events on the buffer.
- *
- * @param bev The bufferevent associated with the connection
- * @param tmux_hdr Pointer to the TCP multiplexer header containing length info
- * @param flags The flags from the TCP multiplexer header
- * @param stream Pointer to the stream to update
- *
- * @return 1 on successful window increment, 0 on invalid stream or failed flag processing
  */
 static int incr_send_window(struct bufferevent *bev,
                             struct tcp_mux_header *tmux_hdr, uint16_t flags,
                             struct tmux_stream *stream) {
-    // Validate input parameters
     if (!bev || !tmux_hdr || !stream) {
         debug(LOG_ERR, "Invalid parameters in incr_send_window");
         return 0;
     }
 
-    // Save stream ID for later use
     uint32_t stream_id = stream->id;
 
-    // Process control flags first
     if (!process_flags(flags, stream)) {
         debug(LOG_ERR, "Failed to process flags for stream %d", stream_id);
         return 0;
     }
 
-    // Verify stream still exists after flag processing
     if (!get_stream_by_id(stream_id)) {
         debug(LOG_DEBUG, "Stream %d no longer exists", stream_id);
         return 1;
     }
 
-    // Get window increment size
     uint32_t increment = ntohl(tmux_hdr->length);
 
-    // Validate increment: reject values that exceed the protocol maximum or
-    // would overflow the 32-bit send_window counter.  Malformed or repeated
-    // WINDOW_UPDATE frames from the peer must not be allowed to grow the
-    // window beyond MAX_STREAM_WINDOW_SIZE.
     if (increment > MAX_STREAM_WINDOW_SIZE) {
         debug(LOG_ERR, "Stream %d: WINDOW_UPDATE increment %u exceeds maximum %u",
               stream_id, increment, MAX_STREAM_WINDOW_SIZE);
@@ -1096,15 +731,6 @@ static int incr_send_window(struct bufferevent *bev,
         stream->send_window += increment;
     }
 
-    /* Cap send_window at MAX_YAMUX_WINDOW_SIZE to match frps's
-     * MaxStreamWindowSize (6MB).  Without this cap, xfrpc's send_window
-     * can grow to 8MB via WINDOW_UPDATE, but yamux's recvWindow is capped
-     * at 6MB.  When recvBuf accumulates (curl slow), recvWindow shrinks
-     * below 6MB.  If xfrpc then sends a frame larger than recvWindow,
-     * yamux returns ErrRecvWindowExceeded and RSTs the entire session.
-     *
-     * Capping at 6MB ensures xfrpc never sends a frame that yamux
-     * would reject under normal flow conditions. */
     if (stream->send_window > MAX_YAMUX_WINDOW_SIZE) {
         debug(LOG_DEBUG, "Stream %u: capping send_window %u to MAX_YAMUX_WINDOW_SIZE %u",
               stream_id, stream->send_window, MAX_YAMUX_WINDOW_SIZE);
@@ -1123,8 +749,6 @@ static int incr_send_window(struct bufferevent *bev,
         return 1;
     }
 
-    // No tx_ring to drain — data stays in nginx evbuffer.
-    // If pending_close, send FIN immediately.
     if (pc->pending_close) {
         struct bufferevent *bout = get_main_control()->connect_bev;
         if (bout) {
@@ -1134,10 +758,6 @@ static int incr_send_window(struct bufferevent *bev,
         return 1;
     }
 
-    /* Re-enable EV_READ when:
-     * 1. The 0->nonzero send_window transition just happened (backpressure released), AND
-     * 2. send_window is still > 0.
-     * Data stays in nginx evbuffer — the callback will re-read it directly. */
     if (old_window == 0 && stream->send_window > 0 && pc->local_proxy_bev) {
         debug(LOG_DEBUG,
               "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p",
@@ -1150,13 +770,6 @@ static int incr_send_window(struct bufferevent *bev,
 
 /**
  * @brief Handles incoming stream requests
- *
- * Processes new incoming stream requests identified by stream_id. If local_go_away
- * is set, sends a window update reset message and rejects the stream. Otherwise,
- * creates a new stream (TODO implementation).
- *
- * @param stream_id The unique identifier for the incoming stream
- * @return 0 if stream is rejected due to local_go_away, 1 if stream should be created
  */
 static int incoming_stream(uint32_t stream_id) {
     if (local_go_away) {
@@ -1165,35 +778,11 @@ static int incoming_stream(uint32_t stream_id) {
         return 0;
     }
 
-    // TODO
-    // create new stream
     return 1;
 }
 
 /**
  * @brief Handles TCP multiplexer ping messages
- * 
- * This function processes incoming TCP multiplexer ping headers. If the SYN flag
- * is set in the header flags, it retrieves the main control connection's bufferevent
- * and handles the ping with the specified ping ID.
- *
- * @param tmux_hdr Pointer to the TCP multiplexer header structure containing
- *                 the ping message information
- * 
- * @note The ping_id and flags are converted from network to host byte order
- *       before processing
- */
-/**
- * @brief Handles TCP multiplexer ping messages
- * 
- * Processes incoming TCP multiplexer ping messages and sends appropriate responses.
- * When a SYN flag is received in the ping message, it sends back a ping acknowledgment
- * to maintain connection liveliness.
- *
- * @param tmux_hdr Pointer to the TCP multiplexer header containing ping information
- *
- * @note Only responds to pings with SYN flag set
- * @note Ping ID is converted from network byte order before processing
  */
 void handle_tcp_mux_ping(struct tcp_mux_header *tmux_hdr) {
     if (!tmux_hdr) {
@@ -1205,7 +794,6 @@ void handle_tcp_mux_ping(struct tcp_mux_header *tmux_hdr) {
     uint16_t flags = ntohs(tmux_hdr->flags);
     uint32_t ping_id = ntohl(tmux_hdr->length);
 
-    // Only handle ping messages with SYN flag
     if ((flags & SYN) == SYN) {
         if (!(bout = get_main_control()->connect_bev)) {
             debug(LOG_ERR, "No valid bufferevent for ping response");
@@ -1217,19 +805,6 @@ void handle_tcp_mux_ping(struct tcp_mux_header *tmux_hdr) {
 
 /**
  * @brief Handles TCP multiplexer "go away" messages.
- * 
- * Processes "go away" messages received from the remote TCP multiplexer based on
- * provided error codes. Sets appropriate flags and logs error messages depending
- * on the specific error code received.
- *
- * @param tmux_hdr Pointer to the TCP multiplexer header structure containing
- *                 the "go away" message details
- *
- * Error codes handled:
- * - NORMAL: Sets remote_go_away flag
- * - PROTO_ERR: Logs protocol error
- * - INTERNAL_ERR: Logs internal error
- * - Other codes: Logs unexpected error
  */
 void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr) {
     if (!tmux_hdr) {
@@ -1240,7 +815,6 @@ void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr) {
     uint32_t code = ntohl(tmux_hdr->length);
     const char *error_msg = NULL;
 
-    // Map error codes to messages
     switch (code) {
         case NORMAL:
             remote_go_away = 1;
@@ -1256,7 +830,6 @@ void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr) {
             error_msg = "Unexpected error code";
     }
 
-    // Log the appropriate error message with the error code
     if (code != NORMAL) {
         debug(LOG_ERR, "GO_AWAY received: %s (code=%u)", error_msg, code);
     } else {
@@ -1265,68 +838,11 @@ void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr) {
 }
 
 /**
- * @brief Reads data from a bufferevent into a tmux stream's receive ring buffer
- * 
- * Reads up to the specified length of data from the given bufferevent into the 
- * stream's receive ring buffer. If the stream is not in ESTABLISHED state, a warning
- * will be logged but the read operation will still proceed.
+ * @brief Handles TCP multiplexing stream data and control messages (window updates only).
  *
- * @param bev The bufferevent to read data from
- * @param stream Pointer to the tmux stream structure
- * @param len Maximum number of bytes to read
- * @return The actual number of bytes read into the stream's ring buffer
- *
- * @note The function will assert if stream parameter is NULL
- */
-uint32_t tmux_stream_read(struct bufferevent *bev, struct tmux_stream *stream,
-                          uint32_t len) {
-    // Validate input parameters
-    if (!bev || !stream || len == 0) {
-        debug(LOG_ERR, "Invalid parameters passed to tmux_stream_read");
-        return 0;
-    }
-
-    // Check stream state
-    if (stream->state != ESTABLISHED) {
-        debug(LOG_ERR,
-              "Stream %d is in state %d (not ESTABLISHED). Incoming data %u bytes, just pop %u.",
-              stream->id, stream->state, len, stream->rx_ring.sz);
-        rx_ring_buffer_pop(&stream->rx_ring, NULL, stream->rx_ring.sz);
-        return 0;
-    }
-
-    // Perform the actual read operation
-    uint32_t bytes_read = rx_ring_buffer_read(bev, &stream->rx_ring, len);
-
-    // Log read operation result if debug is enabled
-    if (bytes_read < len) {
-        debug(LOG_DEBUG, "Stream %d: Read %u bytes (requested %u)",
-              stream->id, bytes_read, len);
-    }
-
-    return bytes_read;
-}
-
-/**
- * @brief Handles TCP multiplexing stream data and control messages
- *
- * This function processes incoming TCP multiplexing stream packets, handling different
- * types of messages including data transfer and window updates. It manages stream states
- * and ensures proper protocol flow.
- *
- * @param tmux_hdr Pointer to the TCP multiplexing header structure containing packet information
- * @param fn Callback function for handling stream data
- *
- * @return Returns the length of processed data on success, 0 on failure or when no data needs processing
- *
- * @note This function expects to be called from the client (xfrpc) side and will log a warning
- *       if it receives unexpected SYN flags
- *
- * The function performs the following:
- * - Validates stream existence and state
- * - Handles window update messages
- * - Processes data streams in ESTABLISHED state
- * - Manages protocol errors by sending GO_AWAY messages when necessary
+ * With the rx_ring removed, DATA frames are handled directly in handle_tcp_mux
+ * by reading the payload from bev and calling process_data. This function now
+ * only handles WINDOW_UPDATE messages and flag processing.
  */
 int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
                           handle_data_fn_t fn) {
@@ -1337,7 +853,6 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
     uint32_t stream_id = ntohl(tmux_hdr->stream_id);
     uint16_t flags = ntohs(tmux_hdr->flags);
 
-    // Handle incoming SYN packets (unexpected for xfrpc client)
     if ((flags & SYN) == SYN) {
         debug(LOG_INFO, "Unexpected SYN flag received for stream %d in xfrpc", stream_id);
         if (!incoming_stream(stream_id)) {
@@ -1346,17 +861,14 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
         return 0;
     }
 
-    // Validate stream exists
     struct tmux_stream *stream = get_stream_by_id(stream_id);
     if (!stream) {
         debug(LOG_ERR, "Stream %d not found", stream_id);
         return 0;
     }
 
-    struct proxy_client *pc = get_proxy_client(stream_id);
     struct bufferevent *bout = get_main_control()->connect_bev;
 
-    // Handle window updates
     if (tmux_hdr->type == WINDOW_UPDATE) {
         if (!incr_send_window(bout, tmux_hdr, flags, stream)) {
             debug(LOG_ERR, "Protocol error while handling window update");
@@ -1365,182 +877,19 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
         return 0;
     }
 
-    // Verify stream state
-    if (stream->state != ESTABLISHED) {
-        debug(LOG_ERR, "Stream %d not in ESTABLISHED state", stream_id);
-        return 0;
-    }
-
-    // Process data; ntohl returns an unsigned value – keep it unsigned to avoid
-    // sign-extension issues with large (>2 GB cumulative) transfer scenarios.
-    uint32_t length = ntohl(tmux_hdr->length);
-
-    // Validate receive window: reject data that exceeds the peer's receive window.
-    // This matches yamux behavior: if length > recvWindow, return protocol error.
-    if (length > stream->recv_window) {
-        debug(LOG_ERR, "Stream %d: receive window exceeded (length=%u, recv_window=%u)",
-              stream_id, length, stream->recv_window);
-        tcp_mux_send_go_away(bout, PROTO_ERR);
-        return 0;
-    }
-
-    if (!process_data(stream, length, flags, fn, (void *)pc)) {
-        debug(LOG_ERR, "Protocol error while processing data");
-        tcp_mux_send_go_away(bout, PROTO_ERR);
-        return 0;
-    }
-
-    return length;
-}
-
-/**
- * @brief Reads data from a bufferevent into a ring buffer
- *
- * This function reads data from the given bufferevent into the ring buffer up to the specified length,
- * handling buffer wrap-around and capacity limits.
- *
- * @param bev The bufferevent to read data from
- * @param ring Pointer to the ring buffer structure to store data
- * @param len The number of bytes to attempt to read
- *
- * @return The actual number of bytes read (may be less than len if buffer capacity is reached)
- *         Returns 0 if the ring buffer is already full
- *
- * @note Reading stops if the end pointer catches up to the current position (cur)
- *       The function handles wrap-around when end reaches RBUF_SIZE
- */
-uint32_t rx_ring_buffer_read(struct bufferevent *bev, struct ring_buffer *ring,
-                             uint32_t len) {
-    // Check if buffer is full - apply backpressure by returning 0
-    // The caller should handle this by not reading more data until buffer is consumed
-    if (ring->sz >= RBUF_SIZE) {
-        debug(LOG_DEBUG, "ring buffer is full, applying backpressure");
-        return 0;
-    }
-
-    // Calculate available capacity and adjust length if needed
-    uint32_t available_space = RBUF_SIZE - ring->sz;
-    uint32_t bytes_to_read = MIN(len, available_space);
-    uint32_t bytes_read = 0;
-
-    while (bytes_read < bytes_to_read) {
-        // Calculate contiguous space until buffer wrap
-        uint32_t contiguous_space = MIN(bytes_to_read - bytes_read, 
-                                      RBUF_SIZE - ring->end);
-        
-        // Read a block of contiguous data
-        uint32_t n = bufferevent_read(bev, 
-                                    &ring->data[ring->end], 
-                                    contiguous_space);
-        
-        ring->end = (ring->end + n) % RBUF_SIZE;
-        ring->sz += n;
-        bytes_read += n;
-
-        // Stop if we've caught up with read pointer
-        if (ring->cur == ring->end) {
-            break;
-        }
-    }
-
-    return bytes_read;
-}
-
-/**
- * @brief Writes data from a ring buffer to a bufferevent
- *
- * This function writes up to 'len' bytes from the ring buffer to the specified bufferevent.
- * It handles buffer wrapping at WBUF_SIZE boundary and updates ring buffer state accordingly.
- *
- * @param bev The bufferevent to write data to
- * @param ring Pointer to the ring buffer structure containing the data
- * @param len Maximum number of bytes to write
- *
- * @return The actual number of bytes written. Returns 0 if the ring buffer is empty.
- *         Otherwise returns the number of bytes successfully written, which may be
- *         less than or equal to len depending on available data in ring buffer.
- *
- * @note The function writes one byte at a time and handles buffer wraparound.
- *       It will stop writing if it reaches the end marker of the ring buffer.
- */
-uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring,
-                              uint32_t len) {
-    // Check for empty buffer
-    if (ring->sz == 0) {
-        debug(LOG_ERR, "ring buffer is empty");
-        return 0;
-    }
-
-    // Adjust length if it exceeds available data
-    len = MIN(len, ring->sz);
-
-    // Fast path: no wrap-around, single bufferevent_write
-    if (ring->cur + len <= WBUF_SIZE) {
-        bufferevent_write(bev, &ring->data[ring->cur], len);
-        ring->cur = (ring->cur + len) % WBUF_SIZE;
-        ring->sz -= len;
-        return len;
-    }
-
-    uint32_t bytes_to_write = len;
-    uint32_t contiguous_bytes;
-
-    while (bytes_to_write > 0) {
-        // Calculate contiguous bytes available until buffer wrap or end
-        contiguous_bytes = MIN(bytes_to_write, WBUF_SIZE - ring->cur);
-        
-        // Write contiguous block of data
-        bufferevent_write(bev, &ring->data[ring->cur], contiguous_bytes);
-        
-        // Update ring buffer state
-        ring->cur = (ring->cur + contiguous_bytes) % WBUF_SIZE;
-        ring->sz -= contiguous_bytes;
-        bytes_to_write -= contiguous_bytes;
-
-        // Check if we've reached the end marker
-        if (ring->cur == ring->end) {
-            assert(ring->sz == 0);
-            break;
-        }
-    }
-
-    return len - bytes_to_write;
+    return 0;
 }
 
 /**
  * @brief Writes data to a TCP multiplexing stream with flow control
- *
- * This function handles writing data to a TCP multiplexing stream while managing
- * flow control through send windows and buffering. It handles different stream
- * states and buffer conditions.
- *
- * @param bev The bufferevent structure for writing data
- * @param data Pointer to the data buffer to be written
- * @param length Length of the data to be written
- * @param stream Pointer to the tmux_stream structure containing stream state and buffers
- *
- * @return uint32_t Number of bytes processed (may be 0 if stream is closed or window is full)
- *
- * The function handles several cases:
- * - Returns 0 if stream is in CLOSED, LOCAL_CLOSE, or RESET state
- * - Buffers data if send window is 0
- * - Manages partial writes based on available send window size
- * - Sends data directly to mux (no intermediate buffer)
- *
- * Flow control is maintained through the stream's send_window, which is decremented
- * by the number of bytes processed.
  */
 int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
                       uint32_t length, struct tmux_stream *stream) {
-    // Check if the stream is in a closed state
     if (stream->state == LOCAL_CLOSE || stream->state == CLOSED || stream->state == RESET) {
         debug(LOG_INFO, "stream %d state is closed", stream->id);
         return -1;
     }
 
-    // No send window available — return 0 to signal caller to apply backpressure.
-    // Data stays in the caller's buffer (nginx evbuffer). Caller will retry when
-    // a WINDOW_UPDATE replenishes the send window.
     if (stream->send_window == 0) {
         debug(LOG_DEBUG, "Stream %u: tmux_stream_write blocked, send_window=0", stream->id);
         return 0;
@@ -1549,7 +898,6 @@ int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     enum tcp_mux_flag flags = get_send_flags(stream);
     struct bufferevent *bout = get_main_control()->connect_bev;
 
-    // Send up to min(send_window, length, DEFAULT_MAX_FRAME_SIZE)
     uint32_t to_send = length;
     if (to_send > stream->send_window) to_send = stream->send_window;
     if (to_send > DEFAULT_MAX_FRAME_SIZE) to_send = DEFAULT_MAX_FRAME_SIZE;
@@ -1571,18 +919,6 @@ int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
 
 /**
  * Handles the closure of a TCP multiplexing stream.
- *
- * This function manages the state transition during stream closure and sends
- * appropriate flags to the remote peer. It handles different states of the stream
- * including SYN_SEND, SYN_RECEIVED, ESTABLISHED, LOCAL_CLOSE, REMOTE_CLOSE,
- * CLOSED, and RESET.
- *
- * @param bout The bufferevent used for sending data
- * @param stream The tmux_stream structure to be closed
- *
- * @return Returns:
- *         - 0 if stream is already closed/reset or final closure is complete
- *         - 1 if stream entered LOCAL_CLOSE state but final closure is pending
  */
 int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream) {
     uint8_t should_close = 0;

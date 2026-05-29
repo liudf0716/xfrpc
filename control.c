@@ -1208,38 +1208,49 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 {
 	static struct tcp_mux_header tmux_hdr;
 	static uint32_t stream_len = 0;
+	static uint8_t partial_header = 0;  /* bytes of header accumulated so far */
 
 	while (len > 0) {
 		struct tmux_stream *cur = get_cur_stream();
 		size_t nr = 0;
 
 		if (!cur) {
-			memset(&tmux_hdr, 0, sizeof(tmux_hdr));
-			uint8_t *data = (uint8_t *)&tmux_hdr;
+			/* ---- Header accumulation ---- */
+			if (partial_header > 0) {
+				/* Continue reading partial header */
+				nr = bufferevent_read(bev, ((uint8_t *)&tmux_hdr) + partial_header,
+					                  sizeof(tmux_hdr) - partial_header);
+				partial_header += nr;
+				len -= nr;
+				if (partial_header < sizeof(tmux_hdr)) {
+					break; /* still incomplete */
+				}
+				partial_header = 0;
+			} else {
+				memset(&tmux_hdr, 0, sizeof(tmux_hdr));
 
-			if (len < sizeof(tmux_hdr)) {
-				debug(LOG_INFO, "len [%d] < sizeof tmux_hdr", len);
-				break;
+				if (len < (int)sizeof(tmux_hdr)) {
+					/* Read what we can, save partial header */
+					nr = bufferevent_read(bev, (uint8_t *)&tmux_hdr, len);
+					partial_header = nr;
+					len -= nr;
+					break;
+				}
+
+				nr = bufferevent_read(bev, (uint8_t *)&tmux_hdr, sizeof(tmux_hdr));
+				if (nr != sizeof(tmux_hdr)) {
+					debug(LOG_ERR, "Failed to read complete TCP mux header: got %zu, expected %zu",
+						  nr, sizeof(tmux_hdr));
+					break;
+				}
+				len -= nr;
 			}
 
-			nr = bufferevent_read(bev, data, sizeof(tmux_hdr));
-			if (nr != sizeof(tmux_hdr)) {
-				debug(LOG_ERR, "Failed to read complete TCP mux header: got %zu, expected %zu",
-					  nr, sizeof(tmux_hdr));
-				debug(LOG_ERR,
-				      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-				      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
-				break;
-			}
 			if (validate_tcp_mux_protocol(&tmux_hdr) <= 0) {
 				debug(LOG_ERR, "Invalid TCP mux protocol header (version=%d, type=%d)",
 					  tmux_hdr.version, tmux_hdr.type);
-				debug(LOG_ERR,
-				      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-				      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
 				break;
 			}
-			len -= nr;
 
 			if (tmux_hdr.type == DATA) {
 				uint32_t stream_id = ntohl(tmux_hdr.stream_id);
@@ -1247,9 +1258,6 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 				if (stream_len > MAX_STREAM_WINDOW_SIZE) {
 					debug(LOG_ERR, "Stream %u: DATA length %u exceeds maximum %u, aborting",
 					      stream_id, stream_len, MAX_STREAM_WINDOW_SIZE);
-					debug(LOG_ERR,
-					      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-					      len, stream_len, tmux_hdr.type, stream_id);
 					break;
 				}
 				cur = get_stream_by_id(stream_id);
@@ -1266,85 +1274,47 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 					set_cur_stream(cur);
 					break;
 				}
-				if (len >= stream_len) {
-					nr = tmux_stream_read(bev, cur, stream_len);
-					if (nr != stream_len) {
-						debug(LOG_ERR, "Stream %u: read %zu != expected %u", cur->id, nr, stream_len);
-						debug(LOG_ERR,
-						      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-						      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
-						break;
-					}
-					len -= stream_len;
-				} else {
-					nr = tmux_stream_read(bev, cur, len);
-					if (nr != len) {
-						debug(LOG_ERR, "Stream %u: read %zu != expected %d", cur->id, nr, len);
-						debug(LOG_ERR,
-						      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-						      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
-						break;
-					}
-					stream_len -= len;
-					set_cur_stream(cur);
-					len -= nr;
-					break;
-				}
-			}
-		} else {
-			if (tmux_hdr.type != DATA) {
-				debug(LOG_ERR, "Unexpected type %d in continuation frame", tmux_hdr.type);
-				debug(LOG_ERR,
-				      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-				      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
-				break;
-			}
-			if (len >= stream_len) {
-				nr = tmux_stream_read(bev, cur, stream_len);
-				if (nr != stream_len) {
-					debug(LOG_ERR, "Stream %u: read %zu != expected %u", cur->id, nr, stream_len);
-					debug(LOG_ERR,
-					      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-					      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
-					break;
-				}
-				len -= stream_len;
-			} else {
-				nr = tmux_stream_read(bev, cur, len);
-				if (nr != len) {
-					debug(LOG_ERR, "Stream %u: read %zu != expected %d", cur->id, nr, len);
-					debug(LOG_ERR,
-					      "handle_tcp_mux break: len=%d stream_len=%u type=%u stream_id=%u",
-					      len, stream_len, tmux_hdr.type, ntohl(tmux_hdr.stream_id));
-					break;
-				}
-				stream_len -= len;
-				len -= nr;
-				break;
 			}
 		}
 
-		if (cur == &abandon_stream) {
-			debug(LOG_INFO, "abandon stream data ...");
-			memset(cur, 0, sizeof(abandon_stream));
-			set_cur_stream(NULL);
-			continue;
-		}
+		/* ---- Payload consumption (DATA type only) ---- */
+		if (tmux_hdr.type == DATA && stream_len > 0) {
+			uint32_t to_read = (uint32_t)len < stream_len ? (uint32_t)len : stream_len;
 
-		switch (tmux_hdr.type) {
-		case DATA:
-		case WINDOW_UPDATE:
+			if (cur == &abandon_stream) {
+				/* Discard payload for unknown streams */
+				evbuffer_drain(bufferevent_get_input(bev), to_read);
+				len -= to_read;
+				stream_len -= to_read;
+				if (stream_len == 0) {
+					memset(cur, 0, sizeof(abandon_stream));
+					set_cur_stream(NULL);
+				}
+				continue;
+			}
+
+			/* Partial frame: wait for more data */
+			if (to_read < stream_len) {
+				debug(LOG_DEBUG, "Stream %u: partial frame %u/%u, waiting",
+				      cur->id, to_read, stream_len);
+				break;
+			}
+
+			/* Full frame available: read payload and dispatch */
+			uint16_t flags = ntohs(tmux_hdr.flags);
+			struct proxy_client *pc = get_proxy_client(cur->id);
+			process_data(bev, cur, stream_len, flags, handle_frps_msg, (void *)pc);
+			len -= stream_len;
+			stream_len = 0;
+		} else if (tmux_hdr.type == WINDOW_UPDATE) {
 			handle_tcp_mux_stream(&tmux_hdr, handle_frps_msg);
-			break;
-		case PING:
+		} else if (tmux_hdr.type == PING) {
 			handle_tcp_mux_ping(&tmux_hdr);
-			break;
-		case GO_AWAY:
+		} else if (tmux_hdr.type == GO_AWAY) {
 			handle_tcp_mux_go_away(&tmux_hdr);
+		} else {
+			debug(LOG_ERR, "Unexpected tmux_hdr.type %d", tmux_hdr.type);
 			break;
-		default:
-			debug(LOG_ERR, "Unexpected tmux_hdr.type");
-			exit(-1);
 		}
 
 		set_cur_stream(NULL);

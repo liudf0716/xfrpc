@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
@@ -55,14 +54,10 @@ void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client);
 
-// SOCKS protocol handlers
-uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len);
-uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len);
+// SOCKS5 protocol handler (reads directly from bev, no ring buffer)
+void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_t len);
 
-
-uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len);
-
-// XDPI service type handler
-uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int len);
+// XDPI service type handler (reads directly from bev, no ring buffer)
+void handle_xdpi(struct proxy_client *client, struct bufferevent *bev, uint32_t len);
 
 #endif //XFRPC_PROXY_H

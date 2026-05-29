@@ -32,10 +32,6 @@ static struct proxy_client 	*all_pc = NULL;
 
 /**
  * @brief Event callback for worker connection events
- * 
- * @param bev Bufferevent that triggered the callback
- * @param what Type of event that occurred
- * @param ctx Context pointer (unused)
  */
 static void xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx) {
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
@@ -46,47 +42,39 @@ static void xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
 
 /**
  * @brief Handles post-connection data sending for proxy clients
- * 
- * @param client Proxy client to handle
- * @return int 0 on success, -1 on failure
+ *
+ * After the local connection is established, flush any buffered parser data
+ * and transition the protocol FSM to the established/forwarding state.
  */
 static int handle_post_connection_data(struct proxy_client *client) {
 	if (!client) return -1;
 
-	if (!is_iod_proxy(client->ps) && client->data_tail_size > 0) {
-		debug(LOG_DEBUG, "Sending pending client data");
-		return send_client_data_tail(client);
-	} else if (is_iod_proxy(client->ps)) {
-		assert(client->data_tail_size != 0);
-		debug(LOG_INFO, "Sending IOD data: data_tail_size is %d", client->data_tail_size);
-		int written = tmux_stream_write(client->ctl_bev, client->data_tail, client->data_tail_size, &client->stream);
-		if (written < 0) {
-			debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for IOD data", client->stream.id, written);
-		} else if ((size_t)written < client->data_tail_size) {
-			debug(LOG_NOTICE, "Stream %d: Partial write %d/%zu bytes", client->stream.id, written, client->data_tail_size);
-		}
-		free(client->data_tail);
-		client->data_tail = NULL;
-		client->data_tail_size = 0;
-		client->iod_state = 1;
-		return 0;
-	} else if (is_socks5_proxy(client->ps)) {
-		struct ring_buffer *rb = &client->stream.rx_ring;
-		if (rb->sz > 0) {
-			tx_ring_buffer_write(client->local_proxy_bev, rb, rb->sz);
+	if (is_socks5_proxy(client->ps)) {
+		/* Flush any remaining SOCKS5 parser buffer to local proxy */
+		if (client->socks5_buf && client->socks5_buf_len > 0 && client->local_proxy_bev) {
+			bufferevent_write(client->local_proxy_bev,
+				client->socks5_buf, client->socks5_buf_len);
+			client->socks5_buf_len = 0;
 		}
 		client->state = SOCKS5_ESTABLISHED;
 		return 0;
 	}
+
+	/* Non-SOCKS5, non-XDPI: send any initial data from control message */
+	if (client->data_tail_size > 0) {
+		debug(LOG_DEBUG, "Sending pending client data (%zu bytes)", client->data_tail_size);
+		return send_client_data_tail(client);
+	}
+
 	return 0;
 }
 
 /**
  * @brief Handles proxy client disconnection
- * 
- * @param client Proxy client that disconnected
- * @param bev Bufferevent associated with the connection
- * @param error_msg Error message to log
+ *
+ * Flushes remaining data from the local proxy bufferevent into the MUX stream
+ * before closing. Loops to handle partial sends when send_window is smaller
+ * than remaining data.
  */
 static void handle_proxy_disconnect(struct proxy_client *client, 
 								  struct bufferevent *bev, 
@@ -96,29 +84,29 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 	debug(LOG_INFO, "Proxy close connection %s - stream_id %d: %s",
 		  error_msg, client->stream_id, strerror(errno));
 
-	// Flush remaining data from the local proxy bufferevent into MUX stream.
-	// When nginx closes the connection (BEV_EVENT_EOF), there may still be
-	// data in the input buffer that hasn't been read yet.
+	/* Flush remaining data from the local proxy bufferevent into MUX stream.
+	 * Loop to handle partial sends — tmux_stream_write may return less than
+	 * requested when send_window is smaller than remaining data. */
 	if (bev && client->ctl_bev) {
 		struct evbuffer *src = bufferevent_get_input(bev);
 		size_t remaining = evbuffer_get_length(src);
-		if (remaining > 0) {
-			debug(LOG_INFO, "Flushing %zu remaining bytes from local proxy", remaining);
+		while (remaining > 0) {
 			uint8_t *data = evbuffer_pullup(src, remaining);
-			if (data) {
-				int written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
-				if (written < 0) {
-					/* Stream closed/reset — drain nothing, skip to cleanup */
-					debug(LOG_INFO, "Stream %d: tmux_stream_write error %d during flush, aborting",
-					      client->stream.id, written);
-				} else {
-					evbuffer_drain(src, (size_t)written);
-					if ((size_t)written < remaining) {
-						debug(LOG_INFO, "%zu bytes unsent, send_window exhausted (sent %d/%zu)",
-						      remaining - written, written, remaining);
-					}
-				}
+			if (!data) break;
+
+			int written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
+			if (written < 0) {
+				debug(LOG_INFO, "Stream %d: tmux_stream_write error %d during flush, aborting",
+				      client->stream.id, written);
+				break;
 			}
+			if (written == 0) {
+				/* send_window == 0: can't send more right now */
+				debug(LOG_INFO, "%zu bytes unsent, send_window exhausted", remaining);
+				break;
+			}
+			evbuffer_drain(src, (size_t)written);
+			remaining -= written;
 		}
 	}
 
@@ -129,7 +117,7 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 	}
 
 	// If send_window is exhausted, mark as pending_close and wait for
-	// WINDOW_UPDATE to send FIN.  incr_send_window will send FIN on WUP.
+	// WINDOW_UPDATE to send FIN.
 	if (client->stream.send_window == 0) {
 		debug(LOG_INFO, "Stream %d: send_window==0 at disconnect, deferring close",
 			  client->stream.id);
@@ -143,10 +131,6 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 
 /**
  * @brief Event callback for proxy connection events
- * 
- * @param bev Bufferevent that triggered the callback
- * @param what Type of event that occurred
- * @param ctx Context pointer (proxy client)
  */
 void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 	struct proxy_client *client = ctx;
@@ -159,8 +143,6 @@ void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 		const char *error_msg;
 		if (is_socks5_proxy(client->ps)) {
 			error_msg = "socks5 proxy";
-		} else if (is_iod_proxy(client->ps)) {
-			error_msg = "iod proxy";
 		} else {
 			error_msg = "server";
 		}
@@ -181,10 +163,6 @@ void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 
 /**
  * @brief Check if proxy service is of a specific type
- * @param ps Pointer to proxy service structure
- * @param type String representing the proxy type to check
- * @param extra_check Additional condition to verify (pass 1 to ignore)
- * @return 1 if matches, 0 otherwise
  */
 static int is_proxy_type(const struct proxy_service *ps, const char *type, int extra_check) {
 	if (!ps || !ps->proxy_type) {
@@ -195,8 +173,6 @@ static int is_proxy_type(const struct proxy_service *ps, const char *type, int e
 
 /**
  * @brief Check if proxy service is FTP type
- * @param ps Pointer to proxy service structure
- * @return 1 if FTP proxy, 0 otherwise
  */
 int is_ftp_proxy(const struct proxy_service *ps) {
 	return is_proxy_type(ps, "ftp", ps->remote_data_port > 0);
@@ -204,17 +180,14 @@ int is_ftp_proxy(const struct proxy_service *ps) {
 
 /**
  * @brief Check if proxy service is SOCKS5 type
- * @param ps Pointer to proxy service structure
- * @return 1 if SOCKS5 proxy, 0 otherwise
  */
 int is_socks5_proxy(const struct proxy_service *ps) {
 	return is_proxy_type(ps, "socks5", 1);
 }
 
-int is_iod_proxy(const struct proxy_service *ps) {
-	return is_proxy_type(ps, "iod", 1);
-}
-
+/**
+ * @brief Check if proxy service has XDPI service type configured
+ */
 int has_service_type(const struct proxy_service *ps) {
 	if (!ps) return 0;
 
@@ -223,8 +196,6 @@ int has_service_type(const struct proxy_service *ps) {
 
 /**
  * @brief Check if proxy service is UDP type
- * @param ps Pointer to proxy service structure
- * @return 1 if UDP proxy, 0 otherwise
  */
 int is_udp_proxy(const struct proxy_service *ps) {
 	return is_proxy_type(ps, "udp", 1);
@@ -232,11 +203,6 @@ int is_udp_proxy(const struct proxy_service *ps) {
 
 /**
  * Sets up callback functions for a proxy client
- *
- * @param client Pointer to the proxy client structure for which callbacks will be configured
- * 
- * This function configures various callback functions that will be used by the proxy client
- * for handling different events and operations during the proxy communication process.
  */
 static void setup_proxy_callbacks(struct proxy_client *client, 
 								bufferevent_data_cb *proxy_c2s_recv,
@@ -258,12 +224,6 @@ static void setup_proxy_callbacks(struct proxy_client *client,
 
 /**
  * @brief Sets up a local connection for the proxy client
- * 
- * This function establishes a local connection for the specified proxy client.
- * It handles the connection setup process including socket creation and configuration.
- *
- * @param client Pointer to the proxy client structure containing connection details
- * @return int Returns 0 on success, negative value on failure
  */
 static int setup_local_connection(struct proxy_client *client) 
 {
@@ -271,10 +231,10 @@ static int setup_local_connection(struct proxy_client *client)
 	
 	if (is_udp_proxy(ps)) {
 		client->local_proxy_bev = connect_udp_server(client->base);
-	} else if (!is_socks5_proxy(ps) && !is_iod_proxy(ps) && !has_service_type(ps)) {
+	} else if (!is_socks5_proxy(ps) && !has_service_type(ps)) {
 		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port);
 	} else {
-		debug(LOG_INFO, "socks5 proxy client or iod proxy client can't connect to remote server here ...");
+		debug(LOG_INFO, "socks5 proxy client or xdpi proxy client: connection deferred ...");
 		return 0;
 	}
 
@@ -289,13 +249,6 @@ static int setup_local_connection(struct proxy_client *client)
 
 /**
  * Initiates and establishes a xfrp tunnel for the specified proxy client.
- * 
- * This function starts a new tunnel connection for the given proxy client,
- * setting up the necessary network resources and connection parameters
- * based on the client's configuration.
- *
- * @param client Pointer to the proxy_client structure containing the client configuration
- *              and connection details
  */
 void start_xfrp_tunnel(struct proxy_client *client)
 {
@@ -324,8 +277,6 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	}
 
-	/* Use the default read low watermark so short tail data is forwarded
-	 * promptly instead of waiting for a 16KB batch. */
 	bufferevent_setwatermark(client->local_proxy_bev, EV_READ, 0, 0);
 
 	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, NULL,
@@ -335,36 +286,28 @@ void start_xfrp_tunnel(struct proxy_client *client)
 
 /**
  * @brief Sends any remaining data in the client's data tail buffer
- *
- * @param client Pointer to proxy client containing data to be sent
- * @return int Number of bytes written, -1 on error
  */
 int send_client_data_tail(struct proxy_client *client)
 {
-	// Validate input parameters
 	if (!client) {
 		debug(LOG_ERR, "Invalid proxy client pointer");
 		return -1;
 	}
 
-	// Check if there's any data to send
 	if (!client->data_tail || client->data_tail_size == 0) {
 		debug(LOG_DEBUG, "No data tail to send");
 		return 0;
 	}
 
-	// Verify bufferevent is available
 	if (!client->local_proxy_bev) {
 		debug(LOG_ERR, "Invalid local proxy bufferevent");
 		return -1;
 	}
 
-	// Write data to buffer
-	int bytes_written = bufferevent_write(client->local_proxy_bev, 
-										client->data_tail, 
+	int bytes_written = bufferevent_write(client->local_proxy_bev,
+										client->data_tail,
 										client->data_tail_size);
 
-	// Free the data tail buffer
 	free(client->data_tail);
 	client->data_tail = NULL;
 	client->data_tail_size = 0;
@@ -374,9 +317,6 @@ int send_client_data_tail(struct proxy_client *client)
 
 /**
  * @brief Frees resources associated with a proxy client
- * 
- * @param client Pointer to proxy client to be freed
- * @note If client is NULL, function returns silently
  */
 static void 
 free_proxy_client(struct proxy_client *client)
@@ -393,11 +333,21 @@ free_proxy_client(struct proxy_client *client)
 		client->local_proxy_bev = NULL;
 	}
 
-	// Free any data tail if it exists
+	/* Free data tail */
 	if (client->data_tail) {
 		free(client->data_tail);
 		client->data_tail = NULL;
 		client->data_tail_size = 0;
+	}
+
+	/* Free per-client parser buffers */
+	if (client->socks5_buf) {
+		free(client->socks5_buf);
+		client->socks5_buf = NULL;
+	}
+	if (client->xdpi_buf) {
+		free(client->xdpi_buf);
+		client->xdpi_buf = NULL;
 	}
 
 	free(client);
@@ -405,9 +355,6 @@ free_proxy_client(struct proxy_client *client)
 
 /**
  * @brief Removes a proxy client from the global hash table and frees its resources
- * 
- * @param client Pointer to proxy client to be deleted
- * @return 0 on success, -1 on failure
  */
 static int
 del_proxy_client(struct proxy_client *client)
@@ -432,15 +379,6 @@ del_proxy_client(struct proxy_client *client)
 
 /**
  * @brief Deletes a proxy client and its associated stream based on the stream ID
- *
- * This function performs cleanup by removing both the stream and its associated
- * proxy client from the system. It first validates the stream ID, then removes
- * the stream, and finally removes the proxy client if one exists.
- *
- * @param sid The stream ID to identify which proxy client and stream to remove
- *
- * @note If sid is 0, the function will return without performing any action
- * @note If no proxy client is found for the given stream ID, only the stream will be removed
  */
 void del_proxy_client_by_stream_id(uint32_t sid) {
 	if (sid == 0) {
@@ -448,10 +386,8 @@ void del_proxy_client_by_stream_id(uint32_t sid) {
 		return;
 	}
 
-	// Delete the stream first
 	del_stream(sid);
 
-	// Find and delete the proxy client
 	struct proxy_client *pc = get_proxy_client(sid);
 	if (pc) {
 		del_proxy_client(pc);
@@ -462,8 +398,6 @@ void del_proxy_client_by_stream_id(uint32_t sid) {
 
 /**
  * @brief Retrieves a proxy client by its stream ID
- * @param sid Stream ID to search for
- * @return struct proxy_client* Pointer to found proxy client, NULL if not found
  */
 struct proxy_client *get_proxy_client(uint32_t sid)
 {
@@ -485,27 +419,21 @@ struct proxy_client *get_proxy_client(uint32_t sid)
 
 /**
  * @brief Creates and initializes a new proxy client
- * 
- * @return struct proxy_client* Pointer to newly created proxy client, NULL if allocation fails
  */
 struct proxy_client *new_proxy_client() 
 {
 	struct proxy_client *client = NULL;
 	
-	// Allocate memory for new client
 	client = calloc(1, sizeof(struct proxy_client));
 	if (!client) {
 		debug(LOG_ERR, "Failed to allocate memory for proxy client");
 		return NULL;
 	}
 
-	// Initialize client fields
 	client->stream_id = get_next_session_id();
 	
-	// Initialize stream
 	init_tmux_stream(&client->stream, client->stream_id, INIT);
 
-	// Add to hash table
 	HASH_ADD_INT(all_pc, stream_id, client);
 	debug(LOG_DEBUG, "Created new proxy client with stream ID: %d", client->stream_id);
 	
@@ -515,16 +443,11 @@ struct proxy_client *new_proxy_client()
 
 /**
  * @brief Clears and releases all proxy client resources
- * 
- * Frees all memory allocated for proxy clients and resets related data structures.
- * This function should be called during cleanup or shutdown to prevent memory leaks.
  */
 void clear_all_proxy_client()
 {
-	// Clear stream state first
 	clear_stream();
 
-	// Early return if no proxy clients exist
 	if (!all_pc) {
 		debug(LOG_DEBUG, "No proxy clients to clear");
 		return;
@@ -533,7 +456,6 @@ void clear_all_proxy_client()
 	struct proxy_client *current = NULL;
 	struct proxy_client *temp = NULL;
 
-	// Iterate through all proxy clients and free them
 	HASH_ITER(hh, all_pc, current, temp) {
 		if (current) {
 			HASH_DEL(all_pc, current);
@@ -541,7 +463,6 @@ void clear_all_proxy_client()
 		}
 	}
 
-	// Ensure the hash table pointer is nulled
 	all_pc = NULL;
 
 	debug(LOG_DEBUG, "All proxy clients cleared successfully");
@@ -562,42 +483,21 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 		return -1;
 	}
 
-	// 如果已经确认过服务类型，直接返回成功
 	if (client->xdpi_state == XDPI_VERIFIED) {
 		return 0;
 	}
 
-	// 根据不同的服务类型进行特征检测
 	switch (ps->service_type) {
 		case SERVICE_SSH:
-			// SSH协议特征检测 - 只允许知名SSH客户端
 			if (len >= 20 && data[0] == 'S' && data[1] == 'S' && data[2] == 'H') {
-				// 检查知名SSH客户端标识
 				const char *known_clients[] = {
-					"OpenSSH",      // OpenSSH
-					"PuTTY",        // PuTTY
-					"WinSCP",       // WinSCP
-					"FileZilla",    // FileZilla
-					"SecureCRT",    // SecureCRT
-					"Xshell",       // Xshell
-					"Bitvise",      // Bitvise SSH Client
-					"SSH Tectia",   // SSH Tectia Client
-					"Tera Term",    // Tera Term
-					"KiTTY",        // KiTTY (PuTTY fork)
-					"Royal TSX",    // Royal TSX
-					"Termius",      // Termius
-					"Tabby",        // Tabby
-					"Cyberduck",    // Cyberduck
-					"ForkLift",     // ForkLift
-					"Transmit",     // Transmit
-					"CoreFTP",      // CoreFTP
-					"SmartFTP",     // SmartFTP
-					"FlashFXP",     // FlashFXP
-					"FTP Rush",     // FTP Rush
+					"OpenSSH", "PuTTY", "WinSCP", "FileZilla", "SecureCRT",
+					"Xshell", "Bitvise", "SSH Tectia", "Tera Term", "KiTTY",
+					"Royal TSX", "Termius", "Tabby", "Cyberduck", "ForkLift",
+					"Transmit", "CoreFTP", "SmartFTP", "FlashFXP", "FTP Rush",
 					NULL
 				};
 
-				// 检查客户端标识
 				for (int i = 0; known_clients[i] != NULL; i++) {
 					if (strstr((const char *)data, known_clients[i]) != NULL) {
 						client->xdpi_state = XDPI_VERIFIED;
@@ -606,7 +506,6 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 					}
 				}
 
-				// 如果没有匹配到任何知名客户端，记录日志并阻止连接
 				debug(LOG_WARNING, "XDPI engine detected unknown SSH client, blocking connection");
 				debug(LOG_WARNING, "data: %s", data);
 				client->xdpi_state = XDPI_BLOCKED;
@@ -615,7 +514,6 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 			break;
 
 		case SERVICE_HTTP:
-			// HTTP协议特征检测
 			if (len >= 4 && 
 				((data[0] == 'G' && data[1] == 'E' && data[2] == 'T' && data[3] == ' ') ||
 				 (data[0] == 'P' && data[1] == 'O' && data[2] == 'S' && data[3] == 'T') ||
@@ -627,14 +525,12 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 			break;
 
 		case SERVICE_HTTPS:
-			// HTTPS协议特征检测 (TLS握手)
 			if (len >= 3 && data[0] == 0x16 && data[1] == 0x03) {
 				client->xdpi_state = XDPI_VERIFIED;
 				return 0;
 			}
 			break;
 		case SERVICE_MSTSC:
-			// MSTSC协议特征检测
 			if (len == 47 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00 && data[5] == 0xe0) {
 				if (memcmp((const char *)&data[11], "Cookie:", 7) == 0 && data[43] == 0x0b) {
 					client->xdpi_state = XDPI_VERIFIED;
@@ -644,22 +540,14 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 			} 
 
 			debug(LOG_WARNING, "XDPI engine detected unknown RDP client, len: %zu", len);
-#if 0
-			for (int i = 0; i < len; i++) {
-				printf("%02X ", data[i]);
-			}
-			printf("\n");
-#endif
 			break;
 		case SERVICE_RDP:
-			// RDP协议特征检测
 			if (len >= 19 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00) {
 				client->xdpi_state = XDPI_VERIFIED;
 				return 0;
 			}
 			break;
 		case SERVICE_VNC:
-			// VNC协议特征检测
 			if (len >= 4 && data[0] == 'R' && data[1] == 'F' && data[2] == 'B' && data[3] == ' ') {
 				client->xdpi_state = XDPI_VERIFIED;
 				return 0;
@@ -667,7 +555,6 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 			break;
 
 		case SERVICE_TELNET:
-			// Telnet协议特征检测
 			if (len >= 3 && data[0] == 0xFF && data[1] == 0xFB) {
 				client->xdpi_state = XDPI_VERIFIED;
 				return 0;
@@ -675,7 +562,6 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 			break;
 
 		case NO_XDPI:
-			// 不需要XDPI检测的服务直接通过
 			client->xdpi_state = XDPI_VERIFIED;
 			return 0;
 
@@ -683,7 +569,6 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 			break;
 	}
 
-	// 如果检测失败，关闭连接
 	client->xdpi_state = XDPI_BLOCKED;
 	return -1;
 }

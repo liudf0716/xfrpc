@@ -82,7 +82,6 @@ set(PROXY_SOURCES
     tcpmux.c
     tcp_redir.c
     mongoose.c
-    iod_proto.c
 )
 
 set(PLUGIN_SOURCES

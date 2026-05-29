@@ -27,22 +27,19 @@
 #include "config.h"
 #include "tcpmux.h"
 #include "control.h"
-#include "iod_proto.h"
 
 /** @brief Maximum buffer size for SOCKS5 protocol data */
 #define SOCKS5_BUFFER_SIZE 2048
 
+/** @brief Maximum domain name length for SOCKS5 address parsing */
+#define SOCKS5_MAX_DOMAIN_LEN 253
+
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 /**
  * @brief Validates if a buffer contains a valid SOCKS5 protocol header
- *
- * Checks if the given buffer contains a valid SOCKS5 protocol header with:
- * - Version: 0x05 (SOCKS5)
- * - Command: 0x01 (CONNECT)
- * - Reserved: 0x00
- *
- * @param buf Buffer containing the SOCKS5 header
- * @param len Length of the buffer
- * @return 1 if valid SOCKS5 header, 0 if invalid
  */
 static int is_socks5(const uint8_t *buf, int len)
 {
@@ -56,62 +53,63 @@ static int is_socks5(const uint8_t *buf, int len)
 }
 
 /**
- * @brief Parse SOCKS5 address structure from ring buffer
+ * @brief Parse SOCKS5 address structure from a contiguous buffer
  *
- * Parses a SOCKS5 address structure which can be one of:
- * - IPv4 (type 0x01): 4 bytes address + 2 bytes port
- * - IPv6 (type 0x04): 16 bytes address + 2 bytes port  
- * - Domain (type 0x03): 1 byte length + domain + 2 bytes port
- *
- * @param rb Ring buffer containing the SOCKS5 address data
- * @param len Total length of data in ring buffer
- * @param offset Returns number of bytes processed
- * @param addr Output parameter for parsed address structure
+ * @param buf    Buffer containing the SOCKS5 address data
+ * @param len    Total length of data available in buf
+ * @param offset Returns number of bytes consumed from buf
+ * @param addr   Output parameter for parsed address structure
  * @return 1 on success, 0 on failure/invalid format
  */
-static int parse_socks5_addr(struct ring_buffer *rb, int len, int *offset, 
+static int parse_socks5_addr(const uint8_t *buf, int len, int *offset,
 							struct socks5_addr *addr)
 {
-	assert(addr && rb && offset);
+	assert(addr && buf && offset);
 	assert(len > 0);
 
-	// Initialize
 	memset(addr, 0, sizeof(struct socks5_addr));
-	uint8_t buf[256] = {0};  // Increased buffer size to handle domains
-	
-	// Read address type
-	rx_ring_buffer_pop(rb, buf, 1);
-	*offset = 1;
-	addr->type = buf[0];
+	int pos = 0;
 
-	// Parse based on address type
+	addr->type = buf[pos++];
+
 	switch(addr->type) {
-		case 0x01:  // IPv4
+		case 0x01:  // IPv4: 4 bytes addr + 2 bytes port = 7 total
 			if (len < 7) return 0;
-			rx_ring_buffer_pop(rb, buf+1, 6);
-			memcpy(addr->addr, buf+1, 4);     // IPv4 address
-			memcpy(&addr->port, buf+5, 2);    // Port
-			*offset = 7;
+			memcpy(addr->addr, buf + pos, 4);
+			pos += 4;
+			memcpy(&addr->port, buf + pos, 2);
+			pos += 2;
+			*offset = pos;
 			break;
 
-		case 0x04:  // IPv6
+		case 0x04:  // IPv6: 16 bytes addr + 2 bytes port = 19 total
 			if (len < 19) return 0;
-			rx_ring_buffer_pop(rb, buf+1, 18);
-			memcpy(addr->addr, buf+1, 16);    // IPv6 address
-			memcpy(&addr->port, buf+17, 2);   // Port
-			*offset = 19;
+			memcpy(addr->addr, buf + pos, 16);
+			pos += 16;
+			memcpy(&addr->port, buf + pos, 2);
+			pos += 2;
+			*offset = pos;
 			break;
 
-		case 0x03:  // Domain name
+		case 0x03:  // Domain: 1 byte len + domain + 2 bytes port
 			if (len < 2) return 0;
-			rx_ring_buffer_pop(rb, buf+1, 1); // Domain length
-			uint8_t domain_len = buf[1];
-			
-			if (len < domain_len + 4) return 0;
-			rx_ring_buffer_pop(rb, buf+2, domain_len + 2);
-			memcpy(addr->addr, buf+2, domain_len);  // Domain
-			memcpy(&addr->port, buf+2+domain_len, 2); // Port
-			*offset = domain_len + 4;
+			{
+				uint8_t domain_len = buf[pos++];
+				/* Enstrict bounds: reject domains exceeding SOCKS5_MAX_DOMAIN_LEN
+				 * or SOCKS5_ADDRES_LEN to prevent buffer overflow in addr[]. */
+				if (domain_len == 0 ||
+				    domain_len > SOCKS5_MAX_DOMAIN_LEN ||
+				    domain_len > SOCKS5_ADDRES_LEN) {
+					debug(LOG_ERR, "SOCKS5 domain length %u out of bounds", domain_len);
+					return 0;
+				}
+				if (len < pos + domain_len + 2) return 0;
+				memcpy(addr->addr, buf + pos, domain_len);
+				pos += domain_len;
+				memcpy(&addr->port, buf + pos, 2);
+				pos += 2;
+				*offset = pos;
+			}
 			break;
 
 		default:
@@ -123,22 +121,11 @@ static int parse_socks5_addr(struct ring_buffer *rb, int len, int *offset,
 
 /**
  * @brief Establish a SOCKS5 proxy connection based on destination address
- *
- * This function creates and establishes a proxy connection to the target address
- * specified in the SOCKS5 address structure. It supports:
- * - IPv4 addresses (type 0x01)
- * - Domain names (type 0x03) 
- * - IPv6 addresses (type 0x04)
- *
- * @param client Proxy client structure containing event base
- * @param addr SOCKS5 address structure with connection details
- * @return Configured bufferevent on success, NULL on failure
  */
 static struct bufferevent *socks5_proxy_connect(struct proxy_client *client, struct socks5_addr *addr)
 {
 	struct bufferevent *bev = NULL;
 
-	// Create new socket bufferevent
 	bev = bufferevent_socket_new(client->base, -1, BEV_OPT_CLOSE_ON_FREE);
 	if (!bev) {
 		debug(LOG_ERR, "Failed to create bufferevent for SOCKS5 proxy");
@@ -154,7 +141,6 @@ static struct bufferevent *socks5_proxy_connect(struct proxy_client *client, str
 			};
 			memcpy(&sin.sin_addr, addr->addr, 4);
 
-			// Log connection details
 			char ip[INET_ADDRSTRLEN];
 			inet_ntop(AF_INET, addr->addr, ip, INET_ADDRSTRLEN);
 			debug(LOG_DEBUG, "SOCKS5 connecting to IPv4: %s:%d", ip, ntohs(addr->port));
@@ -165,7 +151,8 @@ static struct bufferevent *socks5_proxy_connect(struct proxy_client *client, str
 		}
 
 		case 0x03: // Domain name
-			debug(LOG_DEBUG, "SOCKS5 connecting to domain: %s:%d", 
+			debug(LOG_DEBUG, "SOCKS5 connecting to domain: %.*s:%d", 
+				(int)strnlen((char *)addr->addr, SOCKS5_ADDRES_LEN),
 				addr->addr, ntohs(addr->port));
 			connect_result = bufferevent_socket_connect_hostname(bev,
 				get_main_control()->dnsbase, AF_INET, 
@@ -196,7 +183,6 @@ static struct bufferevent *socks5_proxy_connect(struct proxy_client *client, str
 		return NULL;
 	}
 
-	// Setup callbacks and enable bufferevent
 	bufferevent_setcb(bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);
 	bufferevent_enable(bev, EV_READ | EV_WRITE);
 
@@ -204,334 +190,247 @@ static struct bufferevent *socks5_proxy_connect(struct proxy_client *client, str
 }
 
 /**
- * @brief Legacy SOCKS5 protocol handler 
- * 
- * This function implements a simplified SOCKS5 protocol handler that supports:
- * - Initial direct connection request (SOCKS5_INIT)
- * - Data forwarding in established state (SOCKS5_ESTABLISHED)
- *
- * @param client The proxy client structure
- * @param rb Ring buffer containing incoming data
- * @param len Length of data in ring buffer
- * @return Number of bytes processed, 0 on error
- * 
- * @deprecated Use handle_socks5() instead which implements full SOCKS5 protocol
+ * @brief Ensure the SOCKS5 parser buffer has at least 'need' bytes of capacity.
+ * Returns 0 on success, -1 on allocation failure.
  */
-uint32_t handle_ss5(struct proxy_client *client, struct ring_buffer *rb, int len) 
+static int socks5_buf_ensure(struct proxy_client *client, size_t need)
 {
-	uint32_t bytes_processed = 0;
+	if (client->socks5_buf_cap >= need)
+		return 0;
 
-	// Handle established connection state
-	if (client->state == SOCKS5_ESTABLISHED) {
-		assert(client->local_proxy_bev);
-		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
-		return len;
+	size_t new_cap = client->socks5_buf_cap;
+	if (new_cap == 0) new_cap = SOCKS5_BUF_INIT_CAP;
+	while (new_cap < need) new_cap *= 2;
+
+	uint8_t *new_buf = realloc(client->socks5_buf, new_cap);
+	if (!new_buf) {
+		debug(LOG_ERR, "Failed to realloc socks5_buf to %zu", new_cap);
+		return -1;
 	}
+	client->socks5_buf = new_buf;
+	client->socks5_buf_cap = new_cap;
+	return 0;
+}
 
-	// Handle initial connection request
-	if (client->state == SOCKS5_INIT && len >= 7) {
-		debug(LOG_DEBUG, "Processing initial SOCKS5 connection request, len: %d", len);
+/**
+ * @brief Ensure the XDPI parser buffer has at least 'need' bytes of capacity.
+ * Returns 0 on success, -1 on allocation failure.
+ */
+static int xdpi_buf_ensure(struct proxy_client *client, size_t need)
+{
+	if (client->xdpi_buf_cap >= need)
+		return 0;
 
-		// Parse destination address
-		int addr_len = 0;
-		if (!parse_socks5_addr(rb, len, &addr_len, &client->remote_addr)) {
-			debug(LOG_ERR, "Failed to parse SOCKS5 address");
-			return bytes_processed;
-		}
+	size_t new_cap = client->xdpi_buf_cap;
+	if (new_cap == 0) new_cap = XDPI_BUF_INIT_CAP;
+	while (new_cap < need) new_cap *= 2;
 
-		// Establish proxy connection
-		client->local_proxy_bev = socks5_proxy_connect(client, &client->remote_addr);
-		if (!client->local_proxy_bev) {
-			debug(LOG_ERR, "Failed to establish proxy connection");
-			return bytes_processed;
-		}
-
-		debug(LOG_DEBUG, "SOCKS5 proxy connection established (parsed %d of %d bytes)", 
-			  addr_len, len);
-		
-		return addr_len;
+	uint8_t *new_buf = realloc(client->xdpi_buf, new_cap);
+	if (!new_buf) {
+		debug(LOG_ERR, "Failed to realloc xdpi_buf to %zu", new_cap);
+		return -1;
 	}
-
-	return bytes_processed;
+	client->xdpi_buf = new_buf;
+	client->xdpi_buf_cap = new_cap;
+	return 0;
 }
 
 /**
  * @brief Handles SOCKS5 protocol states and data forwarding
- * 
- * This function implements the SOCKS5 protocol state machine and handles:
- * - Initial handshake (SOCKS5_INIT)
- * - Authentication negotiation (SOCKS5_HANDSHAKE)
- * - Connection establishment (SOCKS5_CONNECT)
- * 
- * @param client The proxy client structure
- * @param rb Ring buffer containing incoming data
- * @param len Length of data in ring buffer
- * @return Number of bytes processed, 0 on error
+ *
+ * Reads data directly from the control bev (no rx_ring). Uses per-client
+ * socks5_buf for accumulating fragmented handshake/request data.
  */
-uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int len)
+void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_t len)
 {
-	uint32_t nret = 0;
+	if (!client || !bev || len == 0) {
+		debug(LOG_ERR, "Invalid parameters in handle_socks5");
+		return;
+	}
 
-	// Forward data in established connection state
-	if (client->state == SOCKS5_CONNECT) {
+	/* ESTABLISHED: forward payload directly to local proxy */
+	if (client->state == SOCKS5_ESTABLISHED) {
 		assert(client->local_proxy_bev);
-		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
-		return len;
+		struct evbuffer *src = bufferevent_get_input(bev);
+		size_t avail = evbuffer_get_length(src);
+		size_t to_copy = MIN(len, avail);
+		if (to_copy > 0) {
+			struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+			uint8_t *tmp = evbuffer_pullup(src, to_copy);
+			if (tmp) {
+				evbuffer_add(dst, tmp, to_copy);
+				evbuffer_drain(src, to_copy);
+			}
+		}
+		return;
 	}
 
-	// Handle initial SOCKS5 handshake
-	if (client->state == SOCKS5_INIT && len >= 3) {
-		debug(LOG_DEBUG, "Processing SOCKS5 initial handshake, len: %d", len);
-		uint8_t buf[3] = {0};
-		rx_ring_buffer_pop(rb, buf, 3);
+	/* Accumulate incoming data into per-client socks5_buf */
+	if (socks5_buf_ensure(client, client->socks5_buf_len + len) < 0) {
+		return;
+	}
 
-		if (buf[0] != 0x5 || buf[1] != 0x1 || buf[2] != 0x0) {
+	size_t nr = bufferevent_read(bev,
+		client->socks5_buf + client->socks5_buf_len, len);
+	if (nr == 0) return;
+	client->socks5_buf_len += nr;
+
+	uint8_t *buf = client->socks5_buf;
+	size_t buf_len = client->socks5_buf_len;
+
+	/* INIT: waiting for SOCKS5 greeting (version + nmethods + methods) */
+	if (client->state == SOCKS5_INIT && buf_len >= 3) {
+		debug(LOG_DEBUG, "Processing SOCKS5 initial handshake, buf_len: %zu", buf_len);
+
+		if (buf[0] != 0x05 || buf[1] != 0x01 || buf[2] != 0x00) {
 			debug(LOG_ERR, "Invalid SOCKS5 handshake");
-			return nret;
+			return;
 		}
 
-		// Send handshake response
-		buf[1] = 0x0; // No authentication required
-		int ret = tmux_stream_write(client->ctl_bev, buf, 3, &client->stream);
+		/* Send handshake response: no authentication required */
+		uint8_t resp[3] = {0x05, 0x00, 0x00};
+		int ret = tmux_stream_write(client->ctl_bev, resp, 3, &client->stream);
 		if (ret < 0) {
-			debug(LOG_ERR, "SOCKS5 handshake write failed: stream %d error %d", client->stream.id, ret);
-			return 0;
+			debug(LOG_ERR, "SOCKS5 handshake write failed: stream %d error %d",
+			      client->stream.id, ret);
+			return;
 		}
+
+		/* Consume consumed bytes from buffer */
+		memmove(buf, buf + 3, buf_len - 3);
+		client->socks5_buf_len -= 3;
 		client->state = SOCKS5_HANDSHAKE;
-		return 3;
 	}
 
-	// Handle connection request
-	if (client->state == SOCKS5_HANDSHAKE && len >= 10) {
-		debug(LOG_DEBUG, "Processing SOCKS5 connection request, len: %d", len);
-		uint8_t buf[3] = {0};
-		rx_ring_buffer_pop(rb, buf, 3);
+	/* HANDSHAKE: waiting for CONNECT request */
+	buf = client->socks5_buf;
+	buf_len = client->socks5_buf_len;
+	if (client->state == SOCKS5_HANDSHAKE && buf_len >= 4) {
+		debug(LOG_DEBUG, "Processing SOCKS5 connection request, buf_len: %zu", buf_len);
 
 		if (!is_socks5(buf, 3)) {
 			debug(LOG_ERR, "Invalid SOCKS5 request format");
-			return nret;
+			return;
 		}
 
 		int offset = 0;
-		if (!parse_socks5_addr(rb, len, &offset, &client->remote_addr)) {
-			debug(LOG_ERR, "Failed to parse SOCKS5 address");
-			return nret;
+		if (!parse_socks5_addr(buf + 3, buf_len - 3, &offset, &client->remote_addr)) {
+			/* Not enough data yet — wait for more */
+			return;
 		}
+
+		int total_consumed = 3 + offset;
 
 		client->local_proxy_bev = socks5_proxy_connect(client, &client->remote_addr);
 		if (!client->local_proxy_bev) {
 			debug(LOG_ERR, "Failed to establish proxy connection");
-			return nret;
+			return;
 		}
 
-		assert(len == offset + 3);
-		return len;
-	}
+		/* Discard consumed bytes */
+		memmove(buf, buf + total_consumed, buf_len - total_consumed);
+		client->socks5_buf_len -= total_consumed;
 
-	// Handle invalid protocol state
-	debug(LOG_ERR, "Invalid SOCKS5 protocol state");
-	if (client->local_proxy_bev) {
-		bufferevent_free(client->local_proxy_bev);
+		/* Flush any remaining buffered data to local proxy */
+		if (client->socks5_buf_len > 0 && client->local_proxy_bev) {
+			struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+			evbuffer_add(dst, client->socks5_buf, client->socks5_buf_len);
+			client->socks5_buf_len = 0;
+		}
+
+		client->state = SOCKS5_CONNECT;
 	}
-	return nret;
 }
 
-static void handle_iod_set_vip(struct proxy_client *client, struct iod_header *header)
+/**
+ * @brief Handles data processing based on XDPI service type verification
+ *
+ * Reads data directly from the control bev. Uses per-client xdpi_buf for
+ * accumulating bytes before protocol verification.
+ */
+void handle_xdpi(struct proxy_client *client, struct bufferevent *bev, uint32_t len)
 {
-	struct in_addr addr;
-	addr.s_addr = header->vip4;
-	char *vip = inet_ntoa(addr);
-	debug(LOG_INFO, "Set VIP: %s", vip);
-	
-	// Check if dummy0 interface exists
-	if (system("ip link show dummy0 > /dev/null 2>&1") != 0) {
-		// Create dummy0 interface if it doesn't exist
-		int ret = system("modprobe dummy");
-		if (ret != 0) {
-			debug(LOG_ERR, "Failed to load dummy module: %d", ret);
-		}
-		
-		ret = system("ip link add dummy0 type dummy");
-		if (ret != 0) {
-			debug(LOG_ERR, "Failed to create dummy0 interface: %d", ret);
-		}
+	if (!client || !bev || len == 0) {
+		debug(LOG_ERR, "Invalid parameters in handle_xdpi");
+		return;
 	}
 
-	// Remove any existing IP addresses from dummy0
-	int ret = system("ip addr flush dev dummy0");
-	if (ret != 0) {
-		debug(LOG_ERR, "Failed to flush addresses from dummy0: %d", ret);
-	}
-
-	// Set the IP address to the VIP
-	char cmd[128] = {0};
-	snprintf(cmd, sizeof(cmd), "ip addr add %s/32 dev dummy0", vip);
-	ret = system(cmd);
-	if (ret != 0) {
-		debug(LOG_ERR, "Failed to add IP address to dummy0: %d", ret);
-	}
-
-	// Ensure the interface is up
-	ret = system("ip link set dev dummy0 up");
-	if (ret != 0) {
-		debug(LOG_ERR, "Failed to bring up dummy0 interface: %d", ret);
-	}
-
-	debug(LOG_INFO, "VIP %s successfully configured on dummy0", vip);
-	header->length = 0;
-	header->type = htonl(IOD_SET_VIP_ACK);
-	int written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
-	if (written < 0) {
-		debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for IOD_SET_VIP_ACK", client->stream.id, written);
-	} else if ((size_t)written < sizeof(struct iod_header)) {
-		debug(LOG_NOTICE, "Stream %d: Partial write %d/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
-	}
-	
-}
-
-static void handle_iod_get_vip(struct proxy_client *client, struct iod_header *header)
-{
-	struct in_addr addr;
-	addr.s_addr = header->vip4;
-	char *vip = inet_ntoa(addr);
-	debug(LOG_INFO, "Get VIP: %s", vip);
-	char cmd[] = "ip -4 addr show dev dummy0 | grep inet | awk '{print $2}' | cut -d/ -f1";
-	FILE *fp = popen(cmd, "r");
-	if (!fp) {
-		debug(LOG_ERR, "Failed to execute command to get dummy0 IP");
-		header->vip4 = 0;
-	} else {
-		char ip[16] = {0};
-		if (fgets(ip, sizeof(ip), fp) != NULL) {
-			// Remove trailing newline if present
-			char *nl = strchr(ip, '\n');
-			if (nl) *nl = '\0';
-			
-			struct in_addr addr;
-			if (inet_aton(ip, &addr) == 0) {
-				debug(LOG_ERR, "Failed to convert IP: %s", ip);
-				header->vip4 = 0;
-			} else {
-				header->vip4 = addr.s_addr;
-				debug(LOG_INFO, "Retrieved VIP from dummy0: %s", ip);
+	/* Already verified: forward directly to local proxy */
+	if (client->xdpi_state == XDPI_VERIFIED && client->local_proxy_bev) {
+		struct evbuffer *src = bufferevent_get_input(bev);
+		size_t avail = evbuffer_get_length(src);
+		size_t to_copy = MIN(len, avail);
+		if (to_copy > 0) {
+			struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+			uint8_t *tmp = evbuffer_pullup(src, to_copy);
+			if (tmp) {
+				evbuffer_add(dst, tmp, to_copy);
+				evbuffer_drain(src, to_copy);
 			}
-		} else {
-			debug(LOG_ERR, "No IP found on dummy0 interface");
-			header->vip4 = 0;
 		}
-		pclose(fp);
+		return;
 	}
 
-	header->length = 0;
-	header->type = htonl(IOD_GET_VIP_ACK);
-	int written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
-	if (written < 0) {
-		debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for IOD_GET_VIP_ACK", client->stream.id, written);
-	} else if ((size_t)written < sizeof(struct iod_header)) {
-		debug(LOG_NOTICE, "Stream %d: Partial write %d/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
+	/* Accumulate data into per-client xdpi_buf before verification */
+	if (xdpi_buf_ensure(client, client->xdpi_buf_len + len) < 0) {
+		return;
 	}
-}
 
-static void handle_local_iod_command(struct proxy_client *client, struct iod_header *header)
-{
-	uint32_t iod_type = htonl(header->type);
-	switch (iod_type) {
-	case IOD_SET_VIP:
-		debug(LOG_INFO, "Set VIP command");
-		handle_iod_set_vip(client, header);
-		break;
-	case IOD_GET_VIP: 
-		debug(LOG_INFO, "Get VIP command");
-		handle_iod_get_vip(client, header);
-		break;
-	default:
-		debug(LOG_ERR, "Invalid IOD command: %d", iod_type);
-		break;
+	size_t nr = bufferevent_read(bev,
+		client->xdpi_buf + client->xdpi_buf_len, len);
+	if (nr == 0) return;
+	client->xdpi_buf_len += nr;
+
+	/* Allocate null-terminated copy for xdpi_engine (uses strstr) */
+	uint8_t *data = calloc(client->xdpi_buf_len + 1, sizeof(uint8_t));
+	if (!data) {
+		debug(LOG_ERR, "Failed to allocate memory for XDPI analysis");
+		return;
 	}
-}
+	memcpy(data, client->xdpi_buf, client->xdpi_buf_len);
 
-#define IOD_INIT_MAX_LEN 24
-uint32_t handle_iod(struct proxy_client *client, struct ring_buffer *rb, int len)
-{
-	debug(LOG_INFO, "iod state: %d, len: %d", client->iod_state, len);
-	if (!client->iod_state && len >= IOD_INIT_MAX_LEN) {
-		struct iod_header header;
-		rx_ring_buffer_peek(rb, (uint8_t *)&header, IOD_INIT_MAX_LEN);
-		if (!is_valid_iod_header(&header)) {
-			debug(LOG_INFO, "invalid IOD header, len: %d", len);
-			return 0;
+	if (xdpi_engine(client, data, client->xdpi_buf_len) < 0) {
+		debug(LOG_ERR, "XDPI verification failed for service type %d", client->ps->service_type);
+		free(data);
+		client->xdpi_state = XDPI_BLOCKED;
+		/* Discard buffered data on block */
+		client->xdpi_buf_len = 0;
+		return;
+	}
+	free(data);
+
+	/* XDPI verification succeeded, connect if not already connected */
+	if (!client->local_proxy_bev) {
+		debug(LOG_INFO, "XDPI verification passed, establishing connection for service type %d", 
+			  client->ps->service_type);
+
+		if (client->ps->local_ip == NULL || client->ps->local_port == 0) {
+			debug(LOG_ERR, "Invalid local IP or port for service type %d", client->ps->service_type);
+			client->xdpi_buf_len = 0;
+			return;
 		}
+		client->local_proxy_bev = connect_server(client->base, client->ps->local_ip, client->ps->local_port);
 
-		uint32_t iod_type = htonl(header.type);
-		if (is_local_iod_command(iod_type)) {
-			debug(LOG_INFO, "Local IOD command %d, len: %d", iod_type, len);
-			// assert(len == sizeof(struct iod_header));
-			rx_ring_buffer_pop(rb, (uint8_t *)&header, sizeof(struct iod_header));
-			handle_local_iod_command(client, &header);
-			return len;
-		}
-
-		if (iod_type != IOD_DATA && len != IOD_INIT_MAX_LEN) {
-			debug(LOG_ERR, "Invalid IOD type: %d len is %d", iod_type, len);
-			return 0;
-		}
-
-		// create a new iod socket connection
-		struct in_addr addr;
-		addr.s_addr = header.vip4;
-		char *iod_addr = inet_ntoa(addr);
-		client->local_proxy_bev = connect_server(client->base, iod_addr, client->ps->local_port);
 		if (!client->local_proxy_bev) {
-			debug(LOG_ERR, "Failed to connect to iod server [%s:%d] bind_addr [%s]", iod_addr, client->ps->local_port, client->ps->bind_addr);
-			return 0;
+			debug(LOG_ERR, "Failed to establish connection to local service on IP %s and port %d", 
+				  client->ps->local_ip, client->ps->local_port);
+			return;
 		}
 
-		rx_ring_buffer_pop(rb, (uint8_t *)&header, sizeof(struct iod_header));
-		if (client->data_tail) {
-			free(client->data_tail);
-		}
-		client->data_tail = calloc(sizeof(struct iod_header), 1);
-		if (!client->data_tail) {
-			debug(LOG_ERR, "Failed to allocate memory for data tail");
-			return 0;
-		}
-		header.length = 0;
-		memcpy(client->data_tail, &header, sizeof(struct iod_header));
-		client->data_tail_size = sizeof(struct iod_header);
-
-		// Setup callbacks and enable bufferevent
 		bufferevent_setcb(client->local_proxy_bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);
 		bufferevent_enable(client->local_proxy_bev, EV_READ | EV_WRITE);
-	} else if (client->iod_state) {
-		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
-	} else {
-		debug(LOG_ERR, "Invalid IOD state, len: %d", len);
-		return 0;
 	}
 
-	return len;
+	/* Flush buffered data to local proxy, then switch to pass-through */
+	if (client->xdpi_buf_len > 0 && client->local_proxy_bev) {
+		bufferevent_write(client->local_proxy_bev, client->xdpi_buf, client->xdpi_buf_len);
+		client->xdpi_buf_len = 0;
+	}
+	client->xdpi_state = XDPI_VERIFIED;
 }
-
 
 /**
  * @brief Callback function handling data transfer from client to server in TCP proxy
- *
- * This function processes data received from the client-side bufferevent and forwards
- * it to the control connection. It supports both regular TCP proxy mode and TCP
- * multiplexing mode.
- *
- * @param bev The bufferevent structure containing client data
- * @param ctx Context pointer containing proxy client information
- *
- * Operation flow:
- * 1. Validates client and control connection
- * 2. Checks for available data in source buffer
- * 3. If TCP multiplexing is disabled, directly forwards data to control connection
- * 4. If TCP multiplexing is enabled, reads data into temporary buffer and writes
- *    to multiplexed stream
- * 
- * @note In multiplexing mode, if partial write occurs, the read event is disabled
- *       to prevent buffer overflow
  */
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 {
@@ -555,14 +454,8 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	}
 
 	/* Use evbuffer_peek to iterate over contiguous chunks directly in the
-	 * input buffer without copying.  This avoids the memcpy that
-	 * evbuffer_pullup triggers when data spans multiple chunks.
-	 * Each chunk is passed to tmux_stream_write which handles flow control.
-	 *
-	 * Design: no tx_ring intermediate buffer. Data stays in nginx evbuffer.
-	 * tmux_stream_write returns bytes actually sent. When send_window==0,
-	 * it returns 0 and we disable EV_READ. Data remains in evbuffer for
-	 * the next callback when WUP arrives and re-enables EV_READ. */
+	 * input buffer without copying.  Each chunk is passed to tmux_stream_write
+	 * which handles flow control. */
 	size_t total_written = 0;
 	struct evbuffer_iovec iovec[16];
 	while (total_written < len) {
@@ -578,9 +471,6 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 			int written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
 			if (written < 0) {
-				/* Stream closed/reset or send failed. Drain sent bytes and
-				 * clean up the proxy client — do NOT disable EV_READ and
-				 * wait for WINDOW_UPDATE that will never come. */
 				evbuffer_drain(src, total_written);
 				debug(LOG_INFO, "Stream %u: tmux_stream_write error %d, cleaning up",
 				      client->stream.id, written);
@@ -589,8 +479,6 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 			}
 
 			if (written == 0) {
-				/* send_window == 0: backpressure. Drain what we've sent so far
-				 * and disable EV_READ. Unsent data stays in nginx evbuffer. */
 				evbuffer_drain(src, total_written);
 				bufferevent_disable(bev, EV_READ);
 				debug(LOG_DEBUG, "Stream %u: send_window exhausted, disabling EV_READ",
@@ -600,8 +488,6 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 			total_written += written;
 
-			/* Partial write: send_window was smaller than chunk.
-				 * Drain sent bytes, disable EV_READ if window depleted. */
 			if ((size_t)written < chunk_len) {
 				if (client->stream.send_window == 0) {
 					evbuffer_drain(src, total_written);
@@ -619,12 +505,6 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 /**
  * @brief Callback function for handling data transfer from server to client in TCP proxy
- *
- * This function is called when data is available to be read from the server's bufferevent
- * and needs to be forwarded to the client.
- *
- * @param bev The bufferevent structure containing the server's buffer
- * @param ctx The context pointer containing user-defined data (typically proxy session information)
  */
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 {
@@ -650,81 +530,4 @@ void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 	}
 
 	debug(LOG_ERR, "impossible to reach here");
-}
-
-/**
- * @brief Handles data processing based on XDPI service type verification
- * 
- * This function processes incoming data through the XDPI engine to determine if
- * the service type matches the configured service type. If there's a match, it
- * establishes a connection and forwards the data; otherwise, it discards the data.
- * 
- * @param client The proxy client structure
- * @param rb Ring buffer containing incoming data
- * @param len Length of data in ring buffer
- * @return Number of bytes processed, 0 on error
- */
-uint32_t handle_xdpi(struct proxy_client *client, struct ring_buffer *rb, int len)
-{
-	uint32_t bytes_processed = 0;
-	
-	// If connection already established, just forward data
-	if (client->xdpi_state == XDPI_VERIFIED && client->local_proxy_bev) {
-		tx_ring_buffer_write(client->local_proxy_bev, rb, len);
-		return len;
-	}
-	
-	// Allocate len+1 bytes so the buffer is always null-terminated; this is
-	// required because xdpi_engine() uses strstr() on the data for SSH banner
-	// detection and strstr() needs a null terminator to stop scanning.
-	// Use rx_ring_buffer_pop (not peek+pop) to copy data out in one operation.
-	uint8_t *data = calloc(len + 1, sizeof(uint8_t));
-	if (!data) {
-		debug(LOG_ERR, "Failed to allocate memory for XDPI analysis");
-		return bytes_processed;
-	}
-	
-	// Pop data from ring buffer (also removes it, avoiding a second copy later)
-	rx_ring_buffer_pop(rb, data, len);
-	
-	// Analyze data with XDPI engine
-	if (xdpi_engine(client, data, len) < 0) {
-		debug(LOG_ERR, "XDPI verification failed for service type %d", client->ps->service_type);
-		free(data);
-		client->xdpi_state = XDPI_BLOCKED;
-		return len; // Return len to indicate we've handled the data by discarding it
-	}
-	
-	// XDPI verification succeeded, connect if not already connected
-	if (!client->local_proxy_bev) {
-		debug(LOG_INFO, "XDPI verification passed, establishing connection for service type %d", 
-			  client->ps->service_type);
-		
-		// Connect to the local IP and port defined in the proxy service
-		if (client->ps->local_ip == NULL || client->ps->local_port == 0) {
-			debug(LOG_ERR, "Invalid local IP or port for service type %d", client->ps->service_type);
-			free(data);
-			rx_ring_buffer_pop(rb, NULL, len);
-			return bytes_processed;
-		}
-		client->local_proxy_bev = connect_server(client->base, client->ps->local_ip, client->ps->local_port);
-		
-		if (!client->local_proxy_bev) {
-			debug(LOG_ERR, "Failed to establish connection to local service on IP %s and port %d", 
-				  client->ps->local_ip, client->ps->local_port);
-			free(data);
-			return bytes_processed;
-		}
-		
-		// Setup callbacks
-		bufferevent_setcb(client->local_proxy_bev, tcp_proxy_c2s_cb, NULL, xfrp_proxy_event_cb, client);
-		bufferevent_enable(client->local_proxy_bev, EV_READ | EV_WRITE);
-	}
-	
-	// Forward data (already popped from ring buffer above)
-	bufferevent_write(client->local_proxy_bev, data, len);
-	free(data);
-	client->xdpi_state = XDPI_VERIFIED;
-	
-	return len;
 }

@@ -14,6 +14,10 @@
 /* Constants */
 #define SOCKS5_ADDRES_LEN 20
 
+/* Per-client parser buffer initial capacity */
+#define SOCKS5_BUF_INIT_CAP  256
+#define XDPI_BUF_INIT_CAP    4096
+
 enum xdpi_service_type {
 	NO_XDPI,
 	SERVICE_MSTSC,
@@ -59,8 +63,6 @@ struct proxy_client {
 	/* Stream handling */
 	struct tmux_stream   stream;
 	uint32_t            stream_id;
-	unsigned char       *data_tail;      /* storage untreated data */
-	size_t              data_tail_size;
 	
 	/* State flags */
 	int                 connected;
@@ -72,7 +74,18 @@ struct proxy_client {
 	struct socks5_addr  remote_addr;
 	enum socks5_state   state;
 
-	int 			   iod_state;
+	/* Initial payload from control message (TypeStartWorkConn) */
+	unsigned char       *data_tail;
+	size_t              data_tail_size;
+
+	/* Per-client receive buffers (replace rx_ring for protocol parsing) */
+	uint8_t            *socks5_buf;     /* SOCKS5 parser staging buffer */
+	size_t              socks5_buf_len;
+	size_t              socks5_buf_cap;
+
+	uint8_t            *xdpi_buf;       /* XDPI pre-connect staging buffer */
+	size_t              xdpi_buf_len;
+	size_t              xdpi_buf_cap;
 
 	/* Hash handling */
 	UT_hash_handle      hh;
@@ -132,7 +145,6 @@ int send_client_data_tail(struct proxy_client *client);
 int is_ftp_proxy(const struct proxy_service *ps);
 int is_socks5_proxy(const struct proxy_service *ps);
 int is_udp_proxy(const struct proxy_service *ps);
-int is_iod_proxy(const struct proxy_service *ps);
 int has_service_type(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);

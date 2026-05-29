@@ -1530,12 +1530,12 @@ uint32_t tx_ring_buffer_write(struct bufferevent *bev, struct ring_buffer *ring,
  * Flow control is maintained through the stream's send_window, which is decremented
  * by the number of bytes processed.
  */
-uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
-                           uint32_t length, struct tmux_stream *stream) {
+int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
+                      uint32_t length, struct tmux_stream *stream) {
     // Check if the stream is in a closed state
     if (stream->state == LOCAL_CLOSE || stream->state == CLOSED || stream->state == RESET) {
         debug(LOG_INFO, "stream %d state is closed", stream->id);
-        return 0;
+        return -1;
     }
 
     // No send window available — return 0 to signal caller to apply backpressure.
@@ -1555,7 +1555,10 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     if (to_send > DEFAULT_MAX_FRAME_SIZE) to_send = DEFAULT_MAX_FRAME_SIZE;
 
     if (to_send > 0) {
-        tcp_mux_send_data_with_payload(bout, flags, stream->id, data, to_send);
+        if (tcp_mux_send_data_with_payload(bout, flags, stream->id, data, to_send) < 0) {
+            debug(LOG_ERR, "Stream %u: tcp_mux_send_data_with_payload failed", stream->id);
+            return -2;
+        }
         stream->send_window -= to_send;
         bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
     }
@@ -1563,7 +1566,7 @@ uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     debug(LOG_DEBUG, "Stream %u: tmux_stream_write sent=%u/%u sw=%u",
           stream->id, to_send, length, stream->send_window);
 
-    return to_send;
+    return (int)to_send;
 }
 
 /**

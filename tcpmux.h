@@ -215,10 +215,10 @@ void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr);
  * @param data   Pointer to the data buffer to write.
  * @param length Length of the data to write.
  * @param stream Pointer to the tmux_stream structure.
- * @return Number of bytes written.
+ * @return Positive: bytes written. 0: backpressure (send_window==0). Negative: error (stream closed/reset or send failed).
  */
-uint32_t tmux_stream_write(struct bufferevent *bev, uint8_t *data,
-                           uint32_t length, struct tmux_stream *stream);
+int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
+                      uint32_t length, struct tmux_stream *stream);
 
 /**
  * @brief Reads data from a tmux stream.

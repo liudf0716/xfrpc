@@ -292,7 +292,11 @@ uint32_t handle_socks5(struct proxy_client *client, struct ring_buffer *rb, int 
 
 		// Send handshake response
 		buf[1] = 0x0; // No authentication required
-		tmux_stream_write(client->ctl_bev, buf, 3, &client->stream);
+		int ret = tmux_stream_write(client->ctl_bev, buf, 3, &client->stream);
+		if (ret < 0) {
+			debug(LOG_ERR, "SOCKS5 handshake write failed: stream %d error %d", client->stream.id, ret);
+			return 0;
+		}
 		client->state = SOCKS5_HANDSHAKE;
 		return 3;
 	}
@@ -376,9 +380,11 @@ static void handle_iod_set_vip(struct proxy_client *client, struct iod_header *h
 	debug(LOG_INFO, "VIP %s successfully configured on dummy0", vip);
 	header->length = 0;
 	header->type = htonl(IOD_SET_VIP_ACK);
-	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
-	if (written < sizeof(struct iod_header)) {
-		debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
+	int written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
+	if (written < 0) {
+		debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for IOD_SET_VIP_ACK", client->stream.id, written);
+	} else if ((size_t)written < sizeof(struct iod_header)) {
+		debug(LOG_NOTICE, "Stream %d: Partial write %d/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
 	}
 	
 }
@@ -418,9 +424,11 @@ static void handle_iod_get_vip(struct proxy_client *client, struct iod_header *h
 
 	header->length = 0;
 	header->type = htonl(IOD_GET_VIP_ACK);
-	uint32_t written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
-	if (written < sizeof(struct iod_header)) {
-		debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
+	int written = tmux_stream_write(client->ctl_bev, (uint8_t *)header, sizeof(struct iod_header), &client->stream);
+	if (written < 0) {
+		debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for IOD_GET_VIP_ACK", client->stream.id, written);
+	} else if ((size_t)written < sizeof(struct iod_header)) {
+		debug(LOG_NOTICE, "Stream %d: Partial write %d/%zu bytes", client->stream.id, written, sizeof(struct iod_header));
 	}
 }
 
@@ -568,7 +576,18 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 			size_t chunk_len = iovec[i].iov_len;
 			if (chunk_len == 0) continue;
 
-			uint32_t written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
+			int written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
+			if (written < 0) {
+				/* Stream closed/reset or send failed. Drain sent bytes and
+				 * clean up the proxy client — do NOT disable EV_READ and
+				 * wait for WINDOW_UPDATE that will never come. */
+				evbuffer_drain(src, total_written);
+				debug(LOG_INFO, "Stream %u: tmux_stream_write error %d, cleaning up",
+				      client->stream.id, written);
+				del_proxy_client_by_stream_id(client->stream.id);
+				return;
+			}
+
 			if (written == 0) {
 				/* send_window == 0: backpressure. Drain what we've sent so far
 				 * and disable EV_READ. Unsent data stays in nginx evbuffer. */
@@ -583,7 +602,7 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 			/* Partial write: send_window was smaller than chunk.
 				 * Drain sent bytes, disable EV_READ if window depleted. */
-			if (written < chunk_len) {
+			if ((size_t)written < chunk_len) {
 				if (client->stream.send_window == 0) {
 					evbuffer_drain(src, total_written);
 					bufferevent_disable(bev, EV_READ);

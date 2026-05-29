@@ -59,9 +59,11 @@ static int handle_post_connection_data(struct proxy_client *client) {
 	} else if (is_iod_proxy(client->ps)) {
 		assert(client->data_tail_size != 0);
 		debug(LOG_INFO, "Sending IOD data: data_tail_size is %d", client->data_tail_size);
-		uint32_t written = tmux_stream_write(client->ctl_bev, client->data_tail, client->data_tail_size, &client->stream);
-		if (written < client->data_tail_size) {
-			debug(LOG_NOTICE, "Stream %d: Partial write %u/%zu bytes", client->stream.id, written, client->data_tail_size);
+		int written = tmux_stream_write(client->ctl_bev, client->data_tail, client->data_tail_size, &client->stream);
+		if (written < 0) {
+			debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for IOD data", client->stream.id, written);
+		} else if ((size_t)written < client->data_tail_size) {
+			debug(LOG_NOTICE, "Stream %d: Partial write %d/%zu bytes", client->stream.id, written, client->data_tail_size);
 		}
 		free(client->data_tail);
 		client->data_tail = NULL;
@@ -104,11 +106,17 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 			debug(LOG_INFO, "Flushing %zu remaining bytes from local proxy", remaining);
 			uint8_t *data = evbuffer_pullup(src, remaining);
 			if (data) {
-				uint32_t written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
-				evbuffer_drain(src, written);
-				if (written < remaining) {
-					debug(LOG_INFO, "%zu bytes unsent, send_window exhausted (sent %u/%zu)",
-					      remaining - written, written, remaining);
+				int written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
+				if (written < 0) {
+					/* Stream closed/reset — drain nothing, skip to cleanup */
+					debug(LOG_INFO, "Stream %d: tmux_stream_write error %d during flush, aborting",
+					      client->stream.id, written);
+				} else {
+					evbuffer_drain(src, (size_t)written);
+					if ((size_t)written < remaining) {
+						debug(LOG_INFO, "%zu bytes unsent, send_window exhausted (sent %d/%zu)",
+						      remaining - written, written, remaining);
+					}
 				}
 			}
 		}

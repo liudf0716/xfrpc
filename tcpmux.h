@@ -68,8 +68,6 @@ struct tmux_stream {
     uint32_t recv_window;
     uint32_t send_window;
     enum tcp_mux_state state;
-    struct evbuffer *tx_frame_buffer;
-
     // private arguments
     UT_hash_handle hh;
 };

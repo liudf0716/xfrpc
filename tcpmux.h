@@ -68,6 +68,7 @@ struct tmux_stream {
     uint32_t recv_window;
     uint32_t send_window;
     enum tcp_mux_state state;
+    struct evbuffer *tx_frame_buffer;
 
     // private arguments
     UT_hash_handle hh;
@@ -209,6 +210,11 @@ struct tmux_stream *get_stream_by_id(uint32_t id);
  * @brief Closes a tmux stream.
  */
 int tmux_stream_close(struct bufferevent *bout, struct tmux_stream *stream);
+
+/**
+ * @brief Releases per-stream temporary resources.
+ */
+void tmux_stream_release(struct tmux_stream *stream);
 
 /**
  * @brief Zero-copy transfer of @p len bytes from @p src evbuffer to @p dst.

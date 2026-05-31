@@ -350,6 +350,8 @@ free_proxy_client(struct proxy_client *client)
 		client->xdpi_buf = NULL;
 	}
 
+	tmux_stream_release(&client->stream);
+
 	free(client);
 }
 

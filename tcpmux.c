@@ -167,9 +167,24 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
     stream->state = state;
     stream->recv_window = MAX_STREAM_WINDOW_SIZE;  // 8MB
     stream->send_window = 256 * 1024;  // 256KB initial (matches yamux initialStreamWindow)
+    stream->tx_frame_buffer = NULL;
 
     add_stream(stream);
     debug(LOG_DEBUG, "Initialized stream %u with state %d", id, state);
+}
+
+/**
+ * @brief Releases per-stream temporary resources.
+ */
+void tmux_stream_release(struct tmux_stream *stream) {
+    if (!stream) {
+        return;
+    }
+
+    if (stream->tx_frame_buffer) {
+        evbuffer_free(stream->tx_frame_buffer);
+        stream->tx_frame_buffer = NULL;
+    }
 }
 
 /**
@@ -936,8 +951,6 @@ int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
 int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
                                     struct evbuffer *src,
                                     struct tmux_stream *stream) {
-    static struct evbuffer *scratch_frame = NULL;
-
     if (!src || !stream) {
         return -2;
     }
@@ -982,36 +995,37 @@ int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(DATA, flags, stream->id, to_send, &tmux_hdr);
 
-    if (!scratch_frame) {
-        scratch_frame = evbuffer_new();
-        if (!scratch_frame) {
+    if (!stream->tx_frame_buffer) {
+        stream->tx_frame_buffer = evbuffer_new();
+        if (!stream->tx_frame_buffer) {
             debug(LOG_ERR, "Stream %u: failed to allocate scratch frame", stream->id);
             return -2;
         }
     }
 
-    if (evbuffer_get_length(scratch_frame) > 0) {
-        evbuffer_drain(scratch_frame, evbuffer_get_length(scratch_frame));
+    if (evbuffer_get_length(stream->tx_frame_buffer) > 0) {
+        evbuffer_drain(stream->tx_frame_buffer, evbuffer_get_length(stream->tx_frame_buffer));
     }
 
-    if (evbuffer_add(scratch_frame, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+    if (evbuffer_add(stream->tx_frame_buffer, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
         debug(LOG_ERR, "Stream %u: failed to append tmux header", stream->id);
         return -2;
     }
 
-    ssize_t moved = evbuffer_remove_buffer(src, scratch_frame, to_send);
+    ssize_t moved = evbuffer_remove_buffer(src, stream->tx_frame_buffer, to_send);
     if (moved != (ssize_t)to_send) {
+        evbuffer_drain(stream->tx_frame_buffer, evbuffer_get_length(stream->tx_frame_buffer));
         debug(LOG_ERR, "Stream %u: payload transfer short %zd/%u", stream->id, moved, to_send);
         return -2;
     }
 
-    if (evbuffer_add_buffer(out, scratch_frame) < 0) {
+    if (evbuffer_add_buffer(out, stream->tx_frame_buffer) < 0) {
+        evbuffer_drain(stream->tx_frame_buffer, evbuffer_get_length(stream->tx_frame_buffer));
         debug(LOG_ERR, "Stream %u: failed to append frame to output", stream->id);
         return -2;
     }
 
     stream->send_window -= to_send;
-    bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
 
     debug(LOG_DEBUG, "Stream %u: tmux_stream_write_from_evbuffer sent=%u sw=%u",
           stream->id, to_send, stream->send_window);

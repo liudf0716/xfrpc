@@ -437,53 +437,21 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
-	/* Use evbuffer_peek to iterate over contiguous chunks directly in the
-	 * input buffer without copying.  Each chunk is passed to tmux_stream_write
-	 * which handles flow control. */
-	size_t total_written = 0;
-	struct evbuffer_iovec iovec[16];
-	while (total_written < len) {
-		int nvecs = evbuffer_peek(src, len - total_written, NULL, iovec, 16);
-		if (nvecs <= 0) {
-			break;
+	while (evbuffer_get_length(src) > 0) {
+		int written = tmux_stream_write_from_evbuffer(client->ctl_bev, src, &client->stream);
+		if (written < 0) {
+			debug(LOG_INFO, "Stream %u: tmux_stream_write_from_evbuffer error %d, cleaning up",
+			      client->stream.id, written);
+			del_proxy_client_by_stream_id(client->stream.id);
+			return;
 		}
 
-		for (int i = 0; i < nvecs && total_written < len; i++) {
-			uint8_t *data = (uint8_t *)iovec[i].iov_base;
-			size_t chunk_len = iovec[i].iov_len;
-			if (chunk_len == 0) continue;
-
-			int written = tmux_stream_write(client->ctl_bev, data, chunk_len, &client->stream);
-			if (written < 0) {
-				evbuffer_drain(src, total_written);
-				debug(LOG_INFO, "Stream %u: tmux_stream_write error %d, cleaning up",
-				      client->stream.id, written);
-				del_proxy_client_by_stream_id(client->stream.id);
-				return;
-			}
-
-			if (written == 0) {
-				evbuffer_drain(src, total_written);
-				bufferevent_disable(bev, EV_READ);
-				debug(LOG_DEBUG, "Stream %u: send_window exhausted, disabling EV_READ",
-				      client->stream.id);
-				return;
-			}
-
-			total_written += written;
-
-			if ((size_t)written < chunk_len) {
-				if (client->stream.send_window == 0) {
-					evbuffer_drain(src, total_written);
-					bufferevent_disable(bev, EV_READ);
-					return;
-				}
-			}
+		if (written == 0) {
+			bufferevent_disable(bev, EV_READ);
+			debug(LOG_DEBUG, "Stream %u: send_window exhausted, disabling EV_READ",
+			      client->stream.id);
+			return;
 		}
-	}
-
-	if (total_written > 0) {
-		evbuffer_drain(src, total_written);
 	}
 }
 

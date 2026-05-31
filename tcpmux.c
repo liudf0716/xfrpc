@@ -24,10 +24,8 @@
 /**
  * @brief Zero-copy transfer of @p len bytes from @p src to @p dst.
  *
- * Uses evbuffer_remove_buffer to move exactly @p len bytes from src into a
- * temporary staging evbuffer, then evbuffer_add_buffer to transfer the buffer
- * chain (zero-copy pointer swap) into dst.  The staging evbuffer is freed
- * but its chain ownership moves to dst, so no memcpy occurs on the data.
+ * Uses evbuffer_remove_buffer to move exactly @p len bytes from src to dst.
+ * This avoids application-level payload memcpy on the forwarding path.
  *
  * @return Number of bytes transferred.
  */
@@ -40,26 +38,12 @@ size_t evbuffer_zc_transfer(struct evbuffer *src,
 	size_t n = MIN(len, avail);
 	if (n == 0) return 0;
 
-	/* Move exactly n bytes from src into a temporary staging buffer.
-	 * evbuffer_remove_buffer copies the data into the staging buffer's chains,
-	 * but this is a single libevent-internal copy that avoids the application-
-	 * level pullup+add memcpy. */
-	struct evbuffer *staging = evbuffer_new();
-	if (!staging) {
-		/* Fallback: pullup + add */
-		uint8_t *p = evbuffer_pullup(src, n);
-		if (p) { evbuffer_add(dst, p, n); evbuffer_drain(src, n); }
-		return n;
-	}
+    ssize_t moved = evbuffer_remove_buffer(src, dst, n);
+    if (moved <= 0) {
+        return 0;
+    }
 
-	evbuffer_remove_buffer(src, staging, n);
-
-	/* Zero-copy: move the chain pointers from staging into dst.
-	 * evbuffer_add_buffer does pointer manipulation, no data copy. */
-	evbuffer_add_buffer(dst, staging);
-	evbuffer_free(staging);
-
-	return n;
+    return (size_t)moved;
 }
 
 /**
@@ -943,6 +927,94 @@ int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
     debug(LOG_DEBUG, "Stream %u: tmux_stream_write sent=%u/%u sw=%u",
           stream->id, to_send, length, stream->send_window);
 
+    return (int)to_send;
+}
+
+/**
+ * @brief Writes data from an evbuffer to a TCP multiplexing stream with flow control.
+ */
+int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
+                                    struct evbuffer *src,
+                                    struct tmux_stream *stream) {
+    static struct evbuffer *scratch_frame = NULL;
+
+    if (!src || !stream) {
+        return -2;
+    }
+
+    if (stream->state == LOCAL_CLOSE || stream->state == CLOSED || stream->state == RESET) {
+        debug(LOG_INFO, "stream %d state is closed", stream->id);
+        return -1;
+    }
+
+    size_t available = evbuffer_get_length(src);
+    if (available == 0) {
+        return 0;
+    }
+
+    if (stream->send_window == 0) {
+        debug(LOG_DEBUG, "Stream %u: tmux_stream_write_from_evbuffer blocked, send_window=0", stream->id);
+        return 0;
+    }
+
+    enum tcp_mux_flag flags = get_send_flags(stream);
+    struct bufferevent *bout = bev ? bev : get_main_control()->connect_bev;
+    if (!bout) {
+        debug(LOG_ERR, "Stream %u: invalid output bufferevent", stream->id);
+        return -2;
+    }
+
+    struct evbuffer *out = bufferevent_get_output(bout);
+    if (!out) {
+        debug(LOG_ERR, "Stream %u: invalid output evbuffer", stream->id);
+        return -2;
+    }
+
+    uint32_t to_send = (uint32_t)available;
+    if (to_send > stream->send_window) to_send = stream->send_window;
+    if (to_send > DEFAULT_MAX_FRAME_SIZE) to_send = DEFAULT_MAX_FRAME_SIZE;
+
+    if (to_send == 0) {
+        return 0;
+    }
+
+    struct tcp_mux_header tmux_hdr;
+    memset(&tmux_hdr, 0, sizeof(tmux_hdr));
+    tcp_mux_encode(DATA, flags, stream->id, to_send, &tmux_hdr);
+
+    if (!scratch_frame) {
+        scratch_frame = evbuffer_new();
+        if (!scratch_frame) {
+            debug(LOG_ERR, "Stream %u: failed to allocate scratch frame", stream->id);
+            return -2;
+        }
+    }
+
+    if (evbuffer_get_length(scratch_frame) > 0) {
+        evbuffer_drain(scratch_frame, evbuffer_get_length(scratch_frame));
+    }
+
+    if (evbuffer_add(scratch_frame, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+        debug(LOG_ERR, "Stream %u: failed to append tmux header", stream->id);
+        return -2;
+    }
+
+    ssize_t moved = evbuffer_remove_buffer(src, scratch_frame, to_send);
+    if (moved != (ssize_t)to_send) {
+        debug(LOG_ERR, "Stream %u: payload transfer short %zd/%u", stream->id, moved, to_send);
+        return -2;
+    }
+
+    if (evbuffer_add_buffer(out, scratch_frame) < 0) {
+        debug(LOG_ERR, "Stream %u: failed to append frame to output", stream->id);
+        return -2;
+    }
+
+    stream->send_window -= to_send;
+    bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+
+    debug(LOG_DEBUG, "Stream %u: tmux_stream_write_from_evbuffer sent=%u sw=%u",
+          stream->id, to_send, stream->send_window);
     return (int)to_send;
 }
 

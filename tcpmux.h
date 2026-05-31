@@ -160,6 +160,17 @@ int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
                       uint32_t length, struct tmux_stream *stream);
 
 /**
+ * @brief Writes data from an evbuffer to a tmux stream with flow control.
+ *
+ * Sends one DATA frame (header + payload) and drains payload bytes from @p src.
+ *
+ * @return Positive: bytes written. 0: backpressure (send_window==0). Negative: error.
+ */
+int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
+                                    struct evbuffer *src,
+                                    struct tmux_stream *stream);
+
+/**
  * @brief Resets the session ID counter.
  */
 void reset_session_id();

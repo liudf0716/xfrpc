@@ -995,33 +995,16 @@ int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
     tcp_mux_encode(DATA, flags, stream->id, to_send, &tmux_hdr);
 
-    if (!stream->tx_frame_buffer) {
-        stream->tx_frame_buffer = evbuffer_new();
-        if (!stream->tx_frame_buffer) {
-            debug(LOG_ERR, "Stream %u: failed to allocate scratch frame", stream->id);
-            return -2;
-        }
-    }
-
-    if (evbuffer_get_length(stream->tx_frame_buffer) > 0) {
-        evbuffer_drain(stream->tx_frame_buffer, evbuffer_get_length(stream->tx_frame_buffer));
-    }
-
-    if (evbuffer_add(stream->tx_frame_buffer, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
+    // 1. 直接写header到out
+    if (evbuffer_add(out, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
         debug(LOG_ERR, "Stream %u: failed to append tmux header", stream->id);
         return -2;
     }
 
-    ssize_t moved = evbuffer_remove_buffer(src, stream->tx_frame_buffer, to_send);
+    // 2. 直接remove_buffer到out
+    ssize_t moved = evbuffer_remove_buffer(src, out, to_send);
     if (moved != (ssize_t)to_send) {
-        evbuffer_drain(stream->tx_frame_buffer, evbuffer_get_length(stream->tx_frame_buffer));
         debug(LOG_ERR, "Stream %u: payload transfer short %zd/%u", stream->id, moved, to_send);
-        return -2;
-    }
-
-    if (evbuffer_add_buffer(out, stream->tx_frame_buffer) < 0) {
-        evbuffer_drain(stream->tx_frame_buffer, evbuffer_get_length(stream->tx_frame_buffer));
-        debug(LOG_ERR, "Stream %u: failed to append frame to output", stream->id);
         return -2;
     }
 

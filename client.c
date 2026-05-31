@@ -85,28 +85,23 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 		  error_msg, client->stream_id, strerror(errno));
 
 	/* Flush remaining data from the local proxy bufferevent into MUX stream.
-	 * Loop to handle partial sends — tmux_stream_write may return less than
-	 * requested when send_window is smaller than remaining data. */
+	 * Loop to handle partial sends — tmux_stream_write_from_evbuffer drains
+	 * what it writes directly from src when send_window allows. */
 	if (bev && client->ctl_bev) {
 		struct evbuffer *src = bufferevent_get_input(bev);
-		size_t remaining = evbuffer_get_length(src);
-		while (remaining > 0) {
-			uint8_t *data = evbuffer_pullup(src, remaining);
-			if (!data) break;
-
-			int written = tmux_stream_write(client->ctl_bev, data, remaining, &client->stream);
+		while (evbuffer_get_length(src) > 0) {
+			int written = tmux_stream_write_from_evbuffer(client->ctl_bev, src, &client->stream);
 			if (written < 0) {
-				debug(LOG_INFO, "Stream %d: tmux_stream_write error %d during flush, aborting",
+				debug(LOG_INFO, "Stream %d: tmux_stream_write_from_evbuffer error %d during flush, aborting",
 				      client->stream.id, written);
 				break;
 			}
 			if (written == 0) {
 				/* send_window == 0: can't send more right now */
-				debug(LOG_INFO, "%zu bytes unsent, send_window exhausted", remaining);
+				debug(LOG_INFO, "%zu bytes unsent, send_window exhausted",
+				      evbuffer_get_length(src));
 				break;
 			}
-			evbuffer_drain(src, (size_t)written);
-			remaining -= written;
 		}
 	}
 

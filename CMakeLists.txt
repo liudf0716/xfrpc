@@ -5,32 +5,22 @@ project(xfrp C)
 
 # Build options
 option(DEBUG "Enable debug mode" OFF)
-option(THIRDPARTY_STATIC_BUILD "Build with static third party libraries" OFF)
 option(ENABLE_SANITIZER "Enable sanitizer(Debug+Gcc/Clang/AppleClang)" ON)
 
-# Configure static/dynamic build
-if(THIRDPARTY_STATIC_BUILD)
-    add_subdirectory(${PROJECT_SOURCE_DIR}/thirdparty/)
-    include_directories(
-        ${PROJECT_SOURCE_DIR}/thirdparty/include/libevent
-        ${PROJECT_SOURCE_DIR}/thirdparty/include/
-    )
-    link_directories(${PROJECT_SOURCE_DIR}/thirdparty/libs/)
-    set(EXTRA_LIBS dl pthread)
-else()
-    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
-    
-    # Find required packages
-    find_package(LibEvent REQUIRED)
-    find_package(OpenSSL REQUIRED)
-    find_package(JSON-C REQUIRED)
-    find_package(ZLIB REQUIRED)
-    
-    include_directories(
-        ${JSON-C_INCLUDE_DIR}
-        ${ZLIB_INCLUDE_DIRS}
-    )
-endif()
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+
+# Find required packages from the system
+find_package(LibEvent REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(JSON-C REQUIRED)
+find_package(ZLIB REQUIRED)
+
+include_directories(
+    ${JSON-C_INCLUDE_DIR}
+    ${ZLIB_INCLUDE_DIRS}
+)
+
+set(EXTRA_LIBS)
 
 # Sanitizer configuration
 macro(check_asan _RESULT)

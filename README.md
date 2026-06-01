@@ -113,53 +113,6 @@ make
 ```
 This will compile xfrpc and create an executable in the build directory. You can then run xfrpc using the executable by running the appropriate command in terminal.
 
-### Build xfrpc by Built-in thirdparty
-
-use Built-in thirdparty build xfrpc.
-
-require cmake version > 3.1.
-
-To build xfrpc using the built-in third-party libraries, you can fork the xfrpc repository on GitHub and then clone it locally. Then, navigate to the xfrp directory, create a build directory, and use cmake to configure the build.
-
-```shell
-git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git
-cd xfrp
-mkdir build
-cmake -D THIRDPARTY_STATIC_BUILD=ON ..
-make
-```
-
-By setting THIRDPARTY_STATIC_BUILD=ON the build process will use the libraries that are included in the xfrpc source code, instead of using the libraries installed on your system.
-
-The THIRDPARTY_STATIC_BUILD parameter is default set to OFF, which means that by default the build process will use the libraries installed on your system.
-
-It's important to note that you will need cmake version greater than 3.1 to use this feature.
-
-### Cross-compile xfrpc by Built-in thirdparty
-
-The method of compiling arm architecture or mips architecture xfrpc under x86 architecture is as follows.
-
-Test on Ubuntu 22.04 LTS
-
-Cross-compile mips architecture xfrpc(only support linux mips, irix mips don't supported)
-If can't run in special mips architecture, Modify the CMakeLists.txt in the thirdparty folder and change the linux-mips32 string to linux-generic32.After modify can work.
-```
-sudo apt-get install gcc-mips-linux-gnu # install mips-gcc compiler
-mkdir build && cd build
-cmake -DTHIRDPARTY_STATIC_BUILD=mips -DCMAKE_C_COMPILER=mips-linux-gnu-gcc ..
-make
-```
-
-CMAKE_C_COMPILER flag is the path of your cross compiler.I recommend that you put this in an environment variable.
-
-Cross-compile arm architecture xfrpc
-```
-sudo apt-get install arm-linux-gnueabihf-gcc
-mkdir build && cd build
-cmake -DTHIRDPARTY_STATIC_BUILD=arm -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc ..
-make
-```
-
 ### Build static binary in Alpine container
 
 Under project root directory

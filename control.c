@@ -31,6 +31,7 @@
 #include "login.h"
 #include "tcpmux.h"
 #include "proxy.h"
+#include "tls.h"
 
 static struct control *main_ctl;
 static bool xfrpc_status;
@@ -180,6 +181,9 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 
 	// Handle connection errors and EOF
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		if (tls_is_enabled()) {
+			tls_log_errors("TLS work connection");
+		}
 		handle_client_error(client, bev, c_conf);
 		return;
 	}
@@ -521,6 +525,25 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 	if (fd >= 0) {
 		int one = 1;
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+	}
+
+	// Wrap with TLS if enabled AND target is the frps server
+	{
+		int _tls_on = tls_is_enabled();
+		dprintf(2, "[DEBUG] TLS check: tls_is_enabled=%d, name=%s, port=%d\n", _tls_on, name, port);
+	}
+	if (tls_is_enabled()) {
+		struct common_conf *c_conf = get_common_config();
+		if (c_conf && strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
+			dprintf(2, "[DEBUG] TLS wrapping connection to %s:%d\n", name, port);
+			struct bufferevent *ssl_bev = tls_wrap_bev(base, bev);
+			if (!ssl_bev) {
+				debug(LOG_ERR, "Failed to wrap connection with TLS");
+				/* bev was consumed/freed by tls_wrap_bev on failure */
+				return NULL;
+			}
+			return ssl_bev;
+		}
 	}
 
 	return bev;
@@ -1418,10 +1441,19 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
  */
 static void handle_connection_success(struct bufferevent *bev) {
 	debug(LOG_INFO, "Successfully connected to xfrp server");
+	struct common_conf *c_conf = get_common_config();
+	dprintf(2, "[DEBUG] handle_connection_success: tcp_mux=%d\n", c_conf->tcp_mux);
 	
 	// Initialize window and login
-	send_window_update(bev, &main_ctl->stream, 0);
+	if (c_conf->tcp_mux) {
+		send_window_update(bev, &main_ctl->stream, 0);
+	}
 	login();
+	
+	// Flush TLS output buffer
+	if (tls_is_enabled()) {
+		bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
+	}
 	
 	// Setup keepalive mechanism
 	keep_control_alive();
@@ -1443,6 +1475,7 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	static int retry_times = 0;
 	struct common_conf *c_conf = get_common_config();
+	dprintf(2, "[DEBUG] connect_event_cb: what=0x%x\n", what);
 	
 	if (!c_conf) {
 		debug(LOG_ERR, "Failed to get common config");
@@ -1450,6 +1483,16 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
+		dprintf(2, "[DEBUG] connect_event_cb error: what=0x%x, tls=%d\n", what, tls_is_enabled());
+		if (tls_is_enabled()) {
+			tls_log_errors("TLS connection");
+		}
+		unsigned long ssl_err;
+		while ((ssl_err = ERR_get_error()) != 0) {
+			char buf[256];
+			ERR_error_string_n(ssl_err, buf, sizeof(buf));
+			dprintf(2, "[DEBUG] SSL error: %s\n", buf);
+		}
 		debug(LOG_ERR, "connect_event_cb disconnect event: what=0x%x", what);
 		handle_connection_failure(c_conf, &retry_times);
 	} 
@@ -2081,6 +2124,16 @@ void init_main_control()
 		init_tmux_stream(&main_ctl->stream, get_next_session_id(), INIT);
 	}
 
+	// Initialize TLS if enabled (must be before any connection attempts)
+	if (c_conf->tls_enable) {
+		if (tls_init() != 0) {
+			debug(LOG_ERR, "Failed to initialize TLS");
+			event_base_free(main_ctl->connect_base);
+			free(main_ctl);
+			exit(1);
+		}
+	}
+
 	// Skip DNS initialization if server address is IP
 	if (is_valid_ip_address(c_conf->server_addr)) {
 		return;
@@ -2187,6 +2240,9 @@ void close_main_control()
 		event_base_free(main_ctl->connect_base);
 		main_ctl->connect_base = NULL;
 	}
+
+	// Cleanup TLS context
+	tls_cleanup();
 
 	// Free the main control structure
 	free_main_control();

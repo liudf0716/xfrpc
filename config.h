@@ -43,6 +43,13 @@ struct common_conf {
 	int     heartbeat_timeout;     /* default 30 */
 	int     tcp_mux;              /* default 0 */
 
+	/* TLS settings */
+	int     tls_enable;           /* default 0 */
+	char    *tls_cert_file;       /* client certificate file (optional) */
+	char    *tls_key_file;        /* client private key file (optional) */
+	char    *tls_trusted_ca_file; /* CA certificate file for verification */
+	char    *tls_server_name;     /* SNI server name (optional) */
+
 	/* Environment settings */
 	int     is_router;            /* indicates if running on router (OpenWrt/LEDE) */
 };

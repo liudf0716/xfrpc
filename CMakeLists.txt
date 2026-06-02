@@ -62,6 +62,7 @@ set(CORE_SOURCES
     utils.c
     common.c
     login.c
+    tls.c
 )
 
 set(PROXY_SOURCES
@@ -100,6 +101,7 @@ set(EXTERNAL_LIBS
     ssl
     crypto
     event
+    event_openssl
     ${JSON-C_LIBRARIES}
     ${ZLIB_LIBRARIES}
 )

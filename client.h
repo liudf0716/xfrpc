@@ -132,7 +132,11 @@ struct proxy_service {
 	char    *plugin;
 	char    *plugin_user;
 	char    *plugin_pwd;
-	
+
+	/* TCPMux specific */
+	char    *multiplexer;        /* Multiplexer type (e.g. "httpconnect") */
+	char    *route_by_http_user; /* Route by HTTP user for tcpmux */
+
 	/* Hash handling */
 	UT_hash_handle hh;
 };
@@ -145,6 +149,7 @@ int send_client_data_tail(struct proxy_client *client);
 int is_ftp_proxy(const struct proxy_service *ps);
 int is_socks5_proxy(const struct proxy_service *ps);
 int is_udp_proxy(const struct proxy_service *ps);
+int is_tcpmux_proxy(const struct proxy_service *ps);
 int has_service_type(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);

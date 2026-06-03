@@ -34,6 +34,7 @@ static const char *valid_types[] = {
 	"http",
 	"https",
 	"iod",
+	"tcpmux",
 	NULL
 };
 
@@ -199,6 +200,14 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 		ps->host_header_rewrite,
 		ps->http_user,
 		ps->http_pwd);
+
+	// Log tcpmux-specific fields
+	if (ps->proxy_type && strcmp(ps->proxy_type, "tcpmux") == 0) {
+		debug(LOG_DEBUG,
+			"  TCPMux: {multiplexer:%s, route_by_http_user:%s}",
+			ps->multiplexer ? ps->multiplexer : "httpconnect (default)",
+			ps->route_by_http_user ? ps->route_by_http_user : "(none)");
+	}
 }
 
 /**
@@ -350,7 +359,8 @@ int validate_proxy(struct proxy_service *ps)
 	int needs_local_endpoint = (strcmp(ps->proxy_type, "tcp") == 0 ||
 							  strcmp(ps->proxy_type, "udp") == 0 ||
 							  strcmp(ps->proxy_type, "http") == 0 ||
-							  strcmp(ps->proxy_type, "https") == 0);
+							  strcmp(ps->proxy_type, "https") == 0 ||
+							  strcmp(ps->proxy_type, "tcpmux") == 0);
 
 	if (needs_local_endpoint && (ps->local_port == 0 || ps->local_ip == NULL)) {
 		debug(LOG_ERR, "Proxy [%s] error: local_port or local_ip not found", 
@@ -381,6 +391,19 @@ int validate_proxy(struct proxy_service *ps)
 		}
 		if (!ps->custom_domains && !ps->subdomain) {
 			debug(LOG_ERR, "Proxy [%s] error: either custom_domains or subdomain must be set", 
+				  ps->proxy_name);
+			return 0;
+		}
+	}
+	else if (strcmp(ps->proxy_type, "tcpmux") == 0) {
+		// TCPMux requires domain configuration like http/https
+		if (ps->custom_domains && ps->subdomain) {
+			debug(LOG_ERR, "Proxy [%s] error: custom_domains and subdomain cannot be set simultaneously",
+				  ps->proxy_name);
+			return 0;
+		}
+		if (!ps->custom_domains && !ps->subdomain) {
+			debug(LOG_ERR, "Proxy [%s] error: either custom_domains or subdomain must be set for tcpmux",
 				  ps->proxy_name);
 			return 0;
 		}
@@ -626,6 +649,8 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("plugin_user")) SET_STRING_VALUE(plugin_user);
 	else if (MATCH_NAME("plugin_pwd")) SET_STRING_VALUE(plugin_pwd);
 	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
+	else if (MATCH_NAME("multiplexer")) SET_STRING_VALUE(multiplexer);
+	else if (MATCH_NAME("route_by_http_user")) SET_STRING_VALUE(route_by_http_user);
 	else if (MATCH_NAME("service_type")) ps->service_type = convert_service_type(value);
 	else if (MATCH_NAME("start_time")) {
 		int hour = atoi(value);
@@ -917,6 +942,8 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->plugin_pwd);
 	SAFE_FREE(ps->s_root_dir);
 	SAFE_FREE(ps->bind_addr);
+	SAFE_FREE(ps->multiplexer);
+	SAFE_FREE(ps->route_by_http_user);
 	SAFE_FREE(ps);
 }
 

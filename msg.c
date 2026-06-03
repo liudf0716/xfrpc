@@ -314,11 +314,17 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	// Add basic proxy configuration
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_name", string, np_req->proxy_name);
 	
-	// Handle proxy type - normalize socks5/mstsc to tcp
-	const char *proxy_type = (strcmp(np_req->proxy_type, "socks5") == 0 || 
-							strcmp(np_req->proxy_type, "mstsc") == 0 ||
-							strcmp(np_req->proxy_type, "iod") == 0) ? 
-							"tcp" : np_req->proxy_type;
+	// Handle proxy type - normalize socks5/mstsc/iod to tcp, keep tcpmux as-is
+	const char *proxy_type;
+	if (strcmp(np_req->proxy_type, "socks5") == 0 ||
+		strcmp(np_req->proxy_type, "mstsc") == 0 ||
+		strcmp(np_req->proxy_type, "iod") == 0) {
+		proxy_type = "tcp";
+	} else if (strcmp(np_req->proxy_type, "tcpmux") == 0) {
+		proxy_type = "tcpmux";
+	} else {
+		proxy_type = np_req->proxy_type;
+	}
 	JSON_MARSHAL_TYPE(j_np_req, "proxy_type", string, proxy_type);
 
 	// Add encryption and compression flags
@@ -328,7 +334,8 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	// Add group settings for specific proxy types
 	if (strcmp(proxy_type, "tcp") == 0 || 
 		strcmp(proxy_type, "http") == 0 ||
-		strcmp(proxy_type, "https") == 0) {
+		strcmp(proxy_type, "https") == 0 ||
+		strcmp(proxy_type, "tcpmux") == 0) {
 		if (np_req->group) {
 			JSON_MARSHAL_TYPE(j_np_req, "group", string, np_req->group);
 		}
@@ -381,6 +388,15 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "host_header_rewrite", string, SAFE_JSON_STRING(np_req->host_header_rewrite));
 	JSON_MARSHAL_TYPE(j_np_req, "http_user", string, SAFE_JSON_STRING(np_req->http_user));
 	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
+
+	// Add TCPMux specific fields
+	if (strcmp(proxy_type, "tcpmux") == 0) {
+		JSON_MARSHAL_TYPE(j_np_req, "multiplexer", string,
+			SAFE_JSON_STRING(np_req->multiplexer ? np_req->multiplexer : "httpconnect"));
+		if (np_req->route_by_http_user) {
+			JSON_MARSHAL_TYPE(j_np_req, "route_by_http_user", string, np_req->route_by_http_user);
+		}
+	}
 
 	// Convert to string
 	const char *json_str = json_object_to_json_string(j_np_req);

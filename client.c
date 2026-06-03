@@ -197,6 +197,13 @@ int is_udp_proxy(const struct proxy_service *ps) {
 }
 
 /**
+ * @brief Check if proxy service is TCPMux type
+ */
+int is_tcpmux_proxy(const struct proxy_service *ps) {
+	return is_proxy_type(ps, "tcpmux", 1);
+}
+
+/**
  * Sets up callback functions for a proxy client
  */
 static void setup_proxy_callbacks(struct proxy_client *client, 

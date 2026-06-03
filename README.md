@@ -181,6 +181,45 @@ remote_port = 6128
 
 This configuration tells the frp server (frps) to forward incoming connections on remote port 6128 to the xfrpc client. The xfrpc client, in turn, will forward these connections to the local service running on IP address 127.0.0.1 and port 22.
 
++ xfrpc tcpmux support
+
+TCPMux proxy uses HTTP CONNECT multiplexing on frps's `tcpmuxHTTPConnectPort` to route connections by domain. Multiple tcpmux proxies share a single connection pool, making it more resource-efficient than individual tcp proxies.
+
+First, enable tcpmux on frps:
+
+```
+# frps.ini
+[common]
+bind_port = 7000
+tcpmuxHTTPConnectPort = 5000
+```
+
+Then configure xfrpc with tcpmux proxies:
+
+```
+# xfrpc_tcpmux.ini
+[common]
+server_addr = your_server_ip
+server_port = 7000
+tcp_mux = 1
+
+[web]
+type = tcpmux
+local_ip = 127.0.0.1
+local_port = 80
+custom_domains = web.example.com
+multiplexer = httpconnect
+
+[api]
+type = tcpmux
+local_ip = 127.0.0.1
+local_port = 8080
+subdomain = api
+multiplexer = httpconnect
+```
+
+Access `web.example.com:5000` or `api.your_server_domain:5000` to reach the local services through the TCPMux multiplexer.
+
 + xfrpc http&https support
 
  Supporting HTTP and HTTPS in xfrpc requires additional configuration compared to supporting just TCP. In the frps.ini configuration file, the vhost_http_port and vhost_https_port options must be added to specify the ports that the frp server (frps) will listen on for incoming HTTP and HTTPS connections.

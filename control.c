@@ -530,12 +530,12 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 	// Wrap with TLS if enabled AND target is the frps server
 	{
 		int _tls_on = tls_is_enabled();
-		dprintf(2, "[DEBUG] TLS check: tls_is_enabled=%d, name=%s, port=%d\n", _tls_on, name, port);
+		debug(LOG_DEBUG, "TLS check: tls_is_enabled=%d, name=%s, port=%d", _tls_on, name, port);
 	}
 	if (tls_is_enabled()) {
 		struct common_conf *c_conf = get_common_config();
 		if (c_conf && strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
-			dprintf(2, "[DEBUG] TLS wrapping connection to %s:%d\n", name, port);
+			debug(LOG_DEBUG, "TLS wrapping connection to %s:%d", name, port);
 			struct bufferevent *ssl_bev = tls_wrap_bev(base, bev);
 			if (!ssl_bev) {
 				debug(LOG_ERR, "Failed to wrap connection with TLS");
@@ -1442,7 +1442,7 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
 static void handle_connection_success(struct bufferevent *bev) {
 	debug(LOG_INFO, "Successfully connected to xfrp server");
 	struct common_conf *c_conf = get_common_config();
-	dprintf(2, "[DEBUG] handle_connection_success: tcp_mux=%d\n", c_conf->tcp_mux);
+	debug(LOG_DEBUG, "handle_connection_success: tcp_mux=%d", c_conf->tcp_mux);
 	
 	// Initialize window and login
 	if (c_conf->tcp_mux) {
@@ -1475,7 +1475,7 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
 	static int retry_times = 0;
 	struct common_conf *c_conf = get_common_config();
-	dprintf(2, "[DEBUG] connect_event_cb: what=0x%x\n", what);
+	debug(LOG_DEBUG, "connect_event_cb: what=0x%x", what);
 	
 	if (!c_conf) {
 		debug(LOG_ERR, "Failed to get common config");
@@ -1483,7 +1483,7 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
-		dprintf(2, "[DEBUG] connect_event_cb error: what=0x%x, tls=%d\n", what, tls_is_enabled());
+		debug(LOG_DEBUG, "connect_event_cb error: what=0x%x, tls=%d", what, tls_is_enabled());
 		if (tls_is_enabled()) {
 			tls_log_errors("TLS connection");
 		}
@@ -1491,7 +1491,7 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 		while ((ssl_err = ERR_get_error()) != 0) {
 			char buf[256];
 			ERR_error_string_n(ssl_err, buf, sizeof(buf));
-			dprintf(2, "[DEBUG] SSL error: %s\n", buf);
+			debug(LOG_DEBUG, "SSL error: %s", buf);
 		}
 		debug(LOG_ERR, "connect_event_cb disconnect event: what=0x%x", what);
 		handle_connection_failure(c_conf, &retry_times);

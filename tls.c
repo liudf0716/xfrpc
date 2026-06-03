@@ -214,7 +214,7 @@ struct bufferevent *tls_wrap_bev(struct event_base *base, struct bufferevent *be
 	int sock_err = 0;
 	socklen_t err_len = sizeof(sock_err);
 	getsockopt(fd, SOL_SOCKET, SO_ERROR, &sock_err, &err_len);
-	dprintf(2, "[DEBUG] tls_wrap_bev: fd=%d, sock_error=%d (%s)\n", (int)fd, sock_err, strerror(sock_err));
+	debug(LOG_DEBUG, "tls_wrap_bev: fd=%d, sock_error=%d (%s)", (int)fd, sock_err, strerror(sock_err));
 	struct bufferevent *ssl_bev = bufferevent_openssl_socket_new(
 		base, fd, ssl,
 		BUFFEREVENT_SSL_CONNECTING,

@@ -56,8 +56,10 @@ void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client);
 
 // SOCKS5 protocol handler (reads directly from bev, no ring buffer)
 void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_t len);
+void socks5_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 
 // XDPI service type handler (reads directly from bev, no ring buffer)
 void handle_xdpi(struct proxy_client *client, struct bufferevent *bev, uint32_t len);
+void xdpi_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 
 #endif //XFRPC_PROXY_H

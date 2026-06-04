@@ -1768,12 +1768,20 @@ void send_msg_frp_server(struct bufferevent *bev,
 	// Send message based on mux configuration
 	struct common_conf *c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
-		if (tmux_stream_write(bout, (uint8_t *)req_msg, total_len, stream) < 0) {
-			debug(LOG_ERR, "Failed to write message through TCP mux");
+		struct evbuffer *tmp = evbuffer_new();
+		if (tmp) {
+			evbuffer_add(tmp, (uint8_t *)req_msg, total_len);
+			if (tmux_stream_write(bout, tmp, stream) < 0) {
+				debug(LOG_ERR, "Failed to write message through TCP mux");
+			}
+			bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+			evbuffer_free(tmp);
 		}
 	} else {
 		if (bufferevent_write(bout, (uint8_t *)req_msg, total_len) < 0) {
 			debug(LOG_ERR, "Failed to write message directly"); 
+		} else {
+			bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
 		}
 	}
 
@@ -1849,15 +1857,23 @@ static int initialize_encoder(struct bufferevent *bout, struct tmux_stream *stre
 
 	struct common_conf *c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
-		if (tmux_stream_write(bout, coder->iv, 16, stream) < 0) {
-			debug(LOG_ERR, "Failed to write IV through TCP mux");
-			return -1;
+		struct evbuffer *tmp = evbuffer_new();
+		if (tmp) {
+			evbuffer_add(tmp, coder->iv, 16);
+			if (tmux_stream_write(bout, tmp, stream) < 0) {
+				debug(LOG_ERR, "Failed to write IV through TCP mux");
+				evbuffer_free(tmp);
+				return -1;
+			}
+			bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+			evbuffer_free(tmp);
 		}
 	} else {
 		if (bufferevent_write(bout, coder->iv, 16) < 0) {
 			debug(LOG_ERR, "Failed to write IV directly");
 			return -1;
 		}
+		bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
 	}
 	return 0;
 }
@@ -1898,12 +1914,20 @@ void send_enc_msg_frp_server(struct bufferevent *bev,
 	// Send encrypted message
 	struct common_conf *c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
-		if (tmux_stream_write(bout, enc_msg, enc_len, stream) < 0) {
-			debug(LOG_ERR, "Failed to write encrypted message through TCP mux");
+		struct evbuffer *tmp = evbuffer_new();
+		if (tmp) {
+			evbuffer_add(tmp, enc_msg, enc_len);
+			if (tmux_stream_write(bout, tmp, stream) < 0) {
+				debug(LOG_ERR, "Failed to write encrypted message through TCP mux");
+			}
+			bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+			evbuffer_free(tmp);
 		}
 	} else {
 		if (bufferevent_write(bout, enc_msg, enc_len) < 0) {
 			debug(LOG_ERR, "Failed to write encrypted message directly");
+		} else {
+			bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
 		}
 	}
 

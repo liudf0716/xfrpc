@@ -323,19 +323,28 @@ void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
         struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
         if (evbuffer_add(dst, json_buf, json_len) < 0) {
             debug(LOG_ERR, "Failed to add data to output buffer");
+        } else {
+            bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FLUSH);
         }
     } else {
-        int written = tmux_stream_write(client->ctl_bev, 
-                                       (uint8_t *)json_buf, 
-                                       json_len, 
-                                       &client->stream);
-        if (written < 0) {
-            debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for UDP data",
-                  client->stream.id, written);
-        } else if ((size_t)written < json_len) {
-            debug(LOG_DEBUG, "Partial write on stream %d: %d/%zu bytes", 
-                  client->stream.id, written, json_len);
-            bufferevent_disable(bev, EV_READ);
+        struct evbuffer *tmp = evbuffer_new();
+        if (tmp) {
+            evbuffer_add(tmp, json_buf, json_len);
+            int written = tmux_stream_write(client->ctl_bev, tmp, &client->stream);
+            evbuffer_free(tmp);
+            
+            if (written > 0) {
+                bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FLUSH);
+            }
+
+            if (written < 0) {
+                debug(LOG_ERR, "Stream %d: tmux_stream_write failed (%d) for UDP data",
+                      client->stream.id, written);
+            } else if ((size_t)written < json_len) {
+                debug(LOG_DEBUG, "Partial write on stream %d: %d/%zu bytes", 
+                      client->stream.id, written, json_len);
+                bufferevent_disable(bev, EV_READ);
+            }
         }
     }
 

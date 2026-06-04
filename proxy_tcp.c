@@ -39,20 +39,6 @@
 #endif
 
 /**
- * @brief Validates if a buffer contains a valid SOCKS5 protocol header
- */
-static int is_socks5(const uint8_t *buf, int len)
-{
-	if (!buf || len < 3) {
-		return 0;
-	}
-
-	return (buf[0] == 0x05 &&    // SOCKS5 version
-			buf[1] == 0x01 &&    // CONNECT command
-			buf[2] == 0x00);     // Reserved field
-}
-
-/**
  * @brief Parse SOCKS5 address structure from a contiguous buffer
  *
  * @param buf    Buffer containing the SOCKS5 address data
@@ -238,26 +224,31 @@ static int xdpi_buf_ensure(struct proxy_client *client, size_t need)
 /**
  * @brief Handles SOCKS5 protocol states and data forwarding
  *
- * Reads data directly from the control bev (no rx_ring). Uses per-client
- * socks5_buf for accumulating fragmented handshake/request data.
+ * Optimized to use Libevent's evbuffer directly, avoiding unnecessary 
+ * allocations and memmove operations.
  */
 void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_t len)
 {
 	if (!client || !bev || len == 0) {
-		debug(LOG_ERR, "Invalid parameters in handle_socks5");
 		return;
 	}
 
-	/* ESTABLISHED: forward payload zero-copy to local proxy */
+	struct common_conf *c_conf = get_common_config();
+	struct evbuffer *src = bufferevent_get_input(bev);
+
+	/* STAGE 1: Data forwarding for established sessions */
 	if (client->state == SOCKS5_ESTABLISHED) {
-		assert(client->local_proxy_bev);
-		struct evbuffer *src = bufferevent_get_input(bev);
-		struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
-		evbuffer_zc_transfer(src, dst, len);
+		if (client->local_proxy_bev) {
+			struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+			evbuffer_zc_transfer(src, dst, len);
+		}
 		return;
 	}
 
-	/* Accumulate incoming data into per-client socks5_buf */
+	/* STAGE 2: Protocol Handshake Parsing */
+	
+	/* Consume what we just received into our temporary parsing buffer 
+	 * if it's not enough to be handled immediately. */
 	if (socks5_buf_ensure(client, client->socks5_buf_len + len) < 0) {
 		return;
 	}
@@ -267,70 +258,85 @@ void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_
 	if (nr == 0) return;
 	client->socks5_buf_len += nr;
 
-	uint8_t *buf = client->socks5_buf;
-	size_t buf_len = client->socks5_buf_len;
+	while (client->socks5_buf_len > 0) {
+		uint8_t *buf = client->socks5_buf;
+		size_t buf_len = client->socks5_buf_len;
 
-	/* INIT: waiting for SOCKS5 greeting (version + nmethods + methods) */
-	if (client->state == SOCKS5_INIT && buf_len >= 3) {
-		debug(LOG_DEBUG, "Processing SOCKS5 initial handshake, buf_len: %zu", buf_len);
+		if (client->state == SOCKS5_INIT) {
+			if (buf_len < 3) break; // Need more data
 
-		if (buf[0] != 0x05 || buf[1] != 0x01 || buf[2] != 0x00) {
-			debug(LOG_ERR, "Invalid SOCKS5 handshake");
-			return;
+			if (buf[0] != 0x05) {
+				debug(LOG_ERR, "Unsupported SOCKS version: 0x%02x", buf[0]);
+				client->state = CLOSED;
+				return;
+			}
+
+			/* Respond: 選中 NO AUTH (0x00) */
+			uint8_t resp[2] = {0x05, 0x00};
+			if (!c_conf->tcp_mux) {
+				bufferevent_write(client->ctl_bev, resp, 2);
+			} else {
+				struct evbuffer *tmp = evbuffer_new();
+				if (tmp) {
+					evbuffer_add(tmp, resp, 2);
+					tmux_stream_write(client->ctl_bev, tmp, &client->stream);
+					evbuffer_free(tmp);
+				}
+			}
+			bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FLUSH);
+
+			size_t consumed = 2 + buf[1]; // VER + NMETHODS + METHODS
+			if (buf_len < consumed) {
+				/* The full list of methods hasn't arrived yet. 
+				 * SOCKS5 init greeting is VER(1) + NMETHODS(1) + METHODS(N) */
+				break; 
+			}
+
+			memmove(buf, buf + consumed, buf_len - consumed);
+			client->socks5_buf_len -= consumed;
+			client->state = SOCKS5_HANDSHAKE;
+			continue; // Check if next state's data is already in pipe
 		}
 
-		/* Send handshake response: no authentication required */
-		uint8_t resp[3] = {0x05, 0x00, 0x00};
-		int ret = tmux_stream_write(client->ctl_bev, resp, 3, &client->stream);
-		if (ret < 0) {
-			debug(LOG_ERR, "SOCKS5 handshake write failed: stream %d error %d",
-			      client->stream.id, ret);
-			return;
+		if (client->state == SOCKS5_HANDSHAKE) {
+			if (buf_len < 4) break;
+
+			/* Validate SOCKS5 Request Header: VER(1), CMD(1), RSV(1) */
+			if (buf[0] != 0x05 || buf[1] != 0x01 || buf[2] != 0x00) {
+				debug(LOG_ERR, "Invalid SOCKS5 request header: %02x %02x %02x", 
+				      buf[0], buf[1], buf[2]);
+				client->state = CLOSED;
+				return;
+			}
+
+			int addr_offset = 0;
+			if (!parse_socks5_addr(buf + 3, buf_len - 3, &addr_offset, &client->remote_addr)) {
+				break; // Wait for more address data
+			}
+
+			size_t total_request_len = 3 + addr_offset;
+
+			client->local_proxy_bev = socks5_proxy_connect(client, &client->remote_addr);
+			if (!client->local_proxy_bev) {
+				debug(LOG_ERR, "Failed to connect to SOCKS5 backend");
+				return;
+			}
+
+			memmove(buf, buf + total_request_len, buf_len - total_request_len);
+			client->socks5_buf_len -= total_request_len;
+
+			/* Forward any trailing payload data that was packed with the handshake */
+			if (client->socks5_buf_len > 0) {
+				struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+				evbuffer_add(dst, client->socks5_buf, client->socks5_buf_len);
+				client->socks5_buf_len = 0;
+			}
+
+			client->state = SOCKS5_CONNECT;
+			break;
 		}
 
-		/* Consume consumed bytes from buffer */
-		memmove(buf, buf + 3, buf_len - 3);
-		client->socks5_buf_len -= 3;
-		client->state = SOCKS5_HANDSHAKE;
-	}
-
-	/* HANDSHAKE: waiting for CONNECT request */
-	buf = client->socks5_buf;
-	buf_len = client->socks5_buf_len;
-	if (client->state == SOCKS5_HANDSHAKE && buf_len >= 4) {
-		debug(LOG_DEBUG, "Processing SOCKS5 connection request, buf_len: %zu", buf_len);
-
-		if (!is_socks5(buf, 3)) {
-			debug(LOG_ERR, "Invalid SOCKS5 request format");
-			return;
-		}
-
-		int offset = 0;
-		if (!parse_socks5_addr(buf + 3, buf_len - 3, &offset, &client->remote_addr)) {
-			/* Not enough data yet — wait for more */
-			return;
-		}
-
-		int total_consumed = 3 + offset;
-
-		client->local_proxy_bev = socks5_proxy_connect(client, &client->remote_addr);
-		if (!client->local_proxy_bev) {
-			debug(LOG_ERR, "Failed to establish proxy connection");
-			return;
-		}
-
-		/* Discard consumed bytes */
-		memmove(buf, buf + total_consumed, buf_len - total_consumed);
-		client->socks5_buf_len -= total_consumed;
-
-		/* Flush any remaining buffered data to local proxy */
-		if (client->socks5_buf_len > 0 && client->local_proxy_bev) {
-			struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
-			evbuffer_add(dst, client->socks5_buf, client->socks5_buf_len);
-			client->socks5_buf_len = 0;
-		}
-
-		client->state = SOCKS5_CONNECT;
+		break; // No state matched or data exhausted
 	}
 }
 
@@ -438,9 +444,9 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 	}
 
 	while (evbuffer_get_length(src) > 0) {
-		int written = tmux_stream_write_from_evbuffer(client->ctl_bev, src, &client->stream);
+		int written = tmux_stream_write(client->ctl_bev, src, &client->stream);
 		if (written < 0) {
-			debug(LOG_INFO, "Stream %u: tmux_stream_write_from_evbuffer error %d, cleaning up",
+			debug(LOG_INFO, "Stream %u: tmux_stream_write error %d, cleaning up",
 			      client->stream.id, written);
 			del_proxy_client_by_stream_id(client->stream.id);
 			return;
@@ -482,4 +488,30 @@ void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 	}
 
 	debug(LOG_ERR, "impossible to reach here");
+}
+
+/**
+ * @brief SOCKS5 server-to-client proxy callback (used when tcp_mux is disabled)
+ */
+void socks5_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
+{
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	struct evbuffer *src = bufferevent_get_input(bev);
+	size_t len = evbuffer_get_length(src);
+	if (len == 0) return;
+
+	handle_socks5(client, bev, (uint32_t)len);
+}
+
+/**
+ * @brief XDPI server-to-client proxy callback (used when tcp_mux is disabled)
+ */
+void xdpi_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
+{
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	struct evbuffer *src = bufferevent_get_input(bev);
+	size_t len = evbuffer_get_length(src);
+	if (len == 0) return;
+
+	handle_xdpi(client, bev, (uint32_t)len);
 }

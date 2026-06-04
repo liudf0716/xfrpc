@@ -49,6 +49,8 @@ static void xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
 static int handle_post_connection_data(struct proxy_client *client) {
 	if (!client) return -1;
 
+	struct common_conf *c_conf = get_common_config();
+
 	if (is_socks5_proxy(client->ps)) {
 		/* Flush any remaining SOCKS5 parser buffer to local proxy */
 		if (client->socks5_buf && client->socks5_buf_len > 0 && client->local_proxy_bev) {
@@ -56,6 +58,21 @@ static int handle_post_connection_data(struct proxy_client *client) {
 				client->socks5_buf, client->socks5_buf_len);
 			client->socks5_buf_len = 0;
 		}
+
+		/* Send SOCKS5 connect success reply: VER(05) REP(00) RSV(00) ATYP(01) ADDR(00000000) PORT(0000) */
+		uint8_t success_reply[] = {0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+		if (!c_conf->tcp_mux) {
+			bufferevent_write(client->ctl_bev, success_reply, sizeof(success_reply));
+		} else {
+			struct evbuffer *tmp = evbuffer_new();
+			if (tmp) {
+				evbuffer_add(tmp, success_reply, sizeof(success_reply));
+				tmux_stream_write(client->ctl_bev, tmp, &client->stream);
+				evbuffer_free(tmp);
+			}
+		}
+		bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FLUSH);
+
 		client->state = SOCKS5_ESTABLISHED;
 		return 0;
 	}
@@ -85,22 +102,28 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 		  error_msg, client->stream_id, strerror(errno));
 
 	/* Flush remaining data from the local proxy bufferevent into MUX stream.
-	 * Loop to handle partial sends — tmux_stream_write_from_evbuffer drains
+	 * Loop to handle partial sends — tmux_stream_write drains
 	 * what it writes directly from src when send_window allows. */
 	if (bev && client->ctl_bev) {
 		struct evbuffer *src = bufferevent_get_input(bev);
-		while (evbuffer_get_length(src) > 0) {
-			int written = tmux_stream_write_from_evbuffer(client->ctl_bev, src, &client->stream);
-			if (written < 0) {
-				debug(LOG_INFO, "Stream %d: tmux_stream_write_from_evbuffer error %d during flush, aborting",
-				      client->stream.id, written);
-				break;
-			}
-			if (written == 0) {
-				/* send_window == 0: can't send more right now */
-				debug(LOG_INFO, "%zu bytes unsent, send_window exhausted",
-				      evbuffer_get_length(src));
-				break;
+		struct common_conf *c_conf = get_common_config();
+		if (!c_conf->tcp_mux) {
+			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+			evbuffer_add_buffer(dst, src);
+		} else {
+			while (evbuffer_get_length(src) > 0) {
+				int written = tmux_stream_write(client->ctl_bev, src, &client->stream);
+				if (written < 0) {
+					debug(LOG_INFO, "Stream %d: tmux_stream_write error %d during flush, aborting",
+						  client->stream.id, written);
+					break;
+				}
+				if (written == 0) {
+					/* send_window == 0: can't send more right now */
+					debug(LOG_INFO, "%zu bytes unsent, send_window exhausted",
+						  evbuffer_get_length(src));
+					break;
+				}
 			}
 		}
 	}
@@ -218,6 +241,12 @@ static void setup_proxy_callbacks(struct proxy_client *client,
 	} else if (is_udp_proxy(ps)) {
 		*proxy_c2s_recv = udp_proxy_c2s_cb;
 		*proxy_s2c_recv = udp_proxy_s2c_cb;
+	} else if (is_socks5_proxy(ps)) {
+		*proxy_c2s_recv = tcp_proxy_c2s_cb;
+		*proxy_s2c_recv = socks5_proxy_s2c_cb;
+	} else if (has_service_type(ps)) {
+		*proxy_c2s_recv = tcp_proxy_c2s_cb;
+		*proxy_s2c_recv = xdpi_proxy_s2c_cb;
 	} else {
 		*proxy_c2s_recv = tcp_proxy_c2s_cb;
 		*proxy_s2c_recv = tcp_proxy_s2c_cb;

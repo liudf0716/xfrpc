@@ -151,21 +151,13 @@ void handle_tcp_mux_ping(struct tcp_mux_header *tmux_hdr);
 void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr);
 
 /**
- * @brief Writes data to a tmux stream with flow control.
- *
- * @return Positive: bytes written. 0: backpressure (send_window==0). Negative: error.
- */
-int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
-                      uint32_t length, struct tmux_stream *stream);
-
-/**
  * @brief Writes data from an evbuffer to a tmux stream with flow control.
  *
  * Sends one DATA frame (header + payload) and drains payload bytes from @p src.
  *
  * @return Positive: bytes written. 0: backpressure (send_window==0). Negative: error.
  */
-int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
+int tmux_stream_write(struct bufferevent *bev,
                                     struct evbuffer *src,
                                     struct tmux_stream *stream);
 

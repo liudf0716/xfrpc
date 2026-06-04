@@ -370,61 +370,6 @@ void tcp_mux_send_data(struct bufferevent *bout, enum tcp_mux_flag flags,
 }
 
 /**
- * @brief Sends a MUX DATA header and payload in a single write operation.
- */
-static int tcp_mux_send_data_with_payload(struct bufferevent *bout,
-                                           enum tcp_mux_flag flags,
-                                           uint32_t stream_id,
-                                           const uint8_t *data,
-                                           uint32_t length) {
-    if (!tcp_mux_flag() || !bout || length == 0) {
-        return -1;
-    }
-
-    struct tcp_mux_header tmux_hdr;
-    memset(&tmux_hdr, 0, sizeof(tmux_hdr));
-    tcp_mux_encode(DATA, flags, stream_id, length, &tmux_hdr);
-
-    struct evbuffer *out = bufferevent_get_output(bout);
-
-    struct evbuffer_iovec iovec[2];
-    int nvecs = evbuffer_reserve_space(out, sizeof(tmux_hdr) + length, iovec, 2);
-    if (nvecs < 1) {
-        debug(LOG_ERR, "evbuffer_reserve_space failed for stream %u", stream_id);
-        return -1;
-    }
-
-    if (nvecs == 1 && iovec[0].iov_len >= sizeof(tmux_hdr) + length) {
-        memcpy(iovec[0].iov_base, &tmux_hdr, sizeof(tmux_hdr));
-        memcpy((uint8_t *)iovec[0].iov_base + sizeof(tmux_hdr), data, length);
-        iovec[0].iov_len = sizeof(tmux_hdr) + length;
-        evbuffer_commit_space(out, iovec, 1);
-    } else {
-        if (iovec[0].iov_len >= sizeof(tmux_hdr)) {
-            memcpy(iovec[0].iov_base, &tmux_hdr, sizeof(tmux_hdr));
-            size_t hdr_used = sizeof(tmux_hdr);
-            size_t space_in_first = iovec[0].iov_len - hdr_used;
-            size_t data_in_first = (space_in_first < length) ? space_in_first : length;
-            if (data_in_first > 0) {
-                memcpy((uint8_t *)iovec[0].iov_base + hdr_used, data, data_in_first);
-            }
-            iovec[0].iov_len = hdr_used + data_in_first;
-            if (data_in_first < length && nvecs > 1) {
-                memcpy(iovec[1].iov_base, data + data_in_first, length - data_in_first);
-                iovec[1].iov_len = length - data_in_first;
-                evbuffer_commit_space(out, iovec, 2);
-            } else {
-                evbuffer_commit_space(out, iovec, 1);
-            }
-        } else {
-            evbuffer_add(out, &tmux_hdr, sizeof(tmux_hdr));
-            evbuffer_add(out, data, length);
-        }
-    }
-    return 0;
-}
-
-/**
  * @brief Sends a ping message over a TCP multiplexed connection
  */
 void tcp_mux_send_ping(struct bufferevent *bout, uint32_t ping_id) {
@@ -902,46 +847,9 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
 }
 
 /**
- * @brief Writes data to a TCP multiplexing stream with flow control
- */
-int tmux_stream_write(struct bufferevent *bev, uint8_t *data,
-                      uint32_t length, struct tmux_stream *stream) {
-    if (stream->state == LOCAL_CLOSE || stream->state == CLOSED || stream->state == RESET) {
-        debug(LOG_INFO, "stream %d state is closed", stream->id);
-        return -1;
-    }
-
-    if (stream->send_window == 0) {
-        debug(LOG_DEBUG, "Stream %u: tmux_stream_write blocked, send_window=0", stream->id);
-        return 0;
-    }
-
-    enum tcp_mux_flag flags = get_send_flags(stream);
-    struct bufferevent *bout = get_main_control()->connect_bev;
-
-    uint32_t to_send = length;
-    if (to_send > stream->send_window) to_send = stream->send_window;
-    if (to_send > DEFAULT_MAX_FRAME_SIZE) to_send = DEFAULT_MAX_FRAME_SIZE;
-
-    if (to_send > 0) {
-        if (tcp_mux_send_data_with_payload(bout, flags, stream->id, data, to_send) < 0) {
-            debug(LOG_ERR, "Stream %u: tcp_mux_send_data_with_payload failed", stream->id);
-            return -2;
-        }
-        stream->send_window -= to_send;
-        bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
-    }
-
-    debug(LOG_DEBUG, "Stream %u: tmux_stream_write sent=%u/%u sw=%u",
-          stream->id, to_send, length, stream->send_window);
-
-    return (int)to_send;
-}
-
-/**
  * @brief Writes data from an evbuffer to a TCP multiplexing stream with flow control.
  */
-int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
+int tmux_stream_write(struct bufferevent *bev,
                                     struct evbuffer *src,
                                     struct tmux_stream *stream) {
     if (!src || !stream) {
@@ -959,7 +867,7 @@ int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
     }
 
     if (stream->send_window == 0) {
-        debug(LOG_DEBUG, "Stream %u: tmux_stream_write_from_evbuffer blocked, send_window=0", stream->id);
+        debug(LOG_DEBUG, "Stream %u: tmux_stream_write blocked, send_window=0", stream->id);
         return 0;
     }
 
@@ -1003,7 +911,7 @@ int tmux_stream_write_from_evbuffer(struct bufferevent *bev,
 
     stream->send_window -= to_send;
 
-    debug(LOG_DEBUG, "Stream %u: tmux_stream_write_from_evbuffer sent=%u sw=%u",
+    debug(LOG_DEBUG, "Stream %u: tmux_stream_write sent=%u sw=%u",
           stream->id, to_send, stream->send_window);
     return (int)to_send;
 }

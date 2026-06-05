@@ -227,6 +227,13 @@ int is_tcpmux_proxy(const struct proxy_service *ps) {
 }
 
 /**
+ * Check if proxy service is STCP type
+ */
+int is_stcp_proxy(const struct proxy_service *ps) {
+	return is_proxy_type(ps, "stcp", 1);
+}
+
+/**
  * Sets up callback functions for a proxy client
  */
 static void setup_proxy_callbacks(struct proxy_client *client, 

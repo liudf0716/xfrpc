@@ -322,6 +322,10 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 		proxy_type = "tcp";
 	} else if (strcmp(np_req->proxy_type, "tcpmux") == 0) {
 		proxy_type = "tcpmux";
+	} else if (strcmp(np_req->proxy_type, "stcp") == 0 ||
+			   strcmp(np_req->proxy_type, "xtcp") == 0 ||
+			   strcmp(np_req->proxy_type, "sudp") == 0) {
+		proxy_type = np_req->proxy_type;
 	} else {
 		proxy_type = np_req->proxy_type;
 	}
@@ -335,7 +339,10 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	if (strcmp(proxy_type, "tcp") == 0 || 
 		strcmp(proxy_type, "http") == 0 ||
 		strcmp(proxy_type, "https") == 0 ||
-		strcmp(proxy_type, "tcpmux") == 0) {
+		strcmp(proxy_type, "tcpmux") == 0 ||
+		strcmp(proxy_type, "stcp") == 0 ||
+		strcmp(proxy_type, "xtcp") == 0 ||
+		strcmp(proxy_type, "sudp") == 0) {
 		if (np_req->group) {
 			JSON_MARSHAL_TYPE(j_np_req, "group", string, np_req->group);
 		}
@@ -395,6 +402,34 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 			SAFE_JSON_STRING(np_req->multiplexer ? np_req->multiplexer : "httpconnect"));
 		if (np_req->route_by_http_user) {
 			JSON_MARSHAL_TYPE(j_np_req, "route_by_http_user", string, np_req->route_by_http_user);
+		}
+	}
+
+	// Add STCP/XTCP/SUDP specific fields
+	if (strcmp(proxy_type, "stcp") == 0 ||
+		strcmp(proxy_type, "xtcp") == 0 ||
+		strcmp(proxy_type, "sudp") == 0) {
+		if (np_req->sk) {
+			JSON_MARSHAL_TYPE(j_np_req, "sk", string, np_req->sk);
+		}
+		if (np_req->allow_users) {
+			// Parse comma-separated allow_users into JSON array
+			struct json_object *user_array = json_object_new_array();
+			if (user_array) {
+				char *users_copy = strdup(np_req->allow_users);
+				if (users_copy) {
+					char *saveptr = NULL;
+					char *user = strtok_r(users_copy, ",", &saveptr);
+					while (user) {
+						// Trim leading whitespace
+						while (*user == ' ' || *user == '	') user++;
+						json_object_array_add(user_array, json_object_new_string(user));
+						user = strtok_r(NULL, ",", &saveptr);
+					}
+					free(users_copy);
+				}
+				json_object_object_add(j_np_req, "allow_users", user_array);
+			}
 		}
 	}
 

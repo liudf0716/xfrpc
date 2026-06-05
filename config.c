@@ -35,6 +35,9 @@ static const char *valid_types[] = {
 	"https",
 	"iod",
 	"tcpmux",
+	"stcp",
+	"xtcp",
+	"sudp",
 	NULL
 };
 
@@ -208,6 +211,16 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 			ps->multiplexer ? ps->multiplexer : "httpconnect (default)",
 			ps->route_by_http_user ? ps->route_by_http_user : "(none)");
 	}
+
+	// Log stcp/xtcp/sudp-specific fields
+	if (ps->proxy_type && (strcmp(ps->proxy_type, "stcp") == 0 ||
+			strcmp(ps->proxy_type, "xtcp") == 0 ||
+			strcmp(ps->proxy_type, "sudp") == 0)) {
+		debug(LOG_DEBUG,
+			"  STCP: {sk:%s, allow_users:%s}",
+			ps->sk ? "****" : "(none)",
+			ps->allow_users ? ps->allow_users : "(any)");
+	}
 }
 
 /**
@@ -360,7 +373,10 @@ int validate_proxy(struct proxy_service *ps)
 							  strcmp(ps->proxy_type, "udp") == 0 ||
 							  strcmp(ps->proxy_type, "http") == 0 ||
 							  strcmp(ps->proxy_type, "https") == 0 ||
-							  strcmp(ps->proxy_type, "tcpmux") == 0);
+							  strcmp(ps->proxy_type, "tcpmux") == 0 ||
+							  strcmp(ps->proxy_type, "stcp") == 0 ||
+							  strcmp(ps->proxy_type, "xtcp") == 0 ||
+							  strcmp(ps->proxy_type, "sudp") == 0);
 
 	if (needs_local_endpoint && (ps->local_port == 0 || ps->local_ip == NULL)) {
 		debug(LOG_ERR, "Proxy [%s] error: local_port or local_ip not found", 
@@ -405,6 +421,16 @@ int validate_proxy(struct proxy_service *ps)
 		if (!ps->custom_domains && !ps->subdomain) {
 			debug(LOG_ERR, "Proxy [%s] error: either custom_domains or subdomain must be set for tcpmux",
 				  ps->proxy_name);
+			return 0;
+		}
+	}
+	else if (strcmp(ps->proxy_type, "stcp") == 0 ||
+			 strcmp(ps->proxy_type, "xtcp") == 0 ||
+			 strcmp(ps->proxy_type, "sudp") == 0) {
+		// STCP/XTCP/SUDP require a secret key
+		if (!ps->sk) {
+			debug(LOG_ERR, "Proxy [%s] error: sk (secret_key) must be set for %s",
+				  ps->proxy_name, ps->proxy_type);
 			return 0;
 		}
 	}
@@ -651,6 +677,8 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
 	else if (MATCH_NAME("multiplexer")) SET_STRING_VALUE(multiplexer);
 	else if (MATCH_NAME("route_by_http_user")) SET_STRING_VALUE(route_by_http_user);
+	else if (MATCH_NAME("sk")) SET_STRING_VALUE(sk);
+	else if (MATCH_NAME("allow_users")) SET_STRING_VALUE(allow_users);
 	else if (MATCH_NAME("service_type")) ps->service_type = convert_service_type(value);
 	else if (MATCH_NAME("start_time")) {
 		int hour = atoi(value);
@@ -944,6 +972,8 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->bind_addr);
 	SAFE_FREE(ps->multiplexer);
 	SAFE_FREE(ps->route_by_http_user);
+	SAFE_FREE(ps->sk);
+	SAFE_FREE(ps->allow_users);
 	SAFE_FREE(ps);
 }
 

@@ -23,6 +23,7 @@
 #include "client.h"
 #include "uthash.h"
 #include "config.h"
+#include "visitor.h"
 #include "msg.h"
 #include "control.h"
 #include "crypto.h"
@@ -357,6 +358,9 @@ static void start_proxy_services()
 		debug(LOG_DEBUG, "Sending proxy service: %s", ps->proxy_name);
 		send_new_proxy(ps);
 	}
+
+	/* Start visitor listeners */
+	init_visitors(get_main_control()->connect_base);
 }
 
 /**
@@ -1051,6 +1055,9 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 		break;
 	case TypeUDPPacket:
 		handle_type_udp_packet(msg, ctx);
+		break;
+	case TypeNewVisitorConnResp:
+		handle_visitor_conn_resp((const char *)msg->data, ctx ? ((struct proxy_client *)ctx)->ctl_bev : NULL);
 		break;
 	case TypePong:
 		pong_time = time(NULL);

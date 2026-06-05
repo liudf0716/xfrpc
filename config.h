@@ -69,4 +69,7 @@ int validate_proxy(struct proxy_service *ps);
 /* FTP specific functions */
 char *get_ftp_data_proxy_name(const char *ftp_proxy_name);
 
+/* Visitor section parser (called from INI handler) */
+int parse_visitor_section(const char *section_name, const char *key, const char *value);
+
 #endif //XFRPC_CONFIG_H

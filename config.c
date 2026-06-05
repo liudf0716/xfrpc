@@ -18,6 +18,7 @@
 #include "ini.h"
 #include "uthash.h"
 #include "config.h"
+#include "visitor.h"
 #include "client.h"
 #include "debug.h"
 #include "msg.h"
@@ -627,6 +628,12 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 {
 	// Skip common section
 	if (strcmp(sect, "common") == 0) {
+		return 0;
+	}
+
+	// Route visitor sections to visitor parser
+	if (strstr(sect, "visitor") != NULL) {
+		parse_visitor_section(sect, nm, value);
 		return 0;
 	}
 

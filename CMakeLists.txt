@@ -71,6 +71,7 @@ set(PROXY_SOURCES
     proxy_ftp.c
     proxy.c
     tcpmux.c
+    visitor.c
     tcp_redir.c
     mongoose.c
 )

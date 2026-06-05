@@ -141,6 +141,9 @@ struct proxy_service {
 	char    *sk;                 /* Secret key for stcp/xtcp/sudp */
 	char    *allow_users;        /* Comma-separated list of allowed visitor users */
 
+	/* Unix Domain Socket plugin specific */
+	char    *plugin_unix_path;   /* Unix socket path for unix_domain_socket plugin */
+
 	/* Hash handling */
 	UT_hash_handle hh;
 };
@@ -155,6 +158,7 @@ int is_socks5_proxy(const struct proxy_service *ps);
 int is_udp_proxy(const struct proxy_service *ps);
 int is_tcpmux_proxy(const struct proxy_service *ps);
 int is_stcp_proxy(const struct proxy_service *ps);
+int is_uds_proxy(const struct proxy_service *ps);
 int has_service_type(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);

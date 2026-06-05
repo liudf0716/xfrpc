@@ -528,6 +528,7 @@ static struct plugin_defaults {
 	{"instaloader_client", XFRPC_PLUGIN_INSTALOADER_PORT, XFRPC_PLUGIN_INSTALOADER_REMOTE_PORT, "0.0.0.0"},
 	{"youtubedl", XFRPC_PLUGIN_YOUTUBEDL_PORT, XFRPC_PLUGIN_YOUTUBEDL_REMOTE_PORT, "127.0.0.1"},
 	{"httpd", XFRPC_PLUGIN_HTTPD_PORT, XFRPC_PLUGIN_HTTPD_REMOTE_PORT, "127.0.0.1"},
+	{"unix_domain_socket", 0, 0, "127.0.0.1"},
 	{NULL, 0, 0, NULL}
 };
 
@@ -567,7 +568,13 @@ static void process_plugin_conf(struct proxy_service *ps)
 				ps->remote_port = plugins[i].remote_port;
 
 			// Plugin-specific additional configuration
-			if (strcmp(plugins[i].name, "telnetd") == 0) {
+			if (strcmp(plugins[i].name, "unix_domain_socket") == 0) {
+				/* UDS plugin: no local_port needed, uses plugin_unix_path */
+				if (!ps->plugin_unix_path) {
+					debug(LOG_ERR, "Plugin unix_domain_socket requires plugin_unix_path");
+					exit(0);
+				}
+			} else if (strcmp(plugins[i].name, "telnetd") == 0) {
 				if (ps->plugin_user && ps->plugin_pwd) {
 					add_user_and_set_password(ps->plugin_user, ps->plugin_pwd);
 				}
@@ -681,6 +688,7 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("plugin")) SET_STRING_VALUE(plugin);
 	else if (MATCH_NAME("plugin_user")) SET_STRING_VALUE(plugin_user);
 	else if (MATCH_NAME("plugin_pwd")) SET_STRING_VALUE(plugin_pwd);
+	else if (MATCH_NAME("plugin_unix_path")) SET_STRING_VALUE(plugin_unix_path);
 	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
 	else if (MATCH_NAME("multiplexer")) SET_STRING_VALUE(multiplexer);
 	else if (MATCH_NAME("route_by_http_user")) SET_STRING_VALUE(route_by_http_user);
@@ -975,6 +983,7 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->plugin);
 	SAFE_FREE(ps->plugin_user);
 	SAFE_FREE(ps->plugin_pwd);
+	SAFE_FREE(ps->plugin_unix_path);
 	SAFE_FREE(ps->s_root_dir);
 	SAFE_FREE(ps->bind_addr);
 	SAFE_FREE(ps->multiplexer);

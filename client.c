@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/un.h>
 #include <errno.h>
 #include <syslog.h>
 #include <zlib.h>
@@ -234,6 +235,14 @@ int is_stcp_proxy(const struct proxy_service *ps) {
 }
 
 /**
+ * Check if proxy service uses Unix Domain Socket plugin
+ */
+int is_uds_proxy(const struct proxy_service *ps) {
+	return (ps && ps->plugin && strcmp(ps->plugin, "unix_domain_socket") == 0 &&
+		ps->plugin_unix_path != NULL);
+}
+
+/**
  * Sets up callback functions for a proxy client
  */
 static void setup_proxy_callbacks(struct proxy_client *client, 
@@ -261,6 +270,62 @@ static void setup_proxy_callbacks(struct proxy_client *client,
 }
 
 /**
+ * @brief Connect to a local Unix Domain Socket
+ *
+ * Creates a non-blocking connection to a Unix domain socket at the given path.
+ * Returns a bufferevent connected to the socket, or NULL on failure.
+ */
+static struct bufferevent *connect_unix_server(struct event_base *base, const char *unix_path)
+{
+	if (!base || !unix_path) {
+		debug(LOG_ERR, "Invalid parameters for Unix socket connection");
+		return NULL;
+	}
+
+	/* Create Unix socket */
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0) {
+		debug(LOG_ERR, "Failed to create Unix socket: %s", strerror(errno));
+		return NULL;
+	}
+
+	/* Set non-blocking */
+	evutil_make_socket_nonblocking(fd);
+
+	/* Connect to Unix socket */
+	struct sockaddr_un sun;
+	memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_UNIX;
+	strncpy(sun.sun_path, unix_path, sizeof(sun.sun_path) - 1);
+
+	int ret = connect(fd, (struct sockaddr *)&sun, sizeof(sun));
+	if (ret < 0 && errno != EINPROGRESS) {
+		debug(LOG_ERR, "Failed to connect to Unix socket %s: %s", unix_path, strerror(errno));
+		close(fd);
+		return NULL;
+	}
+
+	/* Create bufferevent */
+	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
+	if (!bev) {
+		debug(LOG_ERR, "Failed to create bufferevent for Unix socket");
+		close(fd);
+		return NULL;
+	}
+
+	/* For non-blocking connect, the BEV_EVENT_CONNECTED callback will fire */
+	if (ret == 0) {
+		/* Connected immediately */
+		debug(LOG_DEBUG, "Connected to Unix socket: %s", unix_path);
+	} else {
+		/* EINPROGRESS — will connect asynchronously */
+		debug(LOG_DEBUG, "Connecting to Unix socket: %s", unix_path);
+	}
+
+	return bev;
+}
+
+/**
  * @brief Sets up a local connection for the proxy client
  */
 static int setup_local_connection(struct proxy_client *client) 
@@ -269,6 +334,8 @@ static int setup_local_connection(struct proxy_client *client)
 	
 	if (is_udp_proxy(ps)) {
 		client->local_proxy_bev = connect_udp_server(client->base);
+	} else if (is_uds_proxy(ps)) {
+		client->local_proxy_bev = connect_unix_server(client->base, ps->plugin_unix_path);
 	} else if (!is_socks5_proxy(ps) && !has_service_type(ps)) {
 		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port);
 	} else {
@@ -290,7 +357,8 @@ static int setup_local_connection(struct proxy_client *client)
  */
 void start_xfrp_tunnel(struct proxy_client *client)
 {
-	if (!client || !client->ctl_bev || !client->base || !client->ps || !client->ps->local_port) {
+	if (!client || !client->ctl_bev || !client->base || !client->ps ||
+		    (!client->ps->local_port && !is_uds_proxy(client->ps))) {
 		debug(LOG_ERR, "Invalid client configuration");
 		return;
 	}

@@ -20,4 +20,21 @@ void parse_commandline(int argc, char **argv);
  */
 int get_daemon_status(void);
 
+/**
+ * @brief Returns the path to the configuration file.
+ * @return Pointer to config file path (do not free)
+ */
+const char *get_config_file(void);
+
+/**
+ * @brief Checks whether a SIGHUP-triggered reload is pending.
+ * @return 1 if reload requested, 0 otherwise
+ */
+int check_reload_flag(void);
+
+/**
+ * @brief Clears the reload flag after handling.
+ */
+void clear_reload_flag(void);
+
 #endif /* XFRPC_COMMANDLINE_H */

@@ -22,6 +22,7 @@ struct control {
     struct bufferevent *connect_bev;  /* Main I/O event buffer */
     struct event *ticker_ping;        /* Heartbeat timer */
     struct event *tcp_mux_ping_event; /* TCP multiplexing ping event */
+    struct event *reload_timer;       /* SIGHUP reload check timer */
     uint32_t tcp_mux_ping_id;         /* TCP multiplexing ping ID */
     struct tmux_stream stream;        /* Multiplexing stream */
 };
@@ -57,6 +58,14 @@ void send_enc_msg_frp_server(struct bufferevent *bev, const enum msg_type type,
                              struct tmux_stream *stream);
 
 void control_process(struct proxy_client *client);
+
+/**
+ * @brief Hot-reload configuration (called on SIGHUP).
+ *
+ * Gracefully reloads proxy services and visitors without
+ * disconnecting from frps.
+ */
+void reload_xfrpc_config(void);
 
 void send_new_proxy(struct proxy_service *ps);
 

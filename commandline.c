@@ -37,6 +37,19 @@ static struct {
     .config_file = NULL
 };
 
+/* Hot-reload flag, set by SIGHUP handler */
+static volatile sig_atomic_t g_reload_flag = 0;
+
+/*
+ * SIGHUP signal handler — sets the reload flag.
+ * Must be async-signal-safe (no malloc, no logging, no locks).
+ */
+static void sighup_handler(int signo)
+{
+    (void)signo;
+    g_reload_flag = 1;
+}
+
 /* Accessor macros/inline functions */
 #define IS_DAEMON() (g_config.is_daemon)
 #define GET_CONFIG_FILE() (g_config.config_file)
@@ -68,9 +81,9 @@ static void makedaemon(void)
         exit(1);
     }
 
-    /* Ignore HUP signals */
-    if (set_signal_handler(SIGHUP, SIG_IGN) == SIG_ERR) {
-        debug(LOG_ERR, "Could not ignore SIGHUP: %m");
+    /* Install SIGHUP handler for config hot-reload */
+    if (set_signal_handler(SIGHUP, sighup_handler) == SIG_ERR) {
+        debug(LOG_ERR, "Could not set SIGHUP handler: %m");
         exit(1);
     }
 
@@ -243,4 +256,32 @@ void parse_commandline(int argc, char **argv)
     if (g_config.is_daemon) {
         makedaemon();
     }
+}
+
+/**
+ * Returns the path to the configuration file.
+ *
+ * @return Pointer to the config file path string (owned by g_config, do not free)
+ */
+const char *get_config_file(void)
+{
+    return g_config.config_file;
+}
+
+/**
+ * Checks whether a SIGHUP-triggered reload is pending.
+ *
+ * @return 1 if reload requested, 0 otherwise
+ */
+int check_reload_flag(void)
+{
+    return g_reload_flag;
+}
+
+/**
+ * Clears the reload flag after handling.
+ */
+void clear_reload_flag(void)
+{
+    g_reload_flag = 0;
 }

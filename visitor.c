@@ -523,3 +523,19 @@ void handle_visitor_conn_resp(const char *resp_json, struct bufferevent *bev)
 	 * so this handler is a no-op but kept for protocol completeness. */
 	debug(LOG_DEBUG, "Received NewVisitorConnResp on main control (ignored)");
 }
+
+/* ---- stop and free all running visitor instances (for hot-reload) ---- */
+
+void free_all_visitor_instances(void)
+{
+	struct visitor_instance *vi, *tmp;
+	HASH_ITER(hh, all_visitors, vi, tmp) {
+		if (vi->listener) {
+			evconnlistener_free(vi->listener);
+		}
+		HASH_DEL(all_visitors, vi);
+		free(vi);
+	}
+	all_visitors = NULL;
+	debug(LOG_DEBUG, "All visitor instances freed");
+}

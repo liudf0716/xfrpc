@@ -54,6 +54,14 @@ void init_visitors(struct event_base *base);
 void free_all_visitor_confs(void);
 
 /**
+ * @brief Stop and free all running visitor instances.
+ *
+ * Closes all listener sockets and frees visitor_instance structures.
+ * Call this before reloading configuration.
+ */
+void free_all_visitor_instances(void);
+
+/**
  * @brief Get all visitor configurations.
  */
 struct visitor_conf *get_all_visitor_confs(void);

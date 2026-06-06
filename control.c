@@ -33,6 +33,7 @@
 #include "tcpmux.h"
 #include "proxy.h"
 #include "tls.h"
+#include "commandline.h"
 
 static struct control *main_ctl;
 static bool xfrpc_status;
@@ -45,6 +46,8 @@ static void clear_main_control(void);
 static void start_base_connect(void);
 static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
+static void reload_check_timer_cb(evutil_socket_t fd, short what, void *ctx);
+static void start_proxy_services(void);
 
 /**
  * Check if xfrpc client is connected to server
@@ -2149,6 +2152,16 @@ void init_main_control()
 		exit(1);
 	}
 
+	/* Schedule periodic SIGHUP reload checker (500ms interval) */
+	main_ctl->reload_timer = evtimer_new(main_ctl->connect_base,
+			reload_check_timer_cb, NULL);
+	if (main_ctl->reload_timer) {
+		struct timeval tv = {0, 500 * 1000}; /* 500ms */
+		evtimer_add(main_ctl->reload_timer, &tv);
+	} else {
+		debug(LOG_ERR, "Failed to create reload timer");
+	}
+
 	// Initialize TCP multiplexing if enabled
 	struct common_conf *c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
@@ -2221,6 +2234,13 @@ static void clear_main_control()
 		main_ctl->tcp_mux_ping_event = NULL;
 	}
 
+	if (main_ctl->reload_timer) {
+		if (evtimer_del(main_ctl->reload_timer) < 0) {
+			debug(LOG_ERR, "Failed to delete reload timer");
+		}
+		main_ctl->reload_timer = NULL;
+	}
+
 	// Reset connection state
 	set_xfrpc_status(false);
 	is_login = 0;
@@ -2247,6 +2267,71 @@ static void clear_main_control()
  *
  * @return void
  */
+/**
+ * @brief Hot-reload configuration on SIGHUP.
+ *
+ * This function is called from the event loop when a SIGHUP signal is received.
+ * It performs a graceful reload:
+ *  1. Stops all active visitor listeners and proxy tunnels
+ *  2. Frees old proxy service and visitor configurations
+ *  3. Reloads configuration from the same file
+ *  4. Re-registers new proxies with frps over the existing control connection
+ *  5. Restarts visitor listeners
+ *
+ * The control connection to frps is preserved — only proxy tunnels are recycled.
+ */
+void reload_xfrpc_config(void)
+{
+	const char *config_file = get_config_file();
+	if (!config_file) {
+		debug(LOG_ERR, "Hot-reload failed: no config file path");
+		return;
+	}
+
+	debug(LOG_INFO, "=== SIGHUP received, reloading config from '%s' ===", config_file);
+
+	/* 1. Stop active visitors and proxy tunnels */
+	free_all_visitor_instances();
+	free_all_visitor_confs();
+	clear_all_proxy_client();
+
+	/* 2. Free old config structures */
+	free_all_proxy_services();
+	free_common_config();
+
+	/* 3. Reload config from file */
+	load_config(config_file);
+
+	/* 4. Re-register proxies with frps (if connected) */
+	if (is_xfrpc_connected()) {
+		start_proxy_services();
+	}
+
+	debug(LOG_INFO, "=== Hot-reload complete ===");
+}
+
+/**
+ * @brief Periodic timer callback that checks for pending SIGHUP reload.
+ *
+ * Runs every 500ms to minimize signal-to-reload latency while keeping
+ * overhead negligible.
+ */
+static void reload_check_timer_cb(evutil_socket_t fd, short what, void *ctx)
+{
+	(void)fd; (void)what;
+
+	if (check_reload_flag()) {
+		clear_reload_flag();
+		reload_xfrpc_config();
+	}
+
+	/* Re-arm the timer for the next check */
+	if (main_ctl && main_ctl->reload_timer) {
+		struct timeval tv = {0, 500 * 1000}; /* 500ms */
+		evtimer_add(main_ctl->reload_timer, &tv);
+	}
+}
+
 void close_main_control()
 {
 	if (!main_ctl) {

@@ -222,6 +222,17 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 			ps->sk ? "****" : "(none)",
 			ps->allow_users ? ps->allow_users : "(any)");
 	}
+
+	// Log health check configuration
+	if (ps->health_check_type) {
+		debug(LOG_DEBUG,
+			"  HealthCheck: {type:%s, url:%s, interval:%ds, timeout:%ds, max_failed:%d}",
+			ps->health_check_type,
+			ps->health_check_url ? ps->health_check_url : "/",
+			ps->health_check_interval,
+			ps->health_check_timeout,
+			ps->health_check_max_failed);
+	}
 }
 
 /**
@@ -314,6 +325,13 @@ static struct proxy_service *new_proxy_service(const char *name)
 	ps->s_root_dir = NULL;
 
 	ps->bind_addr	= NULL;
+
+	/* Health check defaults (disabled) */
+	ps->health_check_type = NULL;
+	ps->health_check_url = NULL;
+	ps->health_check_interval = 10;
+	ps->health_check_timeout = 3;
+	ps->health_check_max_failed = 1;
 
 	return ps;
 }
@@ -695,6 +713,11 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("sk")) SET_STRING_VALUE(sk);
 	else if (MATCH_NAME("allow_users")) SET_STRING_VALUE(allow_users);
 	else if (MATCH_NAME("service_type")) ps->service_type = convert_service_type(value);
+	else if (MATCH_NAME("health_check_type")) SET_STRING_VALUE(health_check_type);
+	else if (MATCH_NAME("health_check_url")) SET_STRING_VALUE(health_check_url);
+	else if (MATCH_NAME("health_check_interval")) ps->health_check_interval = atoi(value);
+	else if (MATCH_NAME("health_check_timeout")) ps->health_check_timeout = atoi(value);
+	else if (MATCH_NAME("health_check_max_failed")) ps->health_check_max_failed = atoi(value);
 	else if (MATCH_NAME("start_time")) {
 		int hour = atoi(value);
 		if (hour < 0 || hour > 23) {
@@ -990,6 +1013,8 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->route_by_http_user);
 	SAFE_FREE(ps->sk);
 	SAFE_FREE(ps->allow_users);
+	SAFE_FREE(ps->health_check_type);
+	SAFE_FREE(ps->health_check_url);
 	SAFE_FREE(ps);
 }
 

@@ -34,6 +34,7 @@
 #include "proxy.h"
 #include "tls.h"
 #include "commandline.h"
+#include "health_check.h"
 
 static struct control *main_ctl;
 static bool xfrpc_status;
@@ -48,6 +49,7 @@ static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
 static void reload_check_timer_cb(evutil_socket_t fd, short what, void *ctx);
 static void start_proxy_services(void);
+static void health_check_result_cb(struct proxy_service *ps, int healthy, void *ctx);
 
 /**
  * Check if xfrpc client is connected to server
@@ -357,6 +359,12 @@ static void start_proxy_services()
 			continue;
 		}
 
+		// Skip unhealthy proxies (health check configured but failing)
+		if (ps->health_check_type && !health_check_is_healthy(ps->proxy_name)) {
+			debug(LOG_INFO, "Skipping unhealthy proxy: %s", ps->proxy_name);
+			continue;
+		}
+
 		// Send new proxy request
 		debug(LOG_DEBUG, "Sending proxy service: %s", ps->proxy_name);
 		send_new_proxy(ps);
@@ -364,6 +372,12 @@ static void start_proxy_services()
 
 	/* Start visitor listeners */
 	init_visitors(get_main_control()->connect_base);
+
+	/* Start health checks for proxy services that have it configured */
+	struct event_base *base = get_main_control()->connect_base;
+	if (base) {
+		health_check_start_all(base, health_check_result_cb, NULL);
+	}
 }
 
 /**
@@ -2247,6 +2261,7 @@ static void clear_main_control()
 	pong_time = 0;
 
 	// Clean up resources
+	health_check_stop_all();
 	clear_all_proxy_client();
 	free_crypto_resources();
 
@@ -2280,6 +2295,27 @@ static void clear_main_control()
  *
  * The control connection to frps is preserved — only proxy tunnels are recycled.
  */
+/**
+ * @brief Callback for health check state transitions.
+ *
+ * When a proxy recovers from unhealthy to healthy, re-register it with frps.
+ */
+static void health_check_result_cb(struct proxy_service *ps, int healthy, void *ctx)
+{
+	(void)ctx;
+
+	if (!ps)
+		return;
+
+	if (healthy) {
+		/* Proxy recovered - re-register with frps */
+		if (is_xfrpc_connected()) {
+			debug(LOG_INFO, "Proxy [%s] recovered, re-registering with server", ps->proxy_name);
+			send_new_proxy(ps);
+		}
+	}
+}
+
 void reload_xfrpc_config(void)
 {
 	const char *config_file = get_config_file();
@@ -2290,7 +2326,8 @@ void reload_xfrpc_config(void)
 
 	debug(LOG_INFO, "=== SIGHUP received, reloading config from '%s' ===", config_file);
 
-	/* 1. Stop active visitors and proxy tunnels */
+	/* 1. Stop health checks, visitors, and proxy tunnels */
+	health_check_stop_all();
 	free_all_visitor_instances();
 	free_all_visitor_confs();
 	clear_all_proxy_client();

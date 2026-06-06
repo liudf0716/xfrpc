@@ -144,6 +144,13 @@ struct proxy_service {
 	/* Unix Domain Socket plugin specific */
 	char    *plugin_unix_path;   /* Unix socket path for unix_domain_socket plugin */
 
+	/* Health check configuration */
+	char    *health_check_type;    /* "tcp" or "http" (NULL = disabled) */
+	char    *health_check_url;     /* URL path for HTTP health check (default "/") */
+	int     health_check_interval; /* Seconds between checks (default 10) */
+	int     health_check_timeout;  /* Per-check timeout in seconds (default 3) */
+	int     health_check_max_failed; /* Consecutive failures before marking down (default 1) */
+
 	/* Hash handling */
 	UT_hash_handle hh;
 };

@@ -63,6 +63,7 @@ set(CORE_SOURCES
     common.c
     login.c
     tls.c
+    health_check.c
 )
 
 set(PROXY_SOURCES

@@ -523,18 +523,15 @@ struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres)
 		}
 	}
 
-	// Get required remote_addr field
+	// Get optional remote_addr field (absent for STCP/sudp when empty in newer frps)
 	struct json_object *j_remote_addr = NULL;
-	if (!json_object_object_get_ex(j_np_res, "remote_addr", &j_remote_addr)) {
-		goto error;
-	}
-	
-	// Parse port from remote_addr
-	const char *remote_addr = json_object_get_string(j_remote_addr);
-	if (remote_addr) {
-		const char *port = strrchr(remote_addr, ':');
-		if (port) {
-			npr->remote_port = atoi(port + 1);
+	if (json_object_object_get_ex(j_np_res, "remote_addr", &j_remote_addr)) {
+		const char *remote_addr = json_object_get_string(j_remote_addr);
+		if (remote_addr) {
+			const char *port = strrchr(remote_addr, ':');
+			if (port) {
+				npr->remote_port = atoi(port + 1);
+			}
 		}
 	}
 

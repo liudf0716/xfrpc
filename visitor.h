@@ -71,6 +71,6 @@ struct visitor_conf *get_all_visitor_confs(void);
  *
  * Called from control.c when TypeNewVisitorConnResp is received.
  */
-void handle_visitor_conn_resp(const char *resp_json, struct bufferevent *bev);
+void handle_visitor_conn_resp(const char *resp_json, struct proxy_client *pc);
 
 #endif // XFRPC_VISITOR_H

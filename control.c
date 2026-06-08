@@ -1086,7 +1086,7 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 		handle_type_udp_packet(msg, ctx);
 		break;
 	case TypeNewVisitorConnResp:
-		handle_visitor_conn_resp((const char *)msg->data, ctx ? ((struct proxy_client *)ctx)->ctl_bev : NULL);
+		handle_visitor_conn_resp((const char *)msg->data, (struct proxy_client *)ctx);
 		break;
 	case TypePong:
 		pong_time = time(NULL);

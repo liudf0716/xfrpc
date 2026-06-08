@@ -434,6 +434,15 @@ free_proxy_client(struct proxy_client *client)
 
 	debug(LOG_DEBUG, "Freeing proxy client with stream ID: %d", client->stream_id);
 
+	/* Clean up visitor session if this is a visitor client.
+	 * NULL out visitor_ctx to prevent dangling pointer.
+	 * The session's user_bev is the same as local_proxy_bev,
+	 * which is freed below. We just free the session shell. */
+	if (client->visitor_ctx) {
+		free(client->visitor_ctx);
+		client->visitor_ctx = NULL;
+	}
+
 	if (client->local_proxy_bev) {
 		bufferevent_free(client->local_proxy_bev);
 		client->local_proxy_bev = NULL;

@@ -396,6 +396,13 @@ static void visitor_user_event_cb(struct bufferevent *bev, short what, void *ctx
 	if (what & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
 		debug(LOG_DEBUG, "Visitor [%s]: local user disconnected",
 			sess->conf->visitor_name);
+		if (sess->client) {
+			struct proxy_client *pc = sess->client;
+			pc->visitor_ctx = NULL; /* Prevent free_proxy_client from freeing sess */
+			pc->local_proxy_bev = NULL; /* user_bev freed by visitor_session_free */
+			del_proxy_client_by_stream_id(pc->stream_id);
+			sess->client = NULL;
+		}
 		visitor_session_free(sess);
 	}
 }
@@ -444,7 +451,7 @@ static void visitor_accept_cb(struct evconnlistener *listener,
 
 	client->base = base;
 	client->ctl_bev = get_main_control()->connect_bev;
-	client->local_proxy_bev = sess->user_bev; /* tunnel target */
+	client->local_proxy_bev = NULL; /* Defer binding until handshake OK */
 	client->visitor_ctx = sess;
 	sess->client = client; /* reverse link for data forwarding */
 
@@ -651,9 +658,9 @@ void init_visitors(struct event_base *base)
 
 /* ---- handle NewVisitorConnResp from main control (unused in this design) ---- */
 
-void handle_visitor_conn_resp(const char *resp_json, struct bufferevent *bev)
+void handle_visitor_conn_resp(const char *resp_json, struct proxy_client *pc)
 {
-	if (!resp_json) return;
+	if (!resp_json || !pc) return;
 
 	struct json_object *jresp = json_tokener_parse(resp_json);
 	if (!jresp) {
@@ -678,6 +685,13 @@ void handle_visitor_conn_resp(const char *resp_json, struct bufferevent *bev)
 		debug(LOG_ERR, "Visitor conn resp error for '%s': %s",
 			proxy_name ? proxy_name : "?", err_str);
 		json_object_put(jresp);
+		if (pc->visitor_ctx) {
+			struct visitor_session *sess = (struct visitor_session *)pc->visitor_ctx;
+			pc->visitor_ctx = NULL; /* Prevent free_proxy_client from double-free */
+			sess->client = NULL;
+			visitor_session_free(sess);
+		}
+		del_proxy_client_by_stream_id(pc->stream_id);
 		return;
 	}
 
@@ -686,10 +700,14 @@ void handle_visitor_conn_resp(const char *resp_json, struct bufferevent *bev)
 
 	json_object_put(jresp);
 
-	/* The proxy_client for this visitor session has local_proxy_bev set
-	 * to the user's bev. Data from the tmux stream will be forwarded
-	 * to the local user via the existing proxy_client tunnel mechanism.
-	 * The proxy_client was set up in visitor_accept_cb. */
+	/* Handshake succeeded, link the local user bev to start forwarding data */
+	if (pc->visitor_ctx) {
+		struct visitor_session *sess = (struct visitor_session *)pc->visitor_ctx;
+		pc->local_proxy_bev = sess->user_bev;
+		sess->state = VSESS_TUNNEL;
+		debug(LOG_INFO, "Visitor [%s]: handshake OK, entering tunnel mode (tmux)",
+			sess->conf->visitor_name);
+	}
 }
 
 /* ---- stop and free all running visitor instances (for hot-reload) ---- */

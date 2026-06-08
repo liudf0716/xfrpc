@@ -375,19 +375,24 @@ static void hc_http_read_cb(struct bufferevent *bev, void *arg)
 	if (!entry) return;
 
 	struct evbuffer *input = bufferevent_get_input(bev);
-	size_t len = evbuffer_get_length(input);
-	if (len == 0)
-		return;
 
-	/* Read the response */
-	char *data = malloc(len + 1);
+	/* Wait until we have the full status line (terminated by \r\n).
+	 * In high-latency conditions the status line may arrive across
+	 * multiple TCP segments; parsing prematurely would cause false
+	 * health-check failures. */
+	struct evbuffer_ptr crlf = evbuffer_search(input, "\r\n", 2, NULL);
+	if (crlf.pos < 0)
+		return;  /* status line incomplete, wait for more data */
+
+	size_t line_len = crlf.pos + 2; /* include \r\n */
+	char *data = malloc(line_len + 1);
 	if (!data) {
 		hc_finish_check(entry, 0);
 		return;
 	}
 
-	evbuffer_remove(input, data, len);
-	data[len] = '\0';
+	evbuffer_remove(input, data, line_len);
+	data[line_len] = '\0';
 
 	/* Parse HTTP status line: "HTTP/1.x NNN ..." */
 	int status_code = 0;

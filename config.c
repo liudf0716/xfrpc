@@ -502,8 +502,13 @@ static int add_user_and_set_password(const char *username, const char *password)
 	char cmd[256];
 	int ret;
 
+	/* On embedded systems (OpenWrt, etc.) the process typically runs as
+	 * root directly and sudo is not installed.  Only prefix commands with
+	 * "sudo" when we are *not* already root. */
+	const char *sudo = (getuid() == 0) ? "" : "sudo ";
+
 	// Create user
-	snprintf(cmd, sizeof(cmd), "sudo useradd -m -s /bin/bash %s", username);
+	snprintf(cmd, sizeof(cmd), "%suseradd -m -s /bin/bash %s", sudo, username);
 	if ((ret = system(cmd)) != 0) {
 		debug(LOG_ERR, "Failed to create user %s", username);
 		return -1;
@@ -511,7 +516,9 @@ static int add_user_and_set_password(const char *username, const char *password)
 
 	// Set password by piping "username:password\n" directly to chpasswd via
 	// popen, avoiding any shell interpretation of the password string.
-	FILE *fp = popen("sudo chpasswd", "w");
+	char chpasswd_cmd[128];
+	snprintf(chpasswd_cmd, sizeof(chpasswd_cmd), "%schpasswd", sudo);
+	FILE *fp = popen(chpasswd_cmd, "w");
 	if (!fp) {
 		debug(LOG_ERR, "Failed to open chpasswd pipe for user %s", username);
 		return -1;
@@ -523,11 +530,13 @@ static int add_user_and_set_password(const char *username, const char *password)
 		return -1;
 	}
 
-	// Add to sudo group
-	snprintf(cmd, sizeof(cmd), "sudo usermod -aG sudo %s", username);
-	if ((ret = system(cmd)) != 0) {
-		debug(LOG_ERR, "Failed to add user %s to sudo group", username);
-		return -1;
+	// Add to sudo group (skip if already root — no group to add to)
+	if (getuid() != 0) {
+		snprintf(cmd, sizeof(cmd), "%susermod -aG sudo %s", sudo, username);
+		if ((ret = system(cmd)) != 0) {
+			debug(LOG_ERR, "Failed to add user %s to sudo group", username);
+			return -1;
+		}
 	}
 
 	debug(LOG_DEBUG, "User %s added successfully", username);

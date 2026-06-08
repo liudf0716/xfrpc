@@ -50,6 +50,7 @@ static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx
 static void reload_check_timer_cb(evutil_socket_t fd, short what, void *ctx);
 static void start_proxy_services(void);
 static void health_check_result_cb(struct proxy_service *ps, int healthy, void *ctx);
+static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx);
 
 /**
  * Check if xfrpc client is connected to server
@@ -1426,6 +1427,21 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 }
 
 /**
+ * @brief Timer callback for deferred reconnection after connection failure.
+ *
+ * This callback runs outside the bufferevent callback stack, avoiding
+ * use-after-free issues from destroying a bufferevent inside its own callback.
+ */
+static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx)
+{
+	(void)fd; (void)what;
+	debug(LOG_INFO, "Reconnecting after delay...");
+	reset_session_id();
+	clear_main_control();
+	run_control();
+}
+
+/**
  * @brief Handles connection failures for the xfrpc client
  *
  * This function implements the connection failure handling logic, including
@@ -1447,11 +1463,20 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
 		debug(LOG_INFO, "Maximum retry attempts (%d) reached", MAX_RETRY_TIMES);
 	}
 
-	sleep(RETRY_DELAY_SECONDS);
-	
-	reset_session_id();
-	clear_main_control();
-	run_control();
+	/* Use an async timer instead of blocking sleep().
+	 * This keeps the event loop responsive during the delay and avoids
+	 * destroying the current bufferevent from within its own callback. */
+	struct event *reconnect_timer = evtimer_new(main_ctl->connect_base,
+			reconnect_timer_cb, NULL);
+	if (reconnect_timer) {
+		struct timeval tv = {RETRY_DELAY_SECONDS, 0};
+		evtimer_add(reconnect_timer, &tv);
+	} else {
+		debug(LOG_ERR, "Failed to create reconnect timer, falling back to immediate retry");
+		reset_session_id();
+		clear_main_control();
+		run_control();
+	}
 }
 
 /**
@@ -2381,10 +2406,6 @@ void close_main_control()
 
 	// Free event bases
 	if (main_ctl->connect_base) {
-		if (event_base_dispatch(main_ctl->connect_base) < 0) {
-			debug(LOG_ERR, "event_base_dispatch failed");
-		}
-
 		if (main_ctl->dnsbase) {
 			evdns_base_free(main_ctl->dnsbase, 0);
 			main_ctl->dnsbase = NULL;
@@ -2404,5 +2425,12 @@ void close_main_control()
 void run_control() 
 {
 	start_base_connect();
+
+	/* Run the event loop - this blocks until event_base_loopbreak() is called */
+	if (main_ctl && main_ctl->connect_base) {
+		if (event_base_dispatch(main_ctl->connect_base) < 0) {
+			debug(LOG_ERR, "event_base_dispatch failed");
+		}
+	}
 }
 

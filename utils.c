@@ -70,7 +70,7 @@ int is_valid_ip_address(const char *ip_address)
  *
  * @param net_if_name Name of network interface (e.g., "br-lan", "eth0")
  * @param mac Output buffer to store MAC address string
- * @param mac_len Length of output buffer (must be >= 12 bytes for MAC XX:XX:XX:XX:XX:XX)
+ * @param mac_len Length of output buffer (must be >= 13 bytes for MAC XXYYZZAABBCC)
  * @return 0 on success, 1 on error (invalid parameters or system calls failed)
  */
 int get_net_mac(const char *net_if_name, char *mac, int mac_len) 
@@ -78,8 +78,8 @@ int get_net_mac(const char *net_if_name, char *mac, int mac_len)
 	struct ifreq ifreq;
 	int sock;
 
-	// Validate input parameters
-	if (!net_if_name || !mac || mac_len < 12) {
+	// Validate input parameters: 12 hex chars + 1 null terminator = 13 bytes minimum
+	if (!net_if_name || !mac || mac_len < 13) {
 		return 1;
 	}
 

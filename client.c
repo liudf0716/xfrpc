@@ -606,16 +606,28 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 					NULL
 				};
 
+				/* Create a null-terminated copy to safely use strstr/debug
+				 * on raw binary TCP data that may not contain '\0'. */
+				char *safe_data = malloc(len + 1);
+				if (!safe_data) {
+					debug(LOG_ERR, "XDPI engine: out of memory");
+					return -1;
+				}
+				memcpy(safe_data, data, len);
+				safe_data[len] = '\0';
+
 				for (int i = 0; known_clients[i] != NULL; i++) {
-					if (strstr((const char *)data, known_clients[i]) != NULL) {
+					if (strstr(safe_data, known_clients[i]) != NULL) {
 						client->xdpi_state = XDPI_VERIFIED;
 						debug(LOG_INFO, "XDPI engine detected valid SSH client: %s", known_clients[i]);
+						free(safe_data);
 						return 0;
 					}
 				}
 
 				debug(LOG_WARNING, "XDPI engine detected unknown SSH client, blocking connection");
-				debug(LOG_WARNING, "data: %s", data);
+				debug(LOG_WARNING, "data (first %d bytes): %.*s", (int)len, (int)len, data);
+				free(safe_data);
 				client->xdpi_state = XDPI_BLOCKED;
 				return -1;
 			}

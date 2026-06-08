@@ -48,3 +48,4 @@ build
 test/iod_client
 test/iod_server
 test_iod_proto
+scripts/package_xfrpc_to_openwrt_dl.sh

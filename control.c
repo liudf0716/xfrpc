@@ -859,9 +859,12 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 	size_t dec_len = decrypt_data(buf, remaining_len, get_main_decoder(), &dec_msg);
 	
 	if (dec_len <= 0 || !dec_msg) {
-		debug(LOG_ERR, "Decryption failed");
+		debug(LOG_ERR, "Decryption failed: dec_len=%zu, dec_msg=%p", dec_len, dec_msg);
 		return -1;
 	}
+
+	debug(LOG_DEBUG, "[ENC_MSG] Decrypted %zu bytes -> %zu bytes, first_byte=0x%02x",
+	      remaining_len, dec_len, dec_msg[0]);
 
 	*out = dec_msg;
 	return dec_len;
@@ -880,6 +883,8 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
  */
 static void handle_type_req_work_conn(void *ctx)
 {
+	debug(LOG_DEBUG, "[REQ_WORK_CONN] Received TypeReqWorkConn, is_xfrpc_connected=%d",
+	      is_xfrpc_connected());
 	if (!is_xfrpc_connected()) {
 		start_proxy_services();
 		set_xfrpc_status(true);
@@ -951,6 +956,9 @@ static int is_service_available(struct proxy_service *ps)
  */
 static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
 {
+    debug(LOG_DEBUG, "[START_WORK_CONN] Received TypeStartWorkConn, data_len=%d",
+          msg_hton(msg->length));
+
     struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data);
     if (!sr) {
         debug(LOG_ERR, "Failed to unmarshal TypeStartWorkConn");
@@ -1060,6 +1068,9 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 
 	struct msg_hdr *msg = (struct msg_hdr *)frps_cmd;
 	uint8_t cmd_type = msg->type;
+
+	debug(LOG_DEBUG, "[CTRL_WORK] cmd_type=0x%02x('%c'), len=%d, ctx=%p",
+	      cmd_type, (cmd_type >= 32 && cmd_type < 127) ? cmd_type : '.', len, ctx);
 
 	switch (cmd_type) {
 	case TypeReqWorkConn:
@@ -1199,6 +1210,8 @@ static int handle_login_response(const uint8_t *buf, int len)
 		  login_len, len, remaining_len);
 
 	if (remaining_len > 0) {
+		debug(LOG_DEBUG, "[LOGIN] Remaining %d bytes after LoginResp, first_byte=0x%02x",
+		      remaining_len, mhdr->data[login_len]);
 		handle_remaining_data(mhdr, login_len, remaining_len);
 	}
 
@@ -1222,6 +1235,9 @@ static void handle_frps_msg(uint8_t *buf, int len, void *ctx)
 		debug(LOG_ERR, "Invalid message buffer or length");
 		return;
 	}
+
+	debug(LOG_DEBUG, "[FRPS_MSG] len=%d, first_byte=0x%02x('%c'), is_login=%d, ctx=%p",
+	      len, buf[0], (buf[0] >= 32 && buf[0] < 127) ? buf[0] : '.', is_login, ctx);
 
 	// Handle message based on login state
 	if (!is_login) {
@@ -1303,6 +1319,8 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 			if (tmux_hdr.type == DATA) {
 				uint32_t stream_id = ntohl(tmux_hdr.stream_id);
 				stream_len = ntohl(tmux_hdr.length);
+				debug(LOG_DEBUG, "[TMUX] DATA frame: stream=%u, payload=%u, buf_remain=%d",
+				      stream_id, stream_len, len);
 				if (stream_len > MAX_STREAM_WINDOW_SIZE) {
 					debug(LOG_ERR, "Stream %u: DATA length %u exceeds maximum %u, aborting",
 					      stream_id, stream_len, MAX_STREAM_WINDOW_SIZE);
@@ -1351,10 +1369,14 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 			/* Full frame available: read payload and dispatch */
 			uint16_t flags = ntohs(tmux_hdr.flags);
 			struct proxy_client *pc = get_proxy_client(cur->id);
+			debug(LOG_DEBUG, "[TMUX] Dispatching stream=%u, len=%u, flags=0x%x, pc=%p",
+			      cur->id, stream_len, flags, (void *)pc);
 			process_data(bev, cur, stream_len, flags, handle_frps_msg, (void *)pc);
 			len -= stream_len;
 			stream_len = 0;
 		} else if (tmux_hdr.type == WINDOW_UPDATE) {
+			debug(LOG_DEBUG, "[TMUX] WINDOW_UPDATE: stream=%u",
+			      ntohl(tmux_hdr.stream_id));
 			handle_tcp_mux_stream(&tmux_hdr, handle_frps_msg);
 		} else if (tmux_hdr.type == PING) {
 			handle_tcp_mux_ping(&tmux_hdr);
@@ -1418,6 +1440,9 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
 	}
 
 	struct common_conf *c_conf = get_common_config();
+
+	debug(LOG_DEBUG, "[RECV_CB] %d bytes, tcp_mux=%d, is_login=%d",
+		  len, c_conf->tcp_mux, is_login);
 
 	if (c_conf->tcp_mux) {
 		handle_tcp_mux(bev, len, ctx);

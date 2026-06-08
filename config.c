@@ -78,6 +78,7 @@ void free_common_config(void)
 	SAFE_FREE(c_conf->tls_key_file);
 	SAFE_FREE(c_conf->tls_trusted_ca_file);
 	SAFE_FREE(c_conf->tls_server_name);
+	SAFE_FREE(c_conf->user);
 }
 
 /**
@@ -838,6 +839,10 @@ static int common_handler(void *user, const char *section, const char *name, con
 	else if (MATCH("common", "tls_server_name")) {
 		SAFE_FREE(config->tls_server_name);
 		config->tls_server_name = strdup(value);
+	}
+	else if (MATCH("common", "user")) {
+		SAFE_FREE(config->user);
+		config->user = strdup(value);
 	}
 	
 	return 1;

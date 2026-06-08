@@ -50,6 +50,9 @@ struct common_conf {
 	char    *tls_trusted_ca_file; /* CA certificate file for verification */
 	char    *tls_server_name;     /* SNI server name (optional) */
 
+	/* Identity settings */
+	char    *user;                /* client user name (for visitor auth) */
+
 	/* Environment settings */
 	int     is_router;            /* indicates if running on router (OpenWrt/LEDE) */
 };

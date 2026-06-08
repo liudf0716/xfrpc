@@ -100,6 +100,11 @@ void init_login()
 	c_login->hostname = NULL;
 	c_login->user = NULL;
 	c_login->timestamp = 0;
+
+	// Set user from common config
+	if (c_conf && c_conf->user) {
+		c_login->user = strdup(c_conf->user);
+	}
 	c_login->metas = NULL;
 	c_login->pool_count = 1;
 	c_login->privilege_key = NULL;

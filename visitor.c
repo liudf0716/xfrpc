@@ -162,6 +162,7 @@ struct visitor_session {
 	struct bufferevent      *user_bev;   /* local user connection */
 	struct bufferevent      *frps_bev;   /* connection to frps */
 	enum visitor_sess_state  state;
+	int                      tls_done;   /* TLS already wrapped */
 };
 
 static void visitor_session_free(struct visitor_session *sess)
@@ -318,9 +319,10 @@ static void visitor_frps_event_cb(struct bufferevent *bev, short what, void *ctx
 	if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "Visitor [%s]: connected to frps", sess->conf->visitor_name);
 
-		/* Wrap with TLS if enabled */
+		/* Wrap with TLS if enabled and not already done */
 		struct common_conf *c_conf = get_common_config();
-		if (c_conf && c_conf->tls_enable) {
+		if (c_conf && c_conf->tls_enable && !sess->tls_done) {
+			sess->tls_done = 1;
 			struct event_base *base = bufferevent_get_base(bev);
 			struct bufferevent *ssl_bev = tls_wrap_bev(base, bev);
 			if (!ssl_bev) {

@@ -671,11 +671,21 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 		return 0;
 	}
 
+	// Strip "proxy:" prefix if present (e.g., [proxy:stcp_ssh] -> stcp_ssh)
+	const char *proxy_name = sect;
+	if (strncmp(sect, "proxy:", 6) == 0) {
+		proxy_name = sect + 6;
+		if (*proxy_name == '\0') {
+			debug(LOG_ERR, "Empty proxy name after 'proxy:' prefix");
+			return 0;
+		}
+	}
+
 	// Find or create proxy service
 	struct proxy_service *ps = NULL;
-	HASH_FIND_STR(all_ps, sect, ps);
+	HASH_FIND_STR(all_ps, proxy_name, ps);
 	if (!ps) {
-		ps = new_proxy_service(sect);
+		ps = new_proxy_service(proxy_name);
 		if (!ps) {
 			debug(LOG_ERR, "Failed to create proxy service");
 			exit(0);

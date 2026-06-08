@@ -29,6 +29,7 @@
 #include "control.h"
 #include "msg.h"
 #include "login.h"
+#include "tls.h"
 
 #include "common.h"
 #include "uthash.h"
@@ -316,6 +317,26 @@ static void visitor_frps_event_cb(struct bufferevent *bev, short what, void *ctx
 
 	if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "Visitor [%s]: connected to frps", sess->conf->visitor_name);
+
+		/* Wrap with TLS if enabled */
+		struct common_conf *c_conf = get_common_config();
+		if (c_conf && c_conf->tls_enable) {
+			struct event_base *base = bufferevent_get_base(bev);
+			struct bufferevent *ssl_bev = tls_wrap_bev(base, bev);
+			if (!ssl_bev) {
+				debug(LOG_ERR, "Visitor [%s]: TLS wrap failed",
+					sess->conf->visitor_name);
+				visitor_session_free(sess);
+				return;
+			}
+			sess->frps_bev = ssl_bev;
+			bufferevent_setcb(ssl_bev, NULL, NULL,
+				visitor_frps_event_cb, sess);
+			bufferevent_enable(ssl_bev, EV_READ | EV_WRITE);
+			/* Trigger TLS handshake; NewVisitorConn sent on next CONNECTED */
+			bufferevent_socket_connect(ssl_bev, NULL, 0);
+			return;
+		}
 
 		/* Build and send NewVisitorConn */
 		struct login *lg = get_common_login_config();

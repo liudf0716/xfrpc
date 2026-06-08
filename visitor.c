@@ -30,6 +30,7 @@
 #include "msg.h"
 #include "login.h"
 #include "tls.h"
+#include "tcpmux.h"
 
 #include "common.h"
 #include "uthash.h"
@@ -160,7 +161,8 @@ enum visitor_sess_state {
 struct visitor_session {
 	struct visitor_conf     *conf;
 	struct bufferevent      *user_bev;   /* local user connection */
-	struct bufferevent      *frps_bev;   /* connection to frps */
+	struct bufferevent      *frps_bev;   /* connection to frps (legacy, unused in tmux mode) */
+	struct proxy_client     *client;     /* tmux stream proxy client */
 	enum visitor_sess_state  state;
 	int                      tls_done;   /* TLS already wrapped */
 };
@@ -309,7 +311,7 @@ static void visitor_frps_recv_cb(struct bufferevent *bev, void *ctx)
 	/* In TUNNEL mode, this callback shouldn't be called (replaced above) */
 }
 
-/* ---- frps connection event callback ---- */
+/* ---- frps connection event callback (non-mux mode) ---- */
 
 static void visitor_frps_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
@@ -331,72 +333,25 @@ static void visitor_frps_event_cb(struct bufferevent *bev, short what, void *ctx
 				visitor_session_free(sess);
 				return;
 			}
-			sess->frps_bev = ssl_bev;
 			bufferevent_setcb(ssl_bev, NULL, NULL,
 				visitor_frps_event_cb, sess);
 			bufferevent_enable(ssl_bev, EV_READ | EV_WRITE);
-			/* Trigger TLS handshake; NewVisitorConn sent on next CONNECTED */
 			bufferevent_socket_connect(ssl_bev, NULL, 0);
 			return;
 		}
 
-		/* Build and send NewVisitorConn */
-		struct login *lg = get_common_login_config();
-		time_t timestamp = time(NULL);
-		char *sign_key = get_auth_key(sess->conf->secret_key, &timestamp);
-		if (!sign_key) {
-			debug(LOG_ERR, "Visitor [%s]: failed to generate sign_key",
-				sess->conf->visitor_name);
-			visitor_session_free(sess);
-			return;
-		}
-
-		struct json_object *jreq = json_object_new_object();
-		json_object_object_add(jreq, "run_id",
-			json_object_new_string(lg->run_id ? lg->run_id : ""));
-		json_object_object_add(jreq, "proxy_name",
-			json_object_new_string(sess->conf->server_name));
-		json_object_object_add(jreq, "sign_key",
-			json_object_new_string(sign_key));
-		if (sizeof(time_t) == 4) {
-			json_object_object_add(jreq, "timestamp",
-				json_object_new_int((int32_t)timestamp));
-		} else {
-			json_object_object_add(jreq, "timestamp",
-				json_object_new_int64((int64_t)timestamp));
-		}
-		json_object_object_add(jreq, "use_encryption",
-			json_object_new_boolean(sess->conf->use_encryption));
-		json_object_object_add(jreq, "use_compression",
-			json_object_new_boolean(sess->conf->use_compression));
-
-		const char *json_str = json_object_to_json_string(jreq);
-		int json_len = strlen(json_str);
-
-		debug(LOG_DEBUG, "Visitor [%s]: sending NewVisitorConn for proxy '%s'",
-			sess->conf->visitor_name, sess->conf->server_name);
-
-		/* Send raw framed message (type + length + data) */
-		struct msg_hdr *hdr = malloc(sizeof(struct msg_hdr) + json_len);
+		/* Send the pre-built NewVisitorConn msg_hdr */
+		struct msg_hdr *hdr = (struct msg_hdr *)sess->frps_bev;
 		if (hdr) {
-			hdr->type = TypeNewVisitorConn;
-			hdr->length = msg_hton(json_len);
-			memcpy(hdr->data, json_str, json_len);
-			bufferevent_write(bev, hdr, sizeof(struct msg_hdr) + json_len);
+			size_t total = sizeof(struct msg_hdr) + msg_ntoh(hdr->length);
+			debug(LOG_DEBUG, "Visitor [%s]: sending NewVisitorConn for proxy '%s'",
+				sess->conf->visitor_name, sess->conf->server_name);
+			bufferevent_write(bev, hdr, total);
 			free(hdr);
-		} else {
-			debug(LOG_ERR, "Visitor [%s]: failed to allocate message",
-				sess->conf->visitor_name);
-			json_object_put(jreq);
-			SAFE_FREE(sign_key);
-			visitor_session_free(sess);
-			return;
+			sess->frps_bev = bev; /* now store the real connection bev */
 		}
 
-		json_object_put(jreq);
-		SAFE_FREE(sign_key);
-
-		/* Now wait for response */
+		/* Wait for NewVisitorConnResp */
 		sess->state = VSESS_WAIT_RESP;
 		bufferevent_setcb(bev, visitor_frps_recv_cb, NULL,
 			visitor_frps_event_cb, sess);
@@ -407,6 +362,28 @@ static void visitor_frps_event_cb(struct bufferevent *bev, short what, void *ctx
 			sess->conf->visitor_name, strerror(errno));
 		visitor_session_free(sess);
 	}
+}
+
+/* ---- user data forwarding: local user → tmux stream ---- */
+
+static void visitor_user_recv_cb(struct bufferevent *bev, void *ctx)
+{
+	struct visitor_session *sess = (struct visitor_session *)ctx;
+	if (!sess || !sess->client) return;
+
+	struct evbuffer *input = bufferevent_get_input(bev);
+	size_t len = evbuffer_get_length(input);
+	if (len == 0) return;
+
+	/* Forward data from local user through the tmux stream to frps */
+	struct evbuffer *tmp = evbuffer_new();
+	if (!tmp) return;
+	evbuffer_add_buffer(tmp, input);
+	if (tmux_stream_write(sess->client->ctl_bev, tmp, &sess->client->stream) < 0) {
+		debug(LOG_ERR, "Visitor [%s]: failed to write user data through tmux",
+			sess->conf->visitor_name);
+	}
+	evbuffer_free(tmp);
 }
 
 /* ---- user connection event callback ---- */
@@ -456,31 +433,166 @@ static void visitor_accept_cb(struct evconnlistener *listener,
 	bufferevent_setcb(sess->user_bev, NULL, NULL, visitor_user_event_cb, sess);
 	bufferevent_enable(sess->user_bev, EV_READ | EV_WRITE);
 
-	/* Connect to frps */
-	sess->frps_bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
-	if (!sess->frps_bev) {
+	/* Use control connection's tmux to send NewVisitorConn (same as frpc) */
+	struct proxy_client *client = new_proxy_client();
+	if (!client) {
+		debug(LOG_ERR, "Visitor [%s]: failed to create proxy client",
+			vi->conf->visitor_name);
 		visitor_session_free(sess);
 		return;
 	}
 
-	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_port = htons(c_conf->server_port);
-	inet_pton(AF_INET, c_conf->server_addr, &sin.sin_addr);
+	client->base = base;
+	client->ctl_bev = get_main_control()->connect_bev;
+	client->local_proxy_bev = sess->user_bev; /* tunnel target */
+	client->visitor_ctx = sess;
+	sess->client = client; /* reverse link for data forwarding */
 
-	bufferevent_setcb(sess->frps_bev, NULL, NULL, visitor_frps_event_cb, sess);
-	bufferevent_enable(sess->frps_bev, EV_READ | EV_WRITE);
+	if (c_conf->tcp_mux) {
+		/* Send WINDOW_UPDATE + NewVisitorConn through tmux stream */
+		debug(LOG_DEBUG, "Visitor [%s]: using tmux stream_id=%d",
+			vi->conf->visitor_name, client->stream_id);
+		send_window_update(client->ctl_bev, &client->stream, 0);
 
-	if (bufferevent_socket_connect(sess->frps_bev,
-			(struct sockaddr *)&sin, sizeof(sin)) < 0) {
-		debug(LOG_ERR, "Visitor [%s]: failed to connect to frps %s:%d",
-			vi->conf->visitor_name, c_conf->server_addr, c_conf->server_port);
-		visitor_session_free(sess);
-		return;
+		/* Build NewVisitorConn JSON */
+		struct login *lg = get_common_login_config();
+		time_t timestamp = time(NULL);
+		char *sign_key = get_auth_key(sess->conf->secret_key, &timestamp);
+		if (!sign_key) {
+			debug(LOG_ERR, "Visitor [%s]: failed to generate sign_key",
+				vi->conf->visitor_name);
+			free(client);
+			visitor_session_free(sess);
+			return;
+		}
+
+		struct json_object *jreq = json_object_new_object();
+		json_object_object_add(jreq, "run_id",
+			json_object_new_string(lg->run_id ? lg->run_id : ""));
+		json_object_object_add(jreq, "proxy_name",
+			json_object_new_string(sess->conf->server_name));
+		json_object_object_add(jreq, "sign_key",
+			json_object_new_string(sign_key));
+		if (sizeof(time_t) == 4) {
+			json_object_object_add(jreq, "timestamp",
+				json_object_new_int((int32_t)timestamp));
+		} else {
+			json_object_object_add(jreq, "timestamp",
+				json_object_new_int64((int64_t)timestamp));
+		}
+		json_object_object_add(jreq, "use_encryption",
+			json_object_new_boolean(sess->conf->use_encryption));
+		json_object_object_add(jreq, "use_compression",
+			json_object_new_boolean(sess->conf->use_compression));
+
+		const char *json_str = json_object_to_json_string(jreq);
+		int json_len = strlen(json_str);
+
+		debug(LOG_DEBUG, "Visitor [%s]: sending NewVisitorConn for proxy '%s'",
+			sess->conf->visitor_name, sess->conf->server_name);
+
+		send_msg_frp_server(client->ctl_bev, TypeNewVisitorConn,
+			json_str, json_len, &client->stream);
+
+		json_object_put(jreq);
+		SAFE_FREE(sign_key);
+
+		sess->state = VSESS_WAIT_RESP;
+
+		/* Now set up user data forwarding (after client is linked) */
+		bufferevent_setcb(sess->user_bev, visitor_user_recv_cb, NULL,
+			visitor_user_event_cb, sess);
+	} else {
+		/* Non-mux mode: create independent TCP connection to frps */
+		debug(LOG_DEBUG, "Visitor [%s]: using direct (non-mux) connection",
+			vi->conf->visitor_name);
+
+		/* Reuse proxy_client for session tracking */
+		free(client);
+		sess->client = NULL;
+
+		/* Build NewVisitorConn JSON */
+		struct login *lg = get_common_login_config();
+		time_t timestamp = time(NULL);
+		char *sign_key = get_auth_key(sess->conf->secret_key, &timestamp);
+		if (!sign_key) {
+			debug(LOG_ERR, "Visitor [%s]: failed to generate sign_key",
+				vi->conf->visitor_name);
+			visitor_session_free(sess);
+			return;
+		}
+
+		struct json_object *jreq = json_object_new_object();
+		json_object_object_add(jreq, "run_id",
+			json_object_new_string(lg->run_id ? lg->run_id : ""));
+		json_object_object_add(jreq, "proxy_name",
+			json_object_new_string(sess->conf->server_name));
+		json_object_object_add(jreq, "sign_key",
+			json_object_new_string(sign_key));
+		if (sizeof(time_t) == 4) {
+			json_object_object_add(jreq, "timestamp",
+				json_object_new_int((int32_t)timestamp));
+		} else {
+			json_object_object_add(jreq, "timestamp",
+				json_object_new_int64((int64_t)timestamp));
+		}
+		json_object_object_add(jreq, "use_encryption",
+			json_object_new_boolean(sess->conf->use_encryption));
+		json_object_object_add(jreq, "use_compression",
+			json_object_new_boolean(sess->conf->use_compression));
+
+		const char *json_str = json_object_to_json_string(jreq);
+		int json_len = strlen(json_str);
+
+		/* Pre-build the raw msg_hdr for sending after connection */
+		size_t hdr_len = sizeof(struct msg_hdr) + json_len;
+		struct msg_hdr *hdr = malloc(hdr_len);
+		if (!hdr) {
+			json_object_put(jreq);
+			SAFE_FREE(sign_key);
+			visitor_session_free(sess);
+			return;
+		}
+		hdr->type = TypeNewVisitorConn;
+		hdr->length = msg_hton(json_len);
+		memcpy(hdr->data, json_str, json_len);
+
+		json_object_put(jreq);
+		SAFE_FREE(sign_key);
+
+		/* Store the pre-built message in frps_bev for the event callback */
+		sess->frps_bev = (struct bufferevent *)hdr; /* temporarily store msg */
+		sess->state = VSESS_CONNECTING;
+
+		/* Create TCP connection to frps */
+		struct bufferevent *conn_bev = bufferevent_socket_new(base, -1,
+			BEV_OPT_CLOSE_ON_FREE);
+		if (!conn_bev) {
+			free(hdr);
+			visitor_session_free(sess);
+			return;
+		}
+
+		struct sockaddr_in sin;
+		memset(&sin, 0, sizeof(sin));
+		sin.sin_family = AF_INET;
+		sin.sin_port = htons(c_conf->server_port);
+		inet_pton(AF_INET, c_conf->server_addr, &sin.sin_addr);
+
+		bufferevent_setcb(conn_bev, NULL, NULL,
+			visitor_frps_event_cb, sess);
+		bufferevent_enable(conn_bev, EV_READ | EV_WRITE);
+
+		if (bufferevent_socket_connect(conn_bev,
+				(struct sockaddr *)&sin, sizeof(sin)) < 0) {
+			debug(LOG_ERR, "Visitor [%s]: failed to connect to frps",
+				vi->conf->visitor_name);
+			free(hdr);
+			bufferevent_free(conn_bev);
+			visitor_session_free(sess);
+			return;
+		}
 	}
-
-	sess->state = VSESS_CONNECTING;
 }
 
 /* ---- visitor instance init ---- */
@@ -541,10 +653,43 @@ void init_visitors(struct event_base *base)
 
 void handle_visitor_conn_resp(const char *resp_json, struct bufferevent *bev)
 {
-	/* This is called if NewVisitorConnResp arrives on the main control
-	 * connection. In the current design, visitors use separate connections,
-	 * so this handler is a no-op but kept for protocol completeness. */
-	debug(LOG_DEBUG, "Received NewVisitorConnResp on main control (ignored)");
+	if (!resp_json) return;
+
+	struct json_object *jresp = json_tokener_parse(resp_json);
+	if (!jresp) {
+		debug(LOG_ERR, "Failed to parse NewVisitorConnResp JSON");
+		return;
+	}
+
+	/* Check for error */
+	struct json_object *j_err = NULL;
+	const char *err_str = NULL;
+	if (json_object_object_get_ex(jresp, "error", &j_err)) {
+		err_str = json_object_get_string(j_err);
+	}
+
+	struct json_object *j_pname = NULL;
+	const char *proxy_name = NULL;
+	if (json_object_object_get_ex(jresp, "proxy_name", &j_pname)) {
+		proxy_name = json_object_get_string(j_pname);
+	}
+
+	if (err_str && strlen(err_str) > 0) {
+		debug(LOG_ERR, "Visitor conn resp error for '%s': %s",
+			proxy_name ? proxy_name : "?", err_str);
+		json_object_put(jresp);
+		return;
+	}
+
+	debug(LOG_DEBUG, "Visitor conn resp OK for proxy '%s'",
+		proxy_name ? proxy_name : "?");
+
+	json_object_put(jresp);
+
+	/* The proxy_client for this visitor session has local_proxy_bev set
+	 * to the user's bev. Data from the tmux stream will be forwarded
+	 * to the local user via the existing proxy_client tunnel mechanism.
+	 * The proxy_client was set up in visitor_accept_cb. */
 }
 
 /* ---- stop and free all running visitor instances (for hot-reload) ---- */

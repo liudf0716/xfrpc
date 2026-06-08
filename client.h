@@ -59,6 +59,7 @@ struct proxy_client {
 	/* Configuration */
 	struct base_conf     *bconf;
 	struct proxy_service *ps;
+	void                 *visitor_ctx;  /* visitor_session backpointer */
 	
 	/* Stream handling */
 	struct tmux_stream   stream;

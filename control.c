@@ -336,6 +336,9 @@ static void new_client_connect()
  */
 static void start_proxy_services() 
 {
+	/* Start visitor listeners first — visitors work independently of proxy services */
+	init_visitors(get_main_control()->connect_base);
+
 	// Get configured proxy services
 	struct proxy_service *all_ps = get_all_proxy_services();
 	if (!all_ps) {
@@ -370,9 +373,6 @@ static void start_proxy_services()
 		debug(LOG_DEBUG, "Sending proxy service: %s", ps->proxy_name);
 		send_new_proxy(ps);
 	}
-
-	/* Start visitor listeners */
-	init_visitors(get_main_control()->connect_base);
 
 	/* Start health checks for proxy services that have it configured */
 	struct event_base *base = get_main_control()->connect_base;

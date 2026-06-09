@@ -191,7 +191,7 @@ static int send_nathole_visitor(struct xtcp_session *sess, int pre_check)
 							 stun_cache[i].local_addr);
 						vmsg.assisted_addrs[j] = a;
 					} else {
-						vmsg.assisted_addrs[j] = stun_cache[i].local_ips[j];
+						vmsg.assisted_addrs[j] = NULL;
 					}
 				}
 				vmsg.assisted_addrs_count = stun_cache[i].local_ips_count;
@@ -203,9 +203,13 @@ static int send_nathole_visitor(struct xtcp_session *sess, int pre_check)
 	char *json_str = NULL;
 	int json_len = nathole_visitor_marshal(&vmsg, &json_str);
 
-	/* Free allocated arrays (not the pointed-to strings from cache) */
+	/* Free allocated strings and arrays */
 	SAFE_FREE(vmsg.mapped_addrs);
-	SAFE_FREE(vmsg.assisted_addrs);
+	if (vmsg.assisted_addrs) {
+		for (int j = 0; j < vmsg.assisted_addrs_count; j++)
+			SAFE_FREE(vmsg.assisted_addrs[j]);
+		SAFE_FREE(vmsg.assisted_addrs);
+	}
 	SAFE_FREE(sign_key);
 
 	if (json_len == 0 || !json_str) {

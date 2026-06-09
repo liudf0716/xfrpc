@@ -25,7 +25,7 @@ the following table is detail  compatible feature:
 | use_compression | No | Yes |
 | udp  | Yes |  Yes  |
 | p2p  | No |  Yes  |
-| xtcp  | No |  Yes  |
+| xtcp  | Yes |  Yes  |
 | stcp  | Yes |  Yes  |
 
 

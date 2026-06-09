@@ -73,6 +73,8 @@ set(PROXY_SOURCES
     proxy.c
     tcpmux.c
     visitor.c
+    xtcp_visitor.c
+    nathole.c
     tcp_redir.c
     mongoose.c
 )

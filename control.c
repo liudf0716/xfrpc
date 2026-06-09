@@ -25,6 +25,7 @@
 #include "config.h"
 #include "visitor.h"
 #include "msg.h"
+#include "xtcp_visitor.h"
 #include "control.h"
 #include "crypto.h"
 #include "utils.h"
@@ -1087,6 +1088,15 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 		break;
 	case TypeNewVisitorConnResp:
 		handle_visitor_conn_resp((const char *)msg->data, (struct proxy_client *)ctx);
+		break;
+	case TypeNatHoleResp:
+		/* Handle XTCP NAT hole-punch response */
+		debug(LOG_DEBUG, "[CTRL_WORK] NatHoleResp received");
+		xtcp_handle_nat_hole_resp_msg((const char *)msg->data);
+		break;
+	case TypeNatHoleReport:
+		/* NatHoleReport acknowledgment - no action needed */
+		debug(LOG_DEBUG, "[CTRL_WORK] NatHoleReport ack received");
 		break;
 	case TypePong:
 		pong_time = time(NULL);

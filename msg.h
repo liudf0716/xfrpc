@@ -43,6 +43,7 @@ enum msg_type {
 	TypeNatHoleResp           = 'm',
 	TypeNatHoleClientDetectOK = 'd',
 	TypeNatHoleSid            = '5',
+	TypeNatHoleReport         = '6',
 };
 
 // General response structure for basic server responses
@@ -120,5 +121,72 @@ struct work_conn *new_work_conn(void);
 void udp_packet_free(struct udp_packet *udp);
 void control_response_free(struct control_response *res);
 void new_proxy_resp_free(struct new_proxy_response *npr);
+
+/* ---- NatHole message structures ---- */
+
+/* NatHoleVisitor: visitor → server (via TCP control connection) */
+struct nathole_visitor_msg {
+	char    *transaction_id;
+	char    *proxy_name;
+	int      pre_check;
+	char    *protocol;
+	char    *sign_key;
+	int64_t  timestamp;
+	char   **mapped_addrs;
+	int      mapped_addrs_count;
+	char   **assisted_addrs;
+	int      assisted_addrs_count;
+};
+
+/* NatHoleClient: client → server (via TCP control connection) */
+struct nathole_client_msg {
+	char    *transaction_id;
+	char    *proxy_name;
+	char    *sid;
+	char   **mapped_addrs;
+	int      mapped_addrs_count;
+	char   **assisted_addrs;
+	int      assisted_addrs_count;
+};
+
+/* NatHoleResp: server → visitor/client (via TCP control connection) */
+struct nathole_resp_msg {
+	char    *transaction_id;
+	char    *sid;
+	char    *protocol;
+	char   **candidate_addrs;
+	int      candidate_addrs_count;
+	char   **assisted_addrs;
+	int      assisted_addrs_count;
+	/* detect_behavior */
+	int      behavior_mode;
+	char    *behavior_role;
+	int      behavior_ttl;
+	int      behavior_send_delay_ms;
+	int      behavior_read_timeout_ms;
+	int      behavior_send_random_ports;
+	int      behavior_listen_random_ports;
+	/* candidate_ports: "from-to" pairs */
+	int     *candidate_ports_from;
+	int     *candidate_ports_to;
+	int      candidate_ports_count;
+	char    *error;
+};
+
+/* NatHoleReport: visitor/client → server (via TCP control connection) */
+struct nathole_report_msg {
+	char    *sid;
+	int      success;
+};
+
+/* NatHole message marshalling/unmarshalling */
+int nathole_visitor_marshal(const struct nathole_visitor_msg *msg, char **out);
+int nathole_report_marshal(const struct nathole_report_msg *msg, char **out);
+
+struct nathole_resp_msg *nathole_resp_unmarshal(const char *json_str);
+void nathole_resp_msg_free(struct nathole_resp_msg *msg);
+
+void nathole_visitor_msg_free(struct nathole_visitor_msg *msg);
+void nathole_client_msg_free(struct nathole_client_msg *msg);
 
 #endif

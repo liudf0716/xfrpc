@@ -31,6 +31,7 @@
 #include "login.h"
 #include "tls.h"
 #include "tcpmux.h"
+#include "xtcp_visitor.h"
 
 #include "common.h"
 #include "uthash.h"
@@ -417,6 +418,20 @@ static void visitor_accept_cb(struct evconnlistener *listener,
 
 	debug(LOG_INFO, "Visitor [%s]: new local connection (fd=%d)",
 		vi->conf->visitor_name, fd);
+
+	/* Route XTCP visitors to the dedicated XTCP handler */
+	if (vi->conf->visitor_type &&
+	    strcmp(vi->conf->visitor_type, "xtcp") == 0) {
+		struct event_base *base = evconnlistener_get_base(listener);
+		struct bufferevent *user_bev = bufferevent_socket_new(base, fd,
+			BEV_OPT_CLOSE_ON_FREE);
+		if (!user_bev) {
+			close(fd);
+			return;
+		}
+		xtcp_visitor_run(base, vi, user_bev);
+		return;
+	}
 
 	struct event_base *base = evconnlistener_get_base(listener);
 	struct common_conf *c_conf = get_common_config();

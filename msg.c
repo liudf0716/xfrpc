@@ -992,3 +992,260 @@ error:
 	udp_packet_free(udp);
 	return NULL;
 }
+
+/* ============================================================
+ * NatHole message marshalling/unmarshalling
+ * ============================================================ */
+
+/**
+ * @brief Marshal a NatHoleVisitor message to JSON string
+ *
+ * @param msg  The NatHoleVisitor message to marshal
+ * @param out  Output JSON string (caller must free)
+ * @return Length of output string, 0 on failure
+ */
+int nathole_visitor_marshal(const struct nathole_visitor_msg *msg, char **out)
+{
+	if (!msg || !out) return 0;
+
+	struct json_object *jobj = json_object_new_object();
+	if (!jobj) return 0;
+
+	if (msg->transaction_id)
+		json_object_object_add(jobj, "transaction_id",
+			json_object_new_string(msg->transaction_id));
+	if (msg->proxy_name)
+		json_object_object_add(jobj, "proxy_name",
+			json_object_new_string(msg->proxy_name));
+	json_object_object_add(jobj, "pre_check",
+		json_object_new_boolean(msg->pre_check));
+	if (msg->protocol)
+		json_object_object_add(jobj, "protocol",
+			json_object_new_string(msg->protocol));
+	if (msg->sign_key)
+		json_object_object_add(jobj, "sign_key",
+			json_object_new_string(msg->sign_key));
+	if (sizeof(time_t) == 4) {
+		json_object_object_add(jobj, "timestamp",
+			json_object_new_int((int32_t)msg->timestamp));
+	} else {
+		json_object_object_add(jobj, "timestamp",
+			json_object_new_int64((int64_t)msg->timestamp));
+	}
+
+	/* mapped_addrs array */
+	struct json_object *j_mapped = json_object_new_array();
+	for (int i = 0; i < msg->mapped_addrs_count; i++) {
+		json_object_array_add(j_mapped,
+			json_object_new_string(msg->mapped_addrs[i]));
+	}
+	json_object_object_add(jobj, "mapped_addrs", j_mapped);
+
+	/* assisted_addrs array */
+	struct json_object *j_assisted = json_object_new_array();
+	for (int i = 0; i < msg->assisted_addrs_count; i++) {
+		json_object_array_add(j_assisted,
+			json_object_new_string(msg->assisted_addrs[i]));
+	}
+	json_object_object_add(jobj, "assisted_addrs", j_assisted);
+
+	const char *json_str = json_object_to_json_string(jobj);
+	int len = 0;
+	if (json_str) {
+		*out = strdup(json_str);
+		if (*out) len = strlen(json_str);
+	}
+
+	json_object_put(jobj);
+	return len;
+}
+
+/**
+ * @brief Marshal a NatHoleReport message to JSON string
+ */
+int nathole_report_marshal(const struct nathole_report_msg *msg, char **out)
+{
+	if (!msg || !out) return 0;
+
+	struct json_object *jobj = json_object_new_object();
+	if (!jobj) return 0;
+
+	if (msg->sid)
+		json_object_object_add(jobj, "sid",
+			json_object_new_string(msg->sid));
+	json_object_object_add(jobj, "success",
+		json_object_new_boolean(msg->success));
+
+	const char *json_str = json_object_to_json_string(jobj);
+	int len = 0;
+	if (json_str) {
+		*out = strdup(json_str);
+		if (*out) len = strlen(json_str);
+	}
+
+	json_object_put(jobj);
+	return len;
+}
+
+/* Helper to parse a JSON string array field */
+static int parse_json_string_array(struct json_object *jobj, const char *key,
+				   char ***out_arr, int *out_count)
+{
+	struct json_object *jarr = NULL;
+	if (!json_object_object_get_ex(jobj, key, &jarr) || !jarr) {
+		*out_arr = NULL;
+		*out_count = 0;
+		return 0;
+	}
+
+	int count = json_object_array_length(jarr);
+	if (count <= 0) {
+		*out_arr = NULL;
+		*out_count = 0;
+		return 0;
+	}
+
+	char **arr = calloc(count, sizeof(char *));
+	if (!arr) return -1;
+
+	for (int i = 0; i < count; i++) {
+		struct json_object *item = json_object_array_get_idx(jarr, i);
+		if (item) {
+			arr[i] = strdup(json_object_get_string(item));
+		}
+	}
+
+	*out_arr = arr;
+	*out_count = count;
+	return 0;
+}
+
+/**
+ * @brief Unmarshal a NatHoleResp message from JSON string
+ */
+struct nathole_resp_msg *nathole_resp_unmarshal(const char *json_str)
+{
+	if (!json_str) return NULL;
+
+	struct json_object *jobj = json_tokener_parse(json_str);
+	if (!jobj) return NULL;
+
+	struct nathole_resp_msg *resp = calloc(1, sizeof(struct nathole_resp_msg));
+	if (!resp) {
+		json_object_put(jobj);
+		return NULL;
+	}
+
+	struct json_object *val;
+
+	if (json_object_object_get_ex(jobj, "transaction_id", &val))
+		resp->transaction_id = strdup(json_object_get_string(val));
+	if (json_object_object_get_ex(jobj, "sid", &val))
+		resp->sid = strdup(json_object_get_string(val));
+	if (json_object_object_get_ex(jobj, "protocol", &val))
+		resp->protocol = strdup(json_object_get_string(val));
+	if (json_object_object_get_ex(jobj, "error", &val))
+		resp->error = strdup(json_object_get_string(val));
+
+	/* Parse address arrays */
+	parse_json_string_array(jobj, "candidate_addrs",
+				&resp->candidate_addrs, &resp->candidate_addrs_count);
+	parse_json_string_array(jobj, "assisted_addrs",
+				&resp->assisted_addrs, &resp->assisted_addrs_count);
+
+	/* Parse detect_behavior */
+	struct json_object *jbeh = NULL;
+	if (json_object_object_get_ex(jobj, "detect_behavior", &jbeh) && jbeh) {
+		if (json_object_object_get_ex(jbeh, "mode", &val))
+			resp->behavior_mode = json_object_get_int(val);
+		if (json_object_object_get_ex(jbeh, "role", &val))
+			resp->behavior_role = strdup(json_object_get_string(val));
+		if (json_object_object_get_ex(jbeh, "ttl", &val))
+			resp->behavior_ttl = json_object_get_int(val);
+		if (json_object_object_get_ex(jbeh, "send_delay_ms", &val))
+			resp->behavior_send_delay_ms = json_object_get_int(val);
+		if (json_object_object_get_ex(jbeh, "read_timeout", &val))
+			resp->behavior_read_timeout_ms = json_object_get_int(val);
+		if (json_object_object_get_ex(jbeh, "send_random_ports", &val))
+			resp->behavior_send_random_ports = json_object_get_int(val);
+		if (json_object_object_get_ex(jbeh, "listen_random_ports", &val))
+			resp->behavior_listen_random_ports = json_object_get_int(val);
+
+		/* candidate_ports array */
+		struct json_object *jports = NULL;
+		if (json_object_object_get_ex(jbeh, "candidate_ports", &jports) && jports) {
+			int pc = json_object_array_length(jports);
+			if (pc > 0) {
+				resp->candidate_ports_from = calloc(pc, sizeof(int));
+				resp->candidate_ports_to = calloc(pc, sizeof(int));
+				if (resp->candidate_ports_from && resp->candidate_ports_to) {
+					for (int i = 0; i < pc; i++) {
+						struct json_object *pr = json_object_array_get_idx(jports, i);
+						struct json_object *jfrom, *jto;
+						if (pr &&
+						    json_object_object_get_ex(pr, "from", &jfrom) &&
+						    json_object_object_get_ex(pr, "to", &jto)) {
+							resp->candidate_ports_from[i] = json_object_get_int(jfrom);
+							resp->candidate_ports_to[i] = json_object_get_int(jto);
+						}
+					}
+					resp->candidate_ports_count = pc;
+				}
+			}
+		}
+	}
+
+	json_object_put(jobj);
+	return resp;
+}
+
+/**
+ * @brief Free a nathole_resp_msg structure
+ */
+void nathole_resp_msg_free(struct nathole_resp_msg *msg)
+{
+	if (!msg) return;
+	SAFE_FREE(msg->transaction_id);
+	SAFE_FREE(msg->sid);
+	SAFE_FREE(msg->protocol);
+	SAFE_FREE(msg->error);
+	SAFE_FREE(msg->behavior_role);
+	for (int i = 0; i < msg->candidate_addrs_count; i++)
+		SAFE_FREE(msg->candidate_addrs[i]);
+	SAFE_FREE(msg->candidate_addrs);
+	for (int i = 0; i < msg->assisted_addrs_count; i++)
+		SAFE_FREE(msg->assisted_addrs[i]);
+	SAFE_FREE(msg->assisted_addrs);
+	SAFE_FREE(msg->candidate_ports_from);
+	SAFE_FREE(msg->candidate_ports_to);
+	free(msg);
+}
+
+void nathole_visitor_msg_free(struct nathole_visitor_msg *msg)
+{
+	if (!msg) return;
+	SAFE_FREE(msg->transaction_id);
+	SAFE_FREE(msg->proxy_name);
+	SAFE_FREE(msg->protocol);
+	SAFE_FREE(msg->sign_key);
+	for (int i = 0; i < msg->mapped_addrs_count; i++)
+		SAFE_FREE(msg->mapped_addrs[i]);
+	SAFE_FREE(msg->mapped_addrs);
+	for (int i = 0; i < msg->assisted_addrs_count; i++)
+		SAFE_FREE(msg->assisted_addrs[i]);
+	SAFE_FREE(msg->assisted_addrs);
+}
+
+void nathole_client_msg_free(struct nathole_client_msg *msg)
+{
+	if (!msg) return;
+	SAFE_FREE(msg->transaction_id);
+	SAFE_FREE(msg->proxy_name);
+	SAFE_FREE(msg->sid);
+	for (int i = 0; i < msg->mapped_addrs_count; i++)
+		SAFE_FREE(msg->mapped_addrs[i]);
+	SAFE_FREE(msg->mapped_addrs);
+	for (int i = 0; i < msg->assisted_addrs_count; i++)
+		SAFE_FREE(msg->assisted_addrs[i]);
+	SAFE_FREE(msg->assisted_addrs);
+}

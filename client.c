@@ -12,7 +12,6 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/un.h>
-#include <errno.h>
 #include <syslog.h>
 #include <zlib.h>
 
@@ -22,7 +21,6 @@
 #include "uthash.h"
 #include "control.h"
 #include "config.h"
-#include "uthash.h"
 #include "zip.h"
 #include "common.h"
 #include "proxy.h"
@@ -606,50 +604,34 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 
 	switch (ps->service_type) {
 		case SERVICE_SSH:
-			if (len >= 20 && data[0] == 'S' && data[1] == 'S' && data[2] == 'H') {
-				const char *known_clients[] = {
-					"OpenSSH", "PuTTY", "WinSCP", "FileZilla", "SecureCRT",
-					"Xshell", "Bitvise", "SSH Tectia", "Tera Term", "KiTTY",
-					"Royal TSX", "Termius", "Tabby", "Cyberduck", "ForkLift",
-					"Transmit", "CoreFTP", "SmartFTP", "FlashFXP", "FTP Rush",
-					NULL
-				};
-
-				/* Create a null-terminated copy to safely use strstr/debug
-				 * on raw binary TCP data that may not contain '\0'. */
-				char *safe_data = malloc(len + 1);
-				if (!safe_data) {
-					debug(LOG_ERR, "XDPI engine: out of memory");
-					return -1;
-				}
-				memcpy(safe_data, data, len);
-				safe_data[len] = '\0';
-
-				for (int i = 0; known_clients[i] != NULL; i++) {
-					if (strstr(safe_data, known_clients[i]) != NULL) {
-						client->xdpi_state = XDPI_VERIFIED;
-						debug(LOG_INFO, "XDPI engine detected valid SSH client: %s", known_clients[i]);
-						free(safe_data);
-						return 0;
-					}
-				}
-
-				debug(LOG_WARNING, "XDPI engine detected unknown SSH client, blocking connection");
-				debug(LOG_WARNING, "data (first %d bytes): %.*s", (int)len, (int)len, data);
-				free(safe_data);
-				client->xdpi_state = XDPI_BLOCKED;
-				return -1;
+			/* Verify SSH banner format per RFC 4253: SSH-protoversion-softwareversion
+			 * Must start with "SSH-2.0-" and banner length <= 255 bytes */
+			if (len >= 8 && len <= 255 &&
+			    data[0] == 'S' && data[1] == 'S' && data[2] == 'H' &&
+			    data[3] == '-' && data[4] == '2' && data[5] == '.' &&
+			    data[6] == '0' && data[7] == '-') {
+				client->xdpi_state = XDPI_VERIFIED;
+				debug(LOG_INFO, "XDPI engine verified SSH-2.0 banner (%zu bytes)", len);
+				return 0;
 			}
 			break;
 
 		case SERVICE_HTTP:
-			if (len >= 4 && 
+			/* Check for HTTP request methods and verify HTTP/ prefix exists */
+			if (len >= 8 &&
 				((data[0] == 'G' && data[1] == 'E' && data[2] == 'T' && data[3] == ' ') ||
 				 (data[0] == 'P' && data[1] == 'O' && data[2] == 'S' && data[3] == 'T') ||
 				 (data[0] == 'H' && data[1] == 'E' && data[2] == 'A' && data[3] == 'D') ||
-				 (data[0] == 'P' && data[1] == 'U' && data[2] == 'T' && data[3] == ' '))) {
-				client->xdpi_state = XDPI_VERIFIED;
-				return 0;
+				 (data[0] == 'P' && data[1] == 'U' && data[2] == 'T' && data[3] == ' ') ||
+				 (data[0] == 'D' && data[1] == 'E' && data[2] == 'L' && data[3] == 'E'))) {
+				/* Search for " HTTP/" in the request line to validate format */
+				for (size_t i = 4; i < len - 5; i++) {
+					if (data[i] == ' ' && data[i+1] == 'H' && data[i+2] == 'T' &&
+					    data[i+3] == 'T' && data[i+4] == 'P' && data[i+5] == '/') {
+						client->xdpi_state = XDPI_VERIFIED;
+						return 0;
+					}
+				}
 			}
 			break;
 
@@ -659,23 +641,17 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 				return 0;
 			}
 			break;
-		case SERVICE_MSTSC:
-			if (len == 47 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00 && data[5] == 0xe0) {
-				if (memcmp((const char *)&data[11], "Cookie:", 7) == 0 && data[43] == 0x0b) {
-					client->xdpi_state = XDPI_VERIFIED;
-					debug(LOG_INFO, "XDPI engine verified the RDP protocol, len: %zu", len);
-					return 0;
-				} 
-			} 
 
-			debug(LOG_WARNING, "XDPI engine detected unknown RDP client, len: %zu", len);
-			break;
+		case SERVICE_MSTSC:
 		case SERVICE_RDP:
+			/* RDP Connection Request: TPKT header (0x03, 0x00) + length >= 19 */
 			if (len >= 19 && data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00) {
 				client->xdpi_state = XDPI_VERIFIED;
+				debug(LOG_INFO, "XDPI engine verified RDP protocol (%zu bytes)", len);
 				return 0;
 			}
 			break;
+
 		case SERVICE_VNC:
 			if (len >= 4 && data[0] == 'R' && data[1] == 'F' && data[2] == 'B' && data[3] == ' ') {
 				client->xdpi_state = XDPI_VERIFIED;

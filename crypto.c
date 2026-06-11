@@ -212,7 +212,15 @@ struct frp_coder *init_main_encoder()
 struct frp_coder *init_main_decoder(const uint8_t *iv)
 {
 	struct common_conf *c_conf = get_common_config();
+	if (!c_conf || !iv) {
+		debug(LOG_ERR, "init_main_decoder: invalid parameters");
+		return NULL;
+	}
 	main_decoder = new_coder(c_conf->auth_token, default_salt);
+	if (!main_decoder) {
+		debug(LOG_ERR, "init_main_decoder: new_coder failed");
+		return NULL;
+	}
 	memcpy(main_decoder->iv, iv, block_size);
 	return main_decoder;
 }
@@ -368,12 +376,16 @@ size_t encrypt_data(const uint8_t *src_data, size_t srclen,
 	// Perform encryption
 	if (!EVP_EncryptUpdate(ctx, outbuf, &tmplen, src_data, srclen)) {
 		debug(LOG_ERR, "EVP_EncryptUpdate error!");
+		free(outbuf);
+		*ret = NULL;
 		return 0;
 	}
 	outlen = tmplen;
 
 	if (!EVP_EncryptFinal_ex(ctx, outbuf + outlen, &tmplen)) {
 		debug(LOG_ERR, "EVP_EncryptFinal_ex error!");
+		free(outbuf);
+		*ret = NULL;
 		return 0;
 	}
 	outlen += tmplen;
@@ -430,12 +442,16 @@ size_t decrypt_data(const uint8_t *enc_data, size_t enclen,
 	// Perform decryption
 	if (!EVP_DecryptUpdate(ctx, outbuf, &tmplen, enc_data, enclen)) {
 		debug(LOG_ERR, "EVP_DecryptUpdate error!");
+		free(outbuf);
+		*ret = NULL;
 		return 0;
 	}
 	outlen = tmplen;
 
 	if (!EVP_DecryptFinal_ex(ctx, outbuf + outlen, &tmplen)) {
 		debug(LOG_ERR, "EVP_DecryptFinal_ex error");
+		free(outbuf);
+		*ret = NULL;
 		return 0;
 	}
 	outlen += tmplen;

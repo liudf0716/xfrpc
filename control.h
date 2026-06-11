@@ -23,6 +23,7 @@ struct control {
     struct event *ticker_ping;        /* Heartbeat timer */
     struct event *tcp_mux_ping_event; /* TCP multiplexing ping event */
     struct event *reload_timer;       /* SIGHUP reload check timer */
+    struct event *reconnect_timer;    /* Reconnect delay timer */
     uint32_t tcp_mux_ping_id;         /* TCP multiplexing ping ID */
     struct tmux_stream stream;        /* Multiplexing stream */
 };
@@ -45,10 +46,6 @@ void login(void);
 void send_new_proxy(struct proxy_service *ps);
 
 /* Message handling functions */
-void send_msg_frp_server(struct bufferevent *bev, const enum msg_type type,
-                         const char *msg, const size_t msg_len,
-                         struct tmux_stream *stream);
-
 void send_msg_frp_server(struct bufferevent *bev, const enum msg_type type,
                          const char *msg, const size_t msg_len,
                          struct tmux_stream *stream);

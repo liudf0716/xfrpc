@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <sys/uio.h>
 #include <netinet/tcp.h>
+#include <stdatomic.h>
 
 #include "client.h"
 #include "common.h"
@@ -56,7 +57,7 @@ static uint8_t local_go_away = 0;     /* Flag indicating local end wants to clos
 /**
  * @brief Session management variables
  */
-static uint32_t g_session_id = 1;     /* Global session ID counter (starts at 1) */
+static _Atomic uint32_t g_session_id = 1;     /* Global session ID counter (starts at 1) */
 
 /**
  * @brief Stream management variables
@@ -221,7 +222,7 @@ void tcp_mux_encode(enum tcp_mux_type type, enum tcp_mux_flag flags,
  */
 static uint32_t tcp_mux_flag() {
     static int cached = -1;
-    if (__builtin_expect(cached >= 0, 1))
+    if (cached >= 0)
         return cached;
     struct common_conf *c_conf = get_common_config();
     if (!c_conf) {
@@ -236,14 +237,14 @@ static uint32_t tcp_mux_flag() {
  * @brief Resets the global session ID to its initial value.
  */
 void reset_session_id() {
-    __atomic_store_n(&g_session_id, 1, __ATOMIC_SEQ_CST);
+    atomic_store(&g_session_id, 1);
 }
 
 /**
  * @brief Generates the next unique session ID.
  */
 uint32_t get_next_session_id() {
-    uint32_t current_id = __atomic_fetch_add(&g_session_id, 2, __ATOMIC_SEQ_CST);
+    uint32_t current_id = atomic_fetch_add(&g_session_id, 2);
     return current_id;
 }
 

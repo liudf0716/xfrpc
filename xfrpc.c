@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
-#include <errno.h>
 
 #include <syslog.h>
 
@@ -26,7 +25,6 @@
 #include "msg.h"
 #include "utils.h"
 #include "tcp_redir.h"
-#include "config.h"
 
 #include "plugins/youtubedl.h"
 #include "plugins/telnetd.h"

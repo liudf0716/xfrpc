@@ -79,6 +79,7 @@ void free_common_config(void)
 	SAFE_FREE(c_conf->tls_trusted_ca_file);
 	SAFE_FREE(c_conf->tls_server_name);
 	SAFE_FREE(c_conf->user);
+	SAFE_FREE(c_conf->protocol);
 }
 
 /**
@@ -287,7 +288,7 @@ static struct proxy_service *new_proxy_service(const char *name)
 		return NULL;
 	}
 
-	// Allocate and verify memory
+	// Allocate and verify memory (calloc zeros all fields)
 	struct proxy_service *ps = calloc(1, sizeof(struct proxy_service));
 	assert(ps);
 	assert(c_conf);
@@ -296,40 +297,8 @@ static struct proxy_service *new_proxy_service(const char *name)
 	ps->proxy_name = strdup(name);
 	assert(ps->proxy_name);
 
-	// All other fields are already set to NULL/0 by calloc
-	ps->ftp_cfg_proxy_name = NULL;
-	ps->proxy_type = NULL;
-	ps->local_port = 0;
-	ps->remote_port = 0;
-	ps->remote_data_port = 0;
-	ps->use_compression = 0;
-	ps->use_encryption = 0;
-
+	// Set non-zero defaults
 	ps->service_type = NO_XDPI;
-
-	// HTTP/HTTPS specific fields
-	ps->custom_domains = NULL;
-	ps->subdomain = NULL;
-	ps->locations = NULL;
-	ps->host_header_rewrite = NULL;
-	ps->http_user = NULL;
-	ps->http_pwd = NULL;
-
-	// Group settings
-	ps->group = NULL;
-	ps->group_key = NULL;
-
-	// Plugin settings
-	ps->plugin = NULL;
-	ps->plugin_user = NULL;
-	ps->plugin_pwd = NULL;
-	ps->s_root_dir = NULL;
-
-	ps->bind_addr	= NULL;
-
-	/* Health check defaults (disabled) */
-	ps->health_check_type = NULL;
-	ps->health_check_url = NULL;
 	ps->health_check_interval = 10;
 	ps->health_check_timeout = 3;
 	ps->health_check_max_failed = 1;
@@ -350,7 +319,7 @@ new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
 		if (! ps) {
 			debug(LOG_ERR, 
 				"cannot create ftp data proxy service, it should not happenned!");
-			exit(0);
+			exit(EXIT_FAILURE);
 		}
 		
 		ps->ftp_cfg_proxy_name = strdup(ftp_ps->proxy_name);
@@ -485,6 +454,19 @@ static int add_user_and_set_password(const char *username, const char *password)
 		return -1;
 	}
 
+	// Validate password: reject unsafe characters and enforce length limit
+	size_t pwd_len = strlen(password);
+	if (pwd_len > 128) {
+		debug(LOG_ERR, "Password too long (max 128 characters)");
+		return -1;
+	}
+	for (const char *p = password; *p; p++) {
+		if (*p == '\n' || *p == '\r' || *p == ':' || *p == '\0') {
+			debug(LOG_ERR, "Password contains unsafe characters");
+			return -1;
+		}
+	}
+
 	// Reject usernames or passwords containing shell-unsafe characters to
 	// prevent command injection when they are embedded in shell commands.
 	for (const char *p = username; *p; p++) {
@@ -600,7 +582,7 @@ static void process_plugin_conf(struct proxy_service *ps)
 				/* UDS plugin: no local_port needed, uses plugin_unix_path */
 				if (!ps->plugin_unix_path) {
 					debug(LOG_ERR, "Plugin unix_domain_socket requires plugin_unix_path");
-					exit(0);
+					exit(EXIT_FAILURE);
 				}
 			} else if (strcmp(plugins[i].name, "telnetd") == 0) {
 				if (ps->plugin_user && ps->plugin_pwd) {
@@ -689,13 +671,14 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 		ps = new_proxy_service(proxy_name);
 		if (!ps) {
 			debug(LOG_ERR, "Failed to create proxy service");
-			exit(0);
+			exit(EXIT_FAILURE);
 		}
 		HASH_ADD_KEYPTR(hh, all_ps, ps->proxy_name, strlen(ps->proxy_name), ps);
 	}
 
 	#define MATCH_NAME(s) strcmp(nm, s) == 0
 	#define SET_STRING_VALUE(field) do { \
+		SAFE_FREE(ps->field); \
 		ps->field = strdup(value); \
 		assert(ps->field); \
 	} while(0)
@@ -704,7 +687,7 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	if (MATCH_NAME("type")) {
 		if (!get_valid_type(value)) {
 			debug(LOG_ERR, "Unsupported proxy type: %s", value);
-			exit(0);
+			exit(EXIT_FAILURE);
 		}
 		SET_STRING_VALUE(proxy_type);
 	}
@@ -742,7 +725,7 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 		int hour = atoi(value);
 		if (hour < 0 || hour > 23) {
 			debug(LOG_ERR, "Invalid start_time value: %s", value);
-			exit(0);
+			exit(EXIT_FAILURE);
 		}
 		ps->start_time = hour;
 	}
@@ -750,7 +733,7 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 		int hour = atoi(value);
 		if (hour < 0 || hour > 23) {
 			debug(LOG_ERR, "Invalid end_time value: %s", value);
-			exit(0);
+			exit(EXIT_FAILURE);
 		}
 		ps->end_time = hour;
 	}
@@ -928,12 +911,12 @@ char *get_ftp_data_proxy_name(const char *ftp_proxy_name) {
 static void validate_heartbeat_config(void) {
 	if (c_conf->heartbeat_interval <= 0) {
 		debug(LOG_ERR, "Error: heartbeat_interval must be positive");
-		exit(0);
+		exit(EXIT_FAILURE);
 	}
 
 	if (c_conf->heartbeat_timeout < c_conf->heartbeat_interval) {
 		debug(LOG_ERR, "Error: heartbeat_timeout must be greater than heartbeat_interval");
-		exit(0);
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -962,7 +945,7 @@ void load_config(const char *confile) {
 	// Parse common section
 	if (ini_parse(confile, common_handler, c_conf) < 0) {
 		debug(LOG_ERR, "Config file parse failed");
-		exit(0);
+		exit(EXIT_FAILURE);
 	}
 
 	dump_common_conf();

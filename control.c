@@ -295,7 +295,7 @@ static void new_client_connect()
 	struct common_conf *c_conf = get_common_config();
 	if (!c_conf) {
 		debug(LOG_ERR, "Failed to get common config");
-		free(client);
+		del_proxy_client_by_stream_id(client->stream_id);
 		return;
 	}
 
@@ -303,7 +303,7 @@ static void new_client_connect()
 	client->base = main_ctl->connect_base;
 	if (!client->base) {
 		debug(LOG_ERR, "Invalid event base");
-		free(client);
+		del_proxy_client_by_stream_id(client->stream_id);
 		return;
 	}
 
@@ -311,12 +311,12 @@ static void new_client_connect()
 	if (c_conf->tcp_mux) {
 		client->ctl_bev = main_ctl->connect_bev;
 		if (init_tcp_mux_client(client) != 0) {
-			free(client);
+			del_proxy_client_by_stream_id(client->stream_id);
 			return;
 		}
 	} else {
 		if (init_direct_client(client, c_conf->server_addr, c_conf->server_port) != 0) {
-			free(client);
+			del_proxy_client_by_stream_id(client->stream_id);
 			return;
 		}
 	}
@@ -1396,6 +1396,7 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 			if (to_read < stream_len) {
 				debug(LOG_DEBUG, "Stream %u: partial frame %u/%u, waiting",
 				      cur->id, to_read, stream_len);
+				set_cur_stream(cur);
 				break;
 			}
 
@@ -1492,7 +1493,7 @@ static void recv_cb(struct bufferevent *bev, void *ctx)
  */
 static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx)
 {
-	(void)fd; (void)what;
+	(void)fd; (void)what; (void)ctx;
 	debug(LOG_INFO, "Reconnecting after delay...");
 	reset_session_id();
 	clear_main_control();
@@ -1524,11 +1525,11 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
 	/* Use an async timer instead of blocking sleep().
 	 * This keeps the event loop responsive during the delay and avoids
 	 * destroying the current bufferevent from within its own callback. */
-	struct event *reconnect_timer = evtimer_new(main_ctl->connect_base,
+	main_ctl->reconnect_timer = evtimer_new(main_ctl->connect_base,
 			reconnect_timer_cb, NULL);
-	if (reconnect_timer) {
+	if (main_ctl->reconnect_timer) {
 		struct timeval tv = {RETRY_DELAY_SECONDS, 0};
-		evtimer_add(reconnect_timer, &tv);
+		evtimer_add(main_ctl->reconnect_timer, &tv);
 	} else {
 		debug(LOG_ERR, "Failed to create reconnect timer, falling back to immediate retry");
 		reset_session_id();
@@ -2210,7 +2211,7 @@ static int init_event_base(struct control *ctl)
  */
 static int init_dns_base(struct control *ctl)
 {
-	struct evdns_base *dnsbase = evdns_base_new(ctl->connect_base, 1);
+	struct evdns_base *dnsbase = evdns_base_new(ctl->connect_base, 0);
 	if (!dnsbase) {
 		debug(LOG_ERR, "Failed to create DNS base");
 		return -1;
@@ -2220,16 +2221,52 @@ static int init_dns_base(struct control *ctl)
 	evdns_base_set_option(dnsbase, "timeout", "1.0");
 	evdns_base_set_option(dnsbase, "randomize-case:", "0"); // Disable DNS-0x20 encoding
 
-	// Add DNS servers
-	const char *dns_servers[] = {
-		"180.76.76.76",    // Baidu DNS
-		"223.5.5.5",       // AliDNS
-		"223.6.6.6",       // AliDNS
-		"114.114.114.114"  // 114DNS
+	// Try system DNS from multiple locations
+	// OpenWrt stores upstream DNS in /tmp/resolv.conf.d/resolv.conf.auto,
+	// while standard Linux uses /etc/resolv.conf. Try both.
+	static const char *resolv_paths[] = {
+		"/tmp/resolv.conf.d/resolv.conf.auto",  /* OpenWrt upstream DNS */
+		"/tmp/resolv.conf",                       /* OpenWrt alternative */
+		"/etc/resolv.conf",                       /* Standard Linux */
 	};
 
-	for (size_t i = 0; i < sizeof(dns_servers)/sizeof(dns_servers[0]); i++) {
-		evdns_base_nameserver_ip_add(dnsbase, dns_servers[i]);
+	int dns_loaded = 0;
+	for (size_t i = 0; i < sizeof(resolv_paths)/sizeof(resolv_paths[0]); i++) {
+		if (access(resolv_paths[i], R_OK) == 0) {
+			if (evdns_base_resolv_conf_parse(dnsbase, DNS_OPTION_NAMESERVERS,
+			                                 resolv_paths[i]) >= 0 &&
+			    evdns_base_count_nameservers(dnsbase) > 0) {
+				debug(LOG_INFO, "Loaded DNS from %s", resolv_paths[i]);
+				dns_loaded = 1;
+				break;
+			}
+		}
+	}
+
+	// Filter out loopback nameservers (127.0.0.x) which point to local
+	// dnsmasq and may not resolve reliably for direct connections.
+	if (dns_loaded) {
+		// libevent does not expose a way to remove individual nameservers,
+		// but evdns_base_resolv_conf_parse skips 127.x automatically.
+		// If only loopback nameservers were found, treat as not loaded.
+		int count = evdns_base_count_nameservers(dnsbase);
+		if (count <= 0) {
+			dns_loaded = 0;
+		}
+	}
+
+	// Fallback to public DNS if system DNS unavailable
+	if (!dns_loaded) {
+		debug(LOG_INFO, "System DNS unavailable, using fallback DNS servers");
+		const char *fallback_dns[] = {
+			"223.5.5.5",       // AliDNS
+			"114.114.114.114", // 114DNS
+			"180.76.76.76",    // Baidu DNS
+		};
+
+		for (size_t i = 0; i < sizeof(fallback_dns)/sizeof(fallback_dns[0]); i++) {
+			evdns_base_nameserver_ip_add(dnsbase, fallback_dns[i]);
+		}
 	}
 
 	ctl->dnsbase = dnsbase;
@@ -2335,24 +2372,27 @@ static void clear_main_control()
 
 	// Clear event timers
 	if (main_ctl->ticker_ping) {
-		if (evtimer_del(main_ctl->ticker_ping) < 0) {
-			debug(LOG_ERR, "Failed to delete ticker ping timer");
-		}
+		evtimer_del(main_ctl->ticker_ping);
+		event_free(main_ctl->ticker_ping);
 		main_ctl->ticker_ping = NULL;
 	}
 
 	if (main_ctl->tcp_mux_ping_event) {
-		if (evtimer_del(main_ctl->tcp_mux_ping_event) < 0) {
-			debug(LOG_ERR, "Failed to delete TCP mux ping timer"); 
-		}
+		evtimer_del(main_ctl->tcp_mux_ping_event);
+		event_free(main_ctl->tcp_mux_ping_event);
 		main_ctl->tcp_mux_ping_event = NULL;
 	}
 
 	if (main_ctl->reload_timer) {
-		if (evtimer_del(main_ctl->reload_timer) < 0) {
-			debug(LOG_ERR, "Failed to delete reload timer");
-		}
+		evtimer_del(main_ctl->reload_timer);
+		event_free(main_ctl->reload_timer);
 		main_ctl->reload_timer = NULL;
+	}
+
+	if (main_ctl->reconnect_timer) {
+		evtimer_del(main_ctl->reconnect_timer);
+		event_free(main_ctl->reconnect_timer);
+		main_ctl->reconnect_timer = NULL;
 	}
 
 	// Reset connection state

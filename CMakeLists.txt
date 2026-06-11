@@ -15,6 +15,36 @@ find_package(OpenSSL REQUIRED)
 find_package(JSON-C REQUIRED)
 find_package(ZLIB REQUIRED)
 
+# Optional: ngtcp2 for QUIC support (Xtcp P2P)
+option(ENABLE_QUIC "Enable QUIC transport via ngtcp2" OFF)
+if(ENABLE_QUIC)
+    find_library(NGTCP2_LIB ngtcp2)
+    find_path(NGTCP2_INCLUDE_DIR ngtcp2/ngtcp2.h)
+    # Try wolfssl backend first, then openssl
+    find_library(NGTCP2_CRYPTO_LIB ngtcp2_crypto_wolfssl)
+    if(NGTCP2_CRYPTO_LIB)
+        set(NGTCP2_CRYPTO_BACKEND "wolfssl")
+    else()
+        find_library(NGTCP2_CRYPTO_LIB ngtcp2_crypto_openssl)
+        if(NGTCP2_CRYPTO_LIB)
+            set(NGTCP2_CRYPTO_BACKEND "openssl")
+        endif()
+    endif()
+    if(NGTCP2_LIB AND NGTCP2_CRYPTO_LIB AND NGTCP2_INCLUDE_DIR)
+        message(STATUS "QUIC support: ON (ngtcp2 found, crypto backend: ${NGTCP2_CRYPTO_BACKEND})")
+        add_definitions(-DHAVE_NGTCP2)
+        if(NGTCP2_CRYPTO_BACKEND STREQUAL "wolfssl")
+            add_definitions(-DUSE_NGTCP2_WOLFSSL)
+        endif()
+        include_directories(${NGTCP2_INCLUDE_DIR})
+        set(HAS_QUIC ON)
+    else()
+        message(WARNING "QUIC support: OFF (ngtcp2 not found, set NGTCP2_LIB/NGTCP2_INCLUDE_DIR)")
+    endif()
+else()
+    message(STATUS "QUIC support: OFF (set -DENABLE_QUIC=ON to enable)")
+endif()
+
 include_directories(
     ${JSON-C_INCLUDE_DIR}
     ${ZLIB_INCLUDE_DIRS}
@@ -74,10 +104,15 @@ set(PROXY_SOURCES
     tcpmux.c
     visitor.c
     xtcp_visitor.c
+    xtcp_client.c
     nathole.c
     tcp_redir.c
     mongoose.c
 )
+# quic_transport.c is added conditionally via ENABLE_QUIC above
+if(HAS_QUIC)
+    list(APPEND PROXY_SOURCES quic_transport.c)
+endif()
 
 set(PLUGIN_SOURCES
     plugins/telnetd.c
@@ -109,6 +144,14 @@ set(EXTERNAL_LIBS
     ${JSON-C_LIBRARIES}
     ${ZLIB_LIBRARIES}
 )
+
+# Add QUIC libraries if enabled
+if(HAS_QUIC)
+    list(APPEND EXTERNAL_LIBS ${NGTCP2_CRYPTO_LIB} ${NGTCP2_LIB})
+    if(NGTCP2_CRYPTO_BACKEND STREQUAL "wolfssl")
+        list(APPEND EXTERNAL_LIBS wolfssl)
+    endif()
+endif()
 
 # Set debug flags
 if(DEBUG)

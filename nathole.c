@@ -39,8 +39,11 @@
 static void random_hex(char *out, size_t len)
 {
 	static const char hex[] = "0123456789abcdef";
+	unsigned char buf[32];
+	if (len > sizeof(buf)) len = sizeof(buf);
+	RAND_bytes(buf, (int)len);
 	for (size_t i = 0; i < len; i++)
-		out[i] = hex[rand() & 0xf];
+		out[i] = hex[buf[i] & 0xf];
 	out[len] = '\0';
 }
 
@@ -226,7 +229,7 @@ static int stun_extract_addr(const uint8_t *buf, size_t len,
 			     uint16_t attr_type,
 			     char *out, size_t out_len)
 {
-	char ip[64];
+	char ip[INET_ADDRSTRLEN];
 	int port;
 	if (stun_parse_response(buf, len, expected_txid, attr_type, ip, sizeof(ip), &port) != 0)
 		return -1;
@@ -294,7 +297,7 @@ static int resolve_stun_server(const char *server, int default_port,
 	/* DNS resolve */
 	struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_DGRAM };
 	struct addrinfo *res = NULL;
-	char port_str[8];
+	char port_str[16];
 	snprintf(port_str, sizeof(port_str), "%d", port);
 
 	if (getaddrinfo(host, port_str, &hints, &res) != 0 || !res)
@@ -396,6 +399,81 @@ int stun_discover(const char **stun_servers, const char *local_addr,
 	}
 
 	close(sock);
+
+	if (result->addr_count == 0) {
+		debug(LOG_ERR, "STUN: no addresses discovered");
+		return -1;
+	}
+	return 0;
+}
+
+int stun_discover_on_socket(int sock, const char **stun_servers,
+			    struct stun_result *result)
+{
+	if (sock < 0 || !stun_servers || !result) return -1;
+	memset(result, 0, sizeof(*result));
+
+	/* Store local address */
+	socklen_t slen = sizeof(result->local_addr);
+	getsockname(sock, (struct sockaddr *)&result->local_addr, &slen);
+
+	for (int s = 0; stun_servers[s] && result->addr_count < STUN_MAX_ADDRS; s++) {
+		struct sockaddr_in server_addr;
+		if (resolve_stun_server(stun_servers[s], STUN_PORT, &server_addr) != 0) {
+			debug(LOG_WARNING, "STUN: cannot resolve server '%s'", stun_servers[s]);
+			continue;
+		}
+
+		debug(LOG_DEBUG, "STUN: querying %s:%d (reused socket)",
+		      inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port));
+
+		uint8_t txid[STUN_TXID_LEN];
+		uint8_t resp[1024];
+		size_t resp_len = 0;
+
+		if (stun_do_request(sock, &server_addr, txid, resp, sizeof(resp), &resp_len) != 0) {
+			debug(LOG_WARNING, "STUN: no response from %s", stun_servers[s]);
+			continue;
+		}
+
+		char mapped[64];
+		if (stun_extract_addr(resp, resp_len, txid,
+				      STUN_ATTR_XOR_MAPPED_ADDR, mapped, sizeof(mapped)) == 0 ||
+		    stun_extract_addr(resp, resp_len, txid,
+				      STUN_ATTR_MAPPED_ADDR, mapped, sizeof(mapped)) == 0) {
+			strncpy(result->addrs[result->addr_count].addr, mapped, 63);
+			result->addr_count++;
+			debug(LOG_DEBUG, "STUN: mapped addr = %s", mapped);
+		}
+
+		char other[64];
+		if (stun_extract_addr(resp, resp_len, txid,
+				      STUN_ATTR_OTHER_ADDR, other, sizeof(other)) == 0) {
+			struct sockaddr_in other_addr;
+			if (resolve_stun_server(other, STUN_PORT, &other_addr) == 0 &&
+			    result->addr_count < STUN_MAX_ADDRS) {
+				uint8_t txid2[STUN_TXID_LEN];
+				uint8_t resp2[1024];
+				size_t resp2_len = 0;
+
+				if (stun_do_request(sock, &other_addr, txid2,
+						    resp2, sizeof(resp2), &resp2_len) == 0) {
+					char mapped2[64];
+					if (stun_extract_addr(resp2, resp2_len, txid2,
+							      STUN_ATTR_XOR_MAPPED_ADDR,
+							      mapped2, sizeof(mapped2)) == 0 ||
+					    stun_extract_addr(resp2, resp2_len, txid2,
+							      STUN_ATTR_MAPPED_ADDR,
+							      mapped2, sizeof(mapped2)) == 0) {
+						strncpy(result->addrs[result->addr_count].addr,
+							mapped2, 63);
+						result->addr_count++;
+						debug(LOG_DEBUG, "STUN: second mapped addr = %s", mapped2);
+					}
+				}
+			}
+		}
+	}
 
 	if (result->addr_count == 0) {
 		debug(LOG_ERR, "STUN: no addresses discovered");

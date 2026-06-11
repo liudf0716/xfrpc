@@ -23,6 +23,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <json-c/json.h>
+#include <openssl/rand.h>
 
 #include <event2/event.h>
 #include <event2/bufferevent.h>
@@ -37,6 +38,11 @@
 #include "common.h"
 #include "debug.h"
 #include "utils.h"
+#include "crypto.h"
+
+#ifdef HAVE_NGTCP2
+#include "quic_transport.h"
+#endif
 
 /* Default STUN servers if not configured */
 static const char *default_stun_servers[] = {
@@ -54,6 +60,7 @@ struct xtcp_stun_cache {
 	struct  nat_feature nat_feat;
 	char    local_ips[MAX_ASSISTED_ADDRS][64];
 	int     local_ips_count;
+	int     udp_fd;           /* UDP socket used for STUN, reused for hole-punch */
 	int     valid;
 };
 
@@ -111,6 +118,12 @@ struct xtcp_session {
 	int                     ttl;
 	int                     send_random_ports;
 	int                     listen_random_ports;
+
+	/* Candidate port ranges from NatHoleResp */
+	int                     candidate_ports_from[16];
+	int                     candidate_ports_to[16];
+	int                     candidate_ports_count;
+
 	struct event           *timer_event;   /* for delayed sends */
 	struct event           *timeout_event; /* overall timeout */
 	int                     hole_punched;  /* flag: hole-punch succeeded */
@@ -125,6 +138,26 @@ struct xtcp_session {
 	int                     extra_fds[256];
 	int                     extra_fd_count;
 	struct event           *extra_events[256];
+
+	/* UDP receive buffer for frame reassembly in tunnel mode */
+	uint8_t                 udp_recv_buf[65536];
+	size_t                  udp_recv_len;
+
+	/* Tunnel encryption (raw UDP only, QUIC has TLS) */
+	struct frp_coder        *encoder;
+	struct frp_coder        *decoder;
+	int                      use_encryption;
+
+	/* Reconnect tracking for KeepTunnelOpen */
+	int                     reconnect_count;
+	time_t                  reconnect_window_start;
+	int                     max_reconnects_per_hour; /* default 8 */
+	struct event           *reconnect_timer;
+
+#ifdef HAVE_NGTCP2
+	/* QUIC transport over hole-punched UDP */
+	struct quic_ctx        *quic;
+#endif
 };
 
 /* ---- Forward declarations ---- */
@@ -140,10 +173,14 @@ static void xtcp_send_sid_probe_to_all(struct xtcp_session *sess);
 static void xtcp_timeout_cb(evutil_socket_t fd, short events, void *ctx);
 static void xtcp_send_delay_cb(evutil_socket_t fd, short events, void *ctx);
 static void xtcp_enter_tunnel(struct xtcp_session *sess);
+static void xtcp_process_udp_frame(struct xtcp_session *sess);
 static void xtcp_cleanup(struct xtcp_session *sess);
 static void xtcp_report_result(struct xtcp_session *sess, int success);
 static void xtcp_user_read_cb(struct bufferevent *bev, void *ctx);
 static void xtcp_user_event_cb(struct bufferevent *bev, short events, void *ctx);
+static void xtcp_try_reconnect(struct xtcp_session *sess);
+static void xtcp_reconnect_cb(evutil_socket_t fd, short events, void *ctx);
+static void xtcp_fallback_to_visitor(struct xtcp_session *sess);
 
 /* ---- Helper: send NatHoleVisitor via control connection ---- */
 static int send_nathole_visitor(struct xtcp_session *sess, int pre_check)
@@ -160,7 +197,11 @@ static int send_nathole_visitor(struct xtcp_session *sess, int pre_check)
 	vmsg.transaction_id = txid;
 	vmsg.proxy_name = sess->vi->conf->server_name;
 	vmsg.pre_check = pre_check;
+#ifdef HAVE_NGTCP2
+	vmsg.protocol = "quic";
+#else
 	vmsg.protocol = "kcp";
+#endif
 
 	char *sign_key = NULL;
 	if (!pre_check) {
@@ -260,6 +301,8 @@ void xtcp_visitor_run(struct event_base *base,
 	sess->udp_fd = -1;
 	sess->secret_key = vi->conf->secret_key ?
 		strdup(vi->conf->secret_key) : NULL;
+	sess->reconnect_window_start = time(NULL);
+	sess->state = XTCP_STUN_PRECHECK;
 
 	/* Register in active sessions for NatHoleResp dispatching */
 	xtcp_session_register(sess);
@@ -378,27 +421,35 @@ void xtcp_handle_precheck_resp(struct xtcp_session *sess,
 		return;
 	}
 
-	/* Do STUN discovery */
+	/* Do STUN discovery on a new UDP socket (will be reused for hole-punch) */
+	int stun_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (stun_fd < 0) {
+		debug(LOG_ERR, "XTCP: socket() failed: %s", strerror(errno));
+		xtcp_cleanup(sess);
+		return;
+	}
+	evutil_make_socket_nonblocking(stun_fd);
+
 	struct stun_result sresult;
 	const char *servers[8];
 	int scount = 0;
 
-	/* Use default STUN servers */
 	for (int i = 0; default_stun_servers[i] && scount < 7; i++)
 		servers[scount++] = default_stun_servers[i];
 	servers[scount] = NULL;
 
-	if (stun_discover(servers, NULL, &sresult) < 0 ||
+	if (stun_discover_on_socket(stun_fd, servers, &sresult) < 0 ||
 	    sresult.addr_count < 2) {
 		debug(LOG_ERR, "XTCP: STUN discovery failed (need 2+ addresses, got %d)",
 		      sresult.addr_count);
+		close(stun_fd);
 		xtcp_cleanup(sess);
 		return;
 	}
 
 	debug(LOG_INFO, "XTCP: STUN discovered %d addresses", sresult.addr_count);
 
-	/* Cache results */
+	/* Cache results - keep socket alive for hole-punching */
 	if (cache) {
 		for (int i = 0; i < sresult.addr_count && i < MAX_MAPPED_ADDRS; i++) {
 			strncpy(cache->mapped_addrs[i], sresult.addrs[i].addr, 63);
@@ -433,7 +484,10 @@ void xtcp_handle_precheck_resp(struct xtcp_session *sess,
 			debug(LOG_INFO, "XTCP: NAT type=%s, behavior=%s",
 			      cache->nat_feat.nat_type, cache->nat_feat.behavior);
 		}
+		cache->udp_fd = stun_fd;  /* Save socket for hole-punch */
 		cache->valid = 1;
+	} else {
+		close(stun_fd);
 	}
 
 	/* Step 3: Exchange Info */
@@ -484,6 +538,13 @@ static void xtcp_handle_nat_hole_resp_impl(struct xtcp_session *sess,
 	sess->send_random_ports = resp->behavior_send_random_ports;
 	sess->listen_random_ports = resp->behavior_listen_random_ports;
 
+	/* Store candidate port ranges */
+	sess->candidate_ports_count = resp->candidate_ports_count;
+	for (int i = 0; i < resp->candidate_ports_count && i < 16; i++) {
+		sess->candidate_ports_from[i] = resp->candidate_ports_from[i];
+		sess->candidate_ports_to[i] = resp->candidate_ports_to[i];
+	}
+
 	debug(LOG_INFO, "XTCP: NatHoleResp sid=%s, role=%s, mode=%d, "
 	      "candidates=%d, assisted=%d, ttl=%d, delay=%dms, timeout=%dms",
 	      sess->sid,
@@ -493,29 +554,50 @@ static void xtcp_handle_nat_hole_resp_impl(struct xtcp_session *sess,
 	      resp->assisted_addrs_count,
 	      sess->ttl, sess->send_delay_ms, sess->read_timeout_ms);
 
-	/* Prepare UDP socket for hole-punching */
-	sess->udp_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (sess->udp_fd < 0) {
-		debug(LOG_ERR, "XTCP: socket() failed: %s", strerror(errno));
-		xtcp_cleanup(sess);
-		return;
+	/* Prepare UDP socket for hole-punching.
+	 * Reuse the STUN socket to preserve NAT mapping. */
+	int reused_fd = -1;
+	for (int i = 0; i < stun_cache_count; i++) {
+		if (strcmp(stun_cache[i].visitor_name,
+			   sess->vi->conf->visitor_name) == 0 &&
+		    stun_cache[i].valid && stun_cache[i].udp_fd >= 0) {
+			reused_fd = stun_cache[i].udp_fd;
+			stun_cache[i].udp_fd = -1; /* Transfer ownership */
+			break;
+		}
 	}
 
-	/* Bind to the same port as STUN discovery */
-	/* TODO: bind to the same local port used in STUN to preserve NAT mapping */
-
-	struct sockaddr_in bind_addr;
-	memset(&bind_addr, 0, sizeof(bind_addr));
-	bind_addr.sin_family = AF_INET;
-	bind_addr.sin_addr.s_addr = INADDR_ANY;
-	bind_addr.sin_port = 0; /* Let OS choose */
-
-	if (bind(sess->udp_fd, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
-		debug(LOG_WARNING, "XTCP: bind() failed: %s", strerror(errno));
+	if (reused_fd >= 0) {
+		sess->udp_fd = reused_fd;
+		debug(LOG_DEBUG, "XTCP: reusing STUN socket fd=%d for hole-punch", reused_fd);
+	} else {
+		sess->udp_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (sess->udp_fd < 0) {
+			debug(LOG_ERR, "XTCP: socket() failed: %s", strerror(errno));
+			xtcp_cleanup(sess);
+			return;
+		}
+		struct sockaddr_in bind_addr;
+		memset(&bind_addr, 0, sizeof(bind_addr));
+		bind_addr.sin_family = AF_INET;
+		if (bind(sess->udp_fd, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
+			debug(LOG_WARNING, "XTCP: bind() failed: %s", strerror(errno));
+		}
 	}
 
-	/* Set non-blocking */
 	evutil_make_socket_nonblocking(sess->udp_fd);
+
+	/* Reset timeout to server-provided read_timeout_ms for hole-punch phase */
+	if (sess->timeout_event && sess->read_timeout_ms > 0) {
+		event_del(sess->timeout_event);
+		struct timeval tv = {
+			.tv_sec = sess->read_timeout_ms / 1000,
+			.tv_usec = (sess->read_timeout_ms % 1000) * 1000
+		};
+		evtimer_add(sess->timeout_event, &tv);
+		debug(LOG_DEBUG, "XTCP: hole-punch timeout set to %dms",
+		      sess->read_timeout_ms);
+	}
 
 	debug(LOG_DEBUG, "XTCP: UDP socket ready (fd=%d), starting hole-punch",
 	      sess->udp_fd);
@@ -595,11 +677,13 @@ static void xtcp_send_sid_probe(struct xtcp_session *sess, const char *addr)
 	sid_msg.response = false;
 
 	/* Generate random nonce */
-	static const char hex_chars[] = "0123456789abcdef";
 	char nonce[32];
-	int nonce_len = rand() % 20;
+	unsigned char rand_buf[16];
+	RAND_bytes(rand_buf, sizeof(rand_buf));
+	static const char hex_chars[] = "0123456789abcdef";
+	int nonce_len = rand_buf[0] % 20;
 	for (int i = 0; i < nonce_len; i++)
-		nonce[i] = hex_chars[rand() & 0xf];
+		nonce[i] = hex_chars[rand_buf[i + 1] & 0xf];
 	nonce[nonce_len] = '\0';
 	sid_msg.nonce = nonce;
 
@@ -629,8 +713,11 @@ static void xtcp_send_sid_probe(struct xtcp_session *sess, const char *addr)
 		return;
 	}
 
-	/* Set TTL if needed */
+	/* Set TTL if needed, saving original for restore */
+	int original_ttl = 64;
 	if (sess->ttl > 0) {
+		socklen_t optlen = sizeof(original_ttl);
+		getsockopt(sess->udp_fd, IPPROTO_IP, IP_TTL, &original_ttl, &optlen);
 		int ttl = sess->ttl;
 		setsockopt(sess->udp_fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
 	}
@@ -645,22 +732,22 @@ static void xtcp_send_sid_probe(struct xtcp_session *sess, const char *addr)
 		      addr, strerror(errno));
 	}
 
-	/* Restore default TTL */
+	/* Restore original TTL */
 	if (sess->ttl > 0) {
-		int ttl = 64;
-		setsockopt(sess->udp_fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
+		setsockopt(sess->udp_fd, IPPROTO_IP, IP_TTL, &original_ttl, sizeof(original_ttl));
 	}
 
 	free(pkt);
 }
 
-/* Send probes to all known addresses */
+/* Send probes to all known addresses, including random ports and range ports */
 static void xtcp_send_sid_probe_to_all(struct xtcp_session *sess)
 {
 	debug(LOG_DEBUG, "XTCP: sending NatHoleSid probes (role=%s, ttl=%d, "
-	      "candidates=%d, assisted=%d)",
+	      "candidates=%d, assisted=%d, send_random=%d, port_ranges=%d)",
 	      sess->is_sender ? "sender" : "receiver", sess->ttl,
-	      sess->candidate_addrs_count, sess->assisted_addrs_count);
+	      sess->candidate_addrs_count, sess->assisted_addrs_count,
+	      sess->send_random_ports, sess->candidate_ports_count);
 
 	/* Send to assisted addrs first, then candidate addrs */
 	for (int i = 0; i < sess->assisted_addrs_count; i++) {
@@ -668,6 +755,51 @@ static void xtcp_send_sid_probe_to_all(struct xtcp_session *sess)
 	}
 	for (int i = 0; i < sess->candidate_addrs_count; i++) {
 		xtcp_send_sid_probe(sess, sess->candidate_addrs[i]);
+	}
+
+	/* Send to candidate port ranges */
+	for (int r = 0; r < sess->candidate_ports_count && r < 16; r++) {
+		int from_port = sess->candidate_ports_from[r];
+		int to_port = sess->candidate_ports_to[r];
+		if (from_port <= 0 || to_port <= 0 || from_port > to_port) continue;
+
+		/* Extract IP from first candidate addr */
+		char ip[64] = {0};
+		if (sess->candidate_addrs_count > 0 && sess->candidate_addrs[0]) {
+			strncpy(ip, sess->candidate_addrs[0], sizeof(ip) - 1);
+			char *colon = strrchr(ip, ':');
+			if (colon) *colon = '\0';
+		}
+		if (!ip[0]) continue;
+
+		for (int p = from_port; p <= to_port; p++) {
+			char addr[128];
+			snprintf(addr, sizeof(addr), "%s:%d", ip, p);
+			xtcp_send_sid_probe(sess, addr);
+		}
+	}
+
+	/* Send to random ports on peer's IP */
+	if (sess->send_random_ports > 0) {
+		char ip[64] = {0};
+		if (sess->candidate_addrs_count > 0 && sess->candidate_addrs[0]) {
+			strncpy(ip, sess->candidate_addrs[0], sizeof(ip) - 1);
+			char *colon = strrchr(ip, ':');
+			if (colon) *colon = '\0';
+		}
+		if (ip[0]) {
+			int n = sess->send_random_ports;
+			if (n > 1000) n = 1000;
+			unsigned char rbuf[2];
+			for (int i = 0; i < n; i++) {
+				RAND_bytes(rbuf, 2);
+				int port = 1024 + ((rbuf[0] << 8 | rbuf[1]) % (65535 - 1024));
+				char addr[128];
+				snprintf(addr, sizeof(addr), "%s:%d", ip, port);
+				xtcp_send_sid_probe(sess, addr);
+			}
+			debug(LOG_DEBUG, "XTCP: sent %d random port probes", n);
+		}
 	}
 }
 
@@ -742,20 +874,9 @@ static void xtcp_udp_recv_cb(evutil_socket_t fd, short events, void *ctx)
 		return;
 	}
 
-	/* Received a response */
-	if (sess->is_sender) {
-		/* Sender: hole-punch succeeded! */
-		debug(LOG_INFO, "XTCP: received response from %s:%d, hole-punch succeeded!",
-		      inet_ntoa(from.sin_addr), ntohs(from.sin_port));
-		sess->hole_punched = 1;
-		memcpy(&sess->peer_addr, &from, sizeof(from));
-		nathole_sid_msg_free(&sid_msg);
-		xtcp_enter_tunnel(sess);
-		return;
-	}
-
-	/* Receiver got a response - also success */
-	debug(LOG_INFO, "XTCP: receiver got response, hole-punch succeeded!");
+	/* Received a response - hole-punch succeeded */
+	debug(LOG_INFO, "XTCP: hole-punch succeeded with %s:%d",
+	      inet_ntoa(from.sin_addr), ntohs(from.sin_port));
 	sess->hole_punched = 1;
 	memcpy(&sess->peer_addr, &from, sizeof(from));
 	nathole_sid_msg_free(&sid_msg);
@@ -771,16 +892,126 @@ static void xtcp_send_delay_cb(evutil_socket_t fd, short events, void *ctx)
 }
 
 /* ---- Timeout callback ---- */
+/* ---- FallbackTo: transfer user connection to fallback visitor ---- */
+static void xtcp_fallback_to_visitor(struct xtcp_session *sess)
+{
+	if (!sess || !sess->vi || !sess->vi->conf) return;
+
+	const char *fallback = sess->vi->conf->fallback_to;
+	if (!fallback || !*fallback) return;
+
+	debug(LOG_INFO, "XTCP: falling back to visitor '%s'", fallback);
+
+	/* Detach user_bev from XTCP session */
+	struct bufferevent *user_bev = sess->user_bev;
+	sess->user_bev = NULL; /* Prevent xtcp_cleanup from freeing it */
+
+	/* Get the socket fd before cleanup */
+	evutil_socket_t fd = bufferevent_getfd(user_bev);
+	struct event_base *base = sess->base;
+
+	/* Cleanup the XTCP session */
+	xtcp_cleanup(sess);
+
+	if (fd < 0) {
+		debug(LOG_ERR, "XTCP: fallback failed — invalid fd from user_bev");
+		bufferevent_free(user_bev);
+		return;
+	}
+
+	/* Detach fd from bev without closing, then free bev */
+	bufferevent_setfd(user_bev, -1);
+	bufferevent_free(user_bev);
+
+	/* Transfer fd ownership to the fallback visitor */
+	visitor_fallback_connect(base, fallback, fd);
+}
+
 static void xtcp_timeout_cb(evutil_socket_t fd, short events, void *ctx)
 {
 	struct xtcp_session *sess = (struct xtcp_session *)ctx;
 	if (!sess) return;
 
 	debug(LOG_ERR, "XTCP: timeout waiting for P2P tunnel");
+
+	/* Try fallback before giving up */
+	if (sess->vi && sess->vi->conf && sess->vi->conf->fallback_to &&
+	    sess->vi->conf->fallback_to[0]) {
+		xtcp_fallback_to_visitor(sess);
+		return;
+	}
+
 	xtcp_cleanup(sess);
 }
 
-/* ---- Enter tunnel mode: relay TCP <-> UDP ---- */
+/* ---- QUIC callbacks ---- */
+#ifdef HAVE_NGTCP2
+static void xtcp_quic_stream_recv_cb(int64_t stream_id,
+				 const uint8_t *data, size_t datalen,
+				 void *user_data)
+{
+	struct xtcp_session *sess = user_data;
+	if (!sess || !sess->user_bev) return;
+
+	/* Forward QUIC stream data to TCP user connection */
+	struct evbuffer *output = bufferevent_get_output(sess->user_bev);
+	evbuffer_add(output, data, datalen);
+	debug(LOG_DEBUG, "XTCP-QUIC: relayed %zu bytes stream=%ld → TCP",
+	      datalen, (long)stream_id);
+}
+
+static void xtcp_quic_stream_close_cb(int64_t stream_id,
+				  uint64_t app_error_code,
+				  void *user_data)
+{
+	struct xtcp_session *sess = user_data;
+	(void)stream_id; (void)app_error_code;
+	debug(LOG_INFO, "XTCP-QUIC: stream %ld closed", (long)stream_id);
+	xtcp_cleanup(sess);
+}
+
+static void xtcp_quic_conn_ready_cb(void *user_data)
+{
+	struct xtcp_session *sess = user_data;
+	debug(LOG_INFO, "XTCP-QUIC: connection ready, relay active for '%s'",
+	      sess->vi->conf->visitor_name);
+	sess->state = XTCP_TUNNEL_RELAY;
+}
+
+static void xtcp_quic_conn_close_cb(uint64_t error_code, void *user_data)
+{
+	struct xtcp_session *sess = user_data;
+	debug(LOG_INFO, "XTCP-QUIC: connection closed (err=%lu)",
+	      (unsigned long)error_code);
+	xtcp_cleanup(sess);
+}
+#endif /* HAVE_NGTCP2 */
+
+/* ---- Tunnel-mode UDP callback (raw relay) ---- */
+static void xtcp_tunnel_udp_recv_cb(evutil_socket_t fd, short events, void *ctx)
+{
+	struct xtcp_session *sess = (struct xtcp_session *)ctx;
+	if (!sess) return;
+
+	uint8_t buf[65536];
+	struct sockaddr_in from;
+	socklen_t from_len = sizeof(from);
+
+	ssize_t n = recvfrom(fd, buf, sizeof(buf), 0,
+			     (struct sockaddr *)&from, &from_len);
+	if (n <= 0) return;
+
+	/* Append to reassembly buffer */
+	if (sess->udp_recv_len + n <= sizeof(sess->udp_recv_buf)) {
+		memcpy(sess->udp_recv_buf + sess->udp_recv_len, buf, n);
+		sess->udp_recv_len += n;
+	}
+
+	/* Process framed data */
+	xtcp_process_udp_frame(sess);
+}
+
+/* ---- Enter tunnel mode: relay TCP <-> QUIC/UDP ---- */
 static void xtcp_enter_tunnel(struct xtcp_session *sess)
 {
 	sess->state = XTCP_TUNNEL_ESTABLISHED;
@@ -805,34 +1036,90 @@ static void xtcp_enter_tunnel(struct xtcp_session *sess)
 	}
 	sess->extra_fd_count = 0;
 
-	/* Now relay data between user TCP connection and UDP tunnel.
-	 *
-	 * For now, we implement a simple framing protocol:
-	 *   Each TCP read → send as UDP packet to peer
-	 *   Each UDP receive → write to TCP
-	 *
-	 * This works for a single connection. For multiplexing,
-	 * a KCP layer would be needed (future enhancement).
-	 */
+#ifdef HAVE_NGTCP2
+	/* Use QUIC for reliable, multiplexed transport */
+	debug(LOG_INFO, "XTCP: establishing QUIC transport over hole-punched UDP");
 
-	/* Set up UDP read event for relay */
+	struct quic_config qcfg = {
+		.alpn = "frp",
+		.max_idle_timeout_sec = 60,
+		.max_streams = 8,
+		.is_server = 0,  /* visitor is QUIC client */
+	};
+
+	struct quic_stream_callbacks qcbs = {
+		.on_recv = xtcp_quic_stream_recv_cb,
+		.on_close = xtcp_quic_stream_close_cb,
+		.on_conn_ready = xtcp_quic_conn_ready_cb,
+		.on_conn_close = xtcp_quic_conn_close_cb,
+		.user_data = sess,
+	};
+
+	sess->quic = quic_ctx_new(sess->base, sess->udp_fd,
+				  &sess->peer_addr, &qcfg, &qcbs);
+	if (!sess->quic) {
+		debug(LOG_ERR, "XTCP: QUIC setup failed, falling back to raw UDP");
+		/* Fall through to raw UDP relay below */
+	} else {
+		/* QUIC handles UDP events internally; remove our old handler */
+		if (sess->udp_event) {
+			event_del(sess->udp_event);
+			event_free(sess->udp_event);
+			sess->udp_event = NULL;
+		}
+		debug(LOG_INFO, "XTCP: QUIC transport active for '%s'",
+		      sess->vi->conf->visitor_name);
+		return;
+	}
+#endif /* HAVE_NGTCP2 */
+
+	/* Fallback: raw UDP relay (no reliability, no multiplexing) */
+	debug(LOG_WARNING, "XTCP: using raw UDP relay (no QUIC) - may be unreliable");
+
+	/* Initialize tunnel encryption if configured */
+	if (sess->vi->conf->use_encryption && sess->secret_key) {
+		sess->encoder = new_coder(sess->secret_key, "xtcp-tunnel");
+		sess->decoder = NULL; /* Created per-packet with received IV */
+		sess->use_encryption = 1;
+		debug(LOG_INFO, "XTCP: tunnel encryption enabled (AES-128-CFB)");
+	}
+
 	if (sess->udp_event) {
 		event_del(sess->udp_event);
 		event_free(sess->udp_event);
+		sess->udp_event = NULL;
 	}
+	sess->udp_recv_len = 0;
 	sess->udp_event = event_new(sess->base, sess->udp_fd,
 				    EV_READ | EV_PERSIST,
-				    xtcp_udp_recv_cb, sess);
+				    xtcp_tunnel_udp_recv_cb, sess);
 	event_add(sess->udp_event, NULL);
 
 	sess->state = XTCP_TUNNEL_RELAY;
 
-	/* User bev is already set up with callbacks */
-	debug(LOG_INFO, "XTCP: tunnel relay active for '%s'",
+	debug(LOG_INFO, "XTCP: raw UDP tunnel relay active for '%s'",
 	      sess->vi->conf->visitor_name);
 }
 
 /* ---- User TCP connection callbacks ---- */
+static void xtcp_user_event_cb(struct bufferevent *bev, short events, void *ctx)
+{
+	struct xtcp_session *sess = (struct xtcp_session *)ctx;
+	if (!sess) return;
+
+	if (events & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
+		debug(LOG_INFO, "XTCP: user TCP connection %s",
+		      (events & BEV_EVENT_EOF) ? "closed" : "error");
+
+		/* Check if we should attempt reconnect (KeepTunnelOpen) */
+		if (sess->state == XTCP_TUNNEL_RELAY || sess->state == XTCP_TUNNEL_ESTABLISHED) {
+			xtcp_try_reconnect(sess);
+		} else {
+			xtcp_cleanup(sess);
+		}
+	}
+}
+
 static void xtcp_user_read_cb(struct bufferevent *bev, void *ctx)
 {
 	struct xtcp_session *sess = (struct xtcp_session *)ctx;
@@ -842,26 +1129,117 @@ static void xtcp_user_read_cb(struct bufferevent *bev, void *ctx)
 	size_t len = evbuffer_get_length(input);
 	if (len == 0) return;
 
-	/* Read TCP data and send as UDP packet to peer */
+#ifdef HAVE_NGTCP2
+	if (sess->quic && quic_ctx_is_ready(sess->quic)) {
+		/* Write TCP data to QUIC stream (reliable, ordered) */
+		ssize_t written = quic_stream_write_evbuf(sess->quic, -1, input);
+		if (written < 0) {
+			debug(LOG_WARNING, "XTCP-QUIC: stream write failed");
+		}
+		return;
+	}
+#endif
+
+	/* Fallback: raw UDP with framing */
 	uint8_t *data = evbuffer_pullup(input, len);
 	if (data && len > 0) {
-		ssize_t sent = sendto(sess->udp_fd, data, len, 0,
-				      (struct sockaddr *)&sess->peer_addr,
-				      sizeof(sess->peer_addr));
-		if (sent > 0) {
-			evbuffer_drain(input, sent);
+		if (len > 65535) len = 65535;
+
+		uint8_t frame[65537];
+		uint16_t frame_len;
+		size_t payload_len;
+
+		if (sess->use_encryption && sess->encoder) {
+			/* Encrypt data: IV(16) + encrypted_data */
+			uint8_t *enc_data = NULL;
+			RAND_bytes(sess->encoder->iv, 16);
+			size_t enc_len = encrypt_data(data, len, sess->encoder, &enc_data);
+			if (enc_len > 0 && enc_data) {
+				/* Frame: [2-byte len][16-byte IV][encrypted data] */
+				payload_len = 16 + enc_len;
+				frame_len = htons((uint16_t)payload_len);
+				memcpy(frame, &frame_len, 2);
+				memcpy(frame + 2, sess->encoder->iv, 16);
+				memcpy(frame + 18, enc_data, enc_len);
+				free(enc_data);
+			} else {
+				debug(LOG_WARNING, "XTCP: encrypt failed, sending plaintext");
+				frame_len = htons((uint16_t)len);
+				memcpy(frame, &frame_len, 2);
+				memcpy(frame + 2, data, len);
+				payload_len = len;
+			}
+		} else {
+			frame_len = htons((uint16_t)len);
+			memcpy(frame, &frame_len, 2);
+			memcpy(frame + 2, data, len);
+			payload_len = len;
+		}
+
+		ssize_t sent = sendto(sess->udp_fd, frame, payload_len + 2, 0,
+			      (struct sockaddr *)&sess->peer_addr,
+			      sizeof(sess->peer_addr));
+		if (sent > 2) {
+			evbuffer_drain(input, (size_t)(sent - 2));
+		} else if (sent < 0) {
+			debug(LOG_WARNING, "XTCP: sendto failed: %s", strerror(errno));
 		}
 	}
 }
 
-static void xtcp_user_event_cb(struct bufferevent *bev, short events, void *ctx)
+/* ---- Helper: process UDP frame in tunnel mode ---- */
+static void xtcp_process_udp_frame(struct xtcp_session *sess)
 {
-	struct xtcp_session *sess = (struct xtcp_session *)ctx;
-	if (!sess) return;
+	while (sess->udp_recv_len >= 2) {
+		/* Parse 2-byte length header */
+		uint16_t frame_len = ntohs(*(uint16_t *)sess->udp_recv_buf);
 
-	if (events & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
-		debug(LOG_INFO, "XTCP: user connection closed");
-		xtcp_cleanup(sess);
+		if (frame_len == 0 || frame_len > 65535) {
+			debug(LOG_WARNING, "XTCP: invalid frame length %u", frame_len);
+			/* Corrupt frame, clear buffer */
+			sess->udp_recv_len = 0;
+			return;
+		}
+
+		if (sess->udp_recv_len < 2 + frame_len) {
+			/* Incomplete frame, wait for more data */
+			break;
+		}
+
+		/* We have a complete frame, forward to TCP */
+		uint8_t *payload = sess->udp_recv_buf + 2;
+		size_t payload_len = frame_len;
+
+		if (sess->use_encryption && frame_len > 16) {
+			/* Decrypt: first 16 bytes are IV, rest is encrypted data */
+			uint8_t *dec_data = NULL;
+			struct frp_coder decoder;
+			memcpy(decoder.key, sess->encoder ? sess->encoder->key : decoder.key, 16);
+			memcpy(decoder.iv, payload, 16);
+			decoder.salt = NULL;
+			decoder.token = NULL;
+
+			size_t dec_len = decrypt_data(payload + 16, payload_len - 16,
+						      &decoder, &dec_data);
+			if (dec_len > 0 && dec_data) {
+				struct evbuffer *output = bufferevent_get_output(sess->user_bev);
+				evbuffer_add(output, dec_data, dec_len);
+				free(dec_data);
+				debug(LOG_DEBUG, "XTCP: relayed %zu bytes (decrypted) UDP→TCP", dec_len);
+			} else {
+				debug(LOG_WARNING, "XTCP: decrypt failed for frame (len=%u)", frame_len);
+			}
+		} else {
+			struct evbuffer *output = bufferevent_get_output(sess->user_bev);
+			evbuffer_add(output, payload, payload_len);
+			debug(LOG_DEBUG, "XTCP: relayed %zu bytes UDP→TCP", payload_len);
+		}
+
+		/* Remove this frame from buffer */
+		size_t consumed = 2 + frame_len;
+		memmove(sess->udp_recv_buf, sess->udp_recv_buf + consumed,
+			sess->udp_recv_len - consumed);
+		sess->udp_recv_len -= consumed;
 	}
 }
 
@@ -886,6 +1264,83 @@ static void xtcp_report_result(struct xtcp_session *sess, int success)
 	}
 }
 
+/* ---- Reconnect logic (KeepTunnelOpen) ---- */
+#define MAX_RECONNECTS_PER_HOUR 8
+#define RECONNECT_DELAY_SEC 2
+
+static void xtcp_try_reconnect(struct xtcp_session *sess)
+{
+	if (!sess) return;
+
+	time_t now = time(NULL);
+
+	/* Reset rate limit window if expired */
+	if (now - sess->reconnect_window_start >= 3600) {
+		sess->reconnect_count = 0;
+		sess->reconnect_window_start = now;
+	}
+
+	if (sess->reconnect_count >= MAX_RECONNECTS_PER_HOUR) {
+		debug(LOG_INFO, "XTCP: reconnect rate limit reached (%d/hour), giving up",
+		      MAX_RECONNECTS_PER_HOUR);
+		xtcp_cleanup(sess);
+		return;
+	}
+
+	sess->reconnect_count++;
+	debug(LOG_INFO, "XTCP: scheduling reconnect attempt %d/%d in %ds",
+	      sess->reconnect_count, MAX_RECONNECTS_PER_HOUR, RECONNECT_DELAY_SEC);
+
+	/* Close existing tunnel resources but keep session and user_bev */
+	if (sess->udp_event) {
+		event_del(sess->udp_event);
+		event_free(sess->udp_event);
+		sess->udp_event = NULL;
+	}
+	if (sess->udp_fd >= 0) {
+		close(sess->udp_fd);
+		sess->udp_fd = -1;
+	}
+#ifdef HAVE_NGTCP2
+	if (sess->quic) {
+		quic_ctx_free(sess->quic);
+		sess->quic = NULL;
+	}
+#endif
+	sess->state = XTCP_STUN_PRECHECK;
+	sess->hole_punched = 0;
+	memset(&sess->peer_addr, 0, sizeof(sess->peer_addr));
+
+	/* Schedule reconnect after delay */
+	if (!sess->reconnect_timer)
+		sess->reconnect_timer = evtimer_new(sess->base, xtcp_reconnect_cb, sess);
+
+	struct timeval tv = { .tv_sec = RECONNECT_DELAY_SEC, .tv_usec = 0 };
+	evtimer_add(sess->reconnect_timer, &tv);
+}
+
+static void xtcp_reconnect_cb(evutil_socket_t fd, short events, void *ctx)
+{
+	struct xtcp_session *sess = (struct xtcp_session *)ctx;
+	if (!sess) return;
+
+	debug(LOG_INFO, "XTCP: reconnecting tunnel for '%s'",
+	      sess->vi ? sess->vi->conf->visitor_name : "?");
+
+	/* Reset timeout */
+	if (sess->timeout_event) {
+		event_del(sess->timeout_event);
+		struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
+		evtimer_add(sess->timeout_event, &tv);
+	}
+
+	/* Re-initiate STUN precheck */
+	if (send_nathole_visitor(sess, 1) < 0) {
+		debug(LOG_ERR, "XTCP: reconnect precheck send failed");
+		xtcp_cleanup(sess);
+	}
+}
+
 /* ---- Cleanup ---- */
 static void xtcp_cleanup(struct xtcp_session *sess)
 {
@@ -902,6 +1357,10 @@ static void xtcp_cleanup(struct xtcp_session *sess)
 		event_del(sess->timer_event);
 		event_free(sess->timer_event);
 	}
+	if (sess->reconnect_timer) {
+		event_del(sess->reconnect_timer);
+		event_free(sess->reconnect_timer);
+	}
 	if (sess->udp_event) {
 		event_del(sess->udp_event);
 		event_free(sess->udp_event);
@@ -916,6 +1375,23 @@ static void xtcp_cleanup(struct xtcp_session *sess)
 			event_free(sess->extra_events[i]);
 		if (sess->extra_fds[i] >= 0)
 			close(sess->extra_fds[i]);
+	}
+
+#ifdef HAVE_NGTCP2
+	if (sess->quic) {
+		quic_ctx_free(sess->quic);
+		sess->quic = NULL;
+	}
+#endif
+
+	/* Free encryption coders */
+	if (sess->encoder) {
+		free(sess->encoder);
+		sess->encoder = NULL;
+	}
+	if (sess->decoder) {
+		free(sess->decoder);
+		sess->decoder = NULL;
 	}
 
 	SAFE_FREE(sess->secret_key);
@@ -953,8 +1429,16 @@ void init_xtcp_visitors(struct event_base *base)
 			servers[scount++] = default_stun_servers[i];
 		servers[scount] = NULL;
 
-		if (stun_discover(servers, NULL, &sresult) == 0 &&
-		    sresult.addr_count >= 2) {
+		int stun_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (stun_fd < 0) {
+			debug(LOG_WARNING, "XTCP: socket() failed for '%s': %s",
+			      vc->visitor_name, strerror(errno));
+			continue;
+		}
+		evutil_make_socket_nonblocking(stun_fd);
+
+		if (stun_discover_on_socket(stun_fd, servers, &sresult) == 0 &&
+		    sresult.addr_count >= 2 && stun_cache_count < MAX_XTCP_VISITORS) {
 			struct xtcp_stun_cache *cache = &stun_cache[stun_cache_count++];
 			strncpy(cache->visitor_name, vc->visitor_name,
 				sizeof(cache->visitor_name) - 1);
@@ -989,10 +1473,24 @@ void init_xtcp_visitors(struct event_base *base)
 				  local_ip, sizeof(local_ip));
 			snprintf(cache->local_addr, sizeof(cache->local_addr),
 				 "%d", ntohs(sresult.local_addr.sin_port));
+			cache->udp_fd = stun_fd;  /* Preserve socket for hole-punch */
 			cache->valid = 1;
 		} else {
+			close(stun_fd);
 			debug(LOG_WARNING, "XTCP: STUN discovery failed for '%s'",
 			      vc->visitor_name);
 		}
 	}
+}
+
+/* ---- Cleanup: close any unconsumed STUN sockets ---- */
+void cleanup_xtcp_stun_cache(void)
+{
+	for (int i = 0; i < stun_cache_count; i++) {
+		if (stun_cache[i].udp_fd >= 0) {
+			close(stun_cache[i].udp_fd);
+			stun_cache[i].udp_fd = -1;
+		}
+	}
+	stun_cache_count = 0;
 }

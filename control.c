@@ -26,6 +26,7 @@
 #include "visitor.h"
 #include "msg.h"
 #include "xtcp_visitor.h"
+#include "xtcp_client.h"
 #include "control.h"
 #include "crypto.h"
 #include "utils.h"
@@ -1005,6 +1006,15 @@ static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
         debug(LOG_DEBUG, "Data tail copied (%d bytes)", remaining_len);
     }
 
+    /* Route XTCP proxies to dedicated NAT hole-punch handler */
+    if (ps->proxy_type && strcmp(ps->proxy_type, "xtcp") == 0) {
+        debug(LOG_INFO, "[START_WORK_CONN] XTCP proxy '%s' detected, starting NAT hole-punch",
+              sr->proxy_name);
+        xtcp_client_run(client->base, client);
+        SAFE_FREE(sr);
+        return;
+    }
+
     start_xfrp_tunnel(client);
     set_client_work_start(client, 1);
     SAFE_FREE(sr);
@@ -1090,9 +1100,11 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 		handle_visitor_conn_resp((const char *)msg->data, (struct proxy_client *)ctx);
 		break;
 	case TypeNatHoleResp:
-		/* Handle XTCP NAT hole-punch response */
+		/* Handle XTCP NAT hole-punch response (visitor or client) */
 		debug(LOG_DEBUG, "[CTRL_WORK] NatHoleResp received");
-		xtcp_handle_nat_hole_resp_msg((const char *)msg->data);
+		if (!xtcp_client_handle_nat_hole_resp((const char *)msg->data)) {
+			xtcp_handle_nat_hole_resp_msg((const char *)msg->data);
+		}
 		break;
 	case TypeNatHoleReport:
 		/* NatHoleReport acknowledgment - no action needed */

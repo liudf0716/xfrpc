@@ -23,6 +23,7 @@ struct visitor_conf {
 	int      bind_port;          /* Local listen port */
 	int      use_encryption;
 	int      use_compression;
+	char    *fallback_to;        /* Fallback visitor name on XTCP failure */
 
 	/* Hash handling */
 	UT_hash_handle hh;
@@ -72,5 +73,18 @@ struct visitor_conf *get_all_visitor_confs(void);
  * Called from control.c when TypeNewVisitorConnResp is received.
  */
 void handle_visitor_conn_resp(const char *resp_json, struct proxy_client *pc);
+
+/**
+ * @brief Handle fallback from XTCP to STCP visitor.
+ *
+ * When XTCP hole-punch fails and a fallback_to visitor is configured,
+ * this transfers the user TCP connection to the fallback visitor's flow.
+ *
+ * @param base      Event base
+ * @param visitor_name  Name of the fallback visitor
+ * @param fd        Connected user socket fd (ownership transferred)
+ */
+void visitor_fallback_connect(struct event_base *base,
+			      const char *visitor_name, evutil_socket_t fd);
 
 #endif // XFRPC_VISITOR_H

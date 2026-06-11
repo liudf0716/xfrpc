@@ -46,6 +46,13 @@ void xtcp_visitor_run(struct event_base *base,
 void init_xtcp_visitors(struct event_base *base);
 
 /**
+ * @brief Close any unconsumed STUN sockets in the cache.
+ *
+ * Call on shutdown to prevent fd leaks.
+ */
+void cleanup_xtcp_stun_cache(void);
+
+/**
  * @brief Handle a NatHoleResp message received from the server.
  *
  * Called from control.c when TypeNatHoleResp is received.

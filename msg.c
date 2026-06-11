@@ -1061,6 +1061,59 @@ int nathole_visitor_marshal(const struct nathole_visitor_msg *msg, char **out)
 }
 
 /**
+ * @brief Marshal a NatHoleClient message to JSON string
+ */
+int nathole_client_marshal(const struct nathole_client_msg *msg, char **out)
+{
+	if (!msg || !out) return 0;
+
+	struct json_object *jobj = json_object_new_object();
+	if (!jobj) return 0;
+
+	if (msg->transaction_id)
+		json_object_object_add(jobj, "transaction_id",
+			json_object_new_string(msg->transaction_id));
+	if (msg->proxy_name)
+		json_object_object_add(jobj, "proxy_name",
+			json_object_new_string(msg->proxy_name));
+	if (msg->sid)
+		json_object_object_add(jobj, "sid",
+			json_object_new_string(msg->sid));
+
+	/* mapped_addrs array */
+	if (msg->mapped_addrs_count > 0 && msg->mapped_addrs) {
+		struct json_object *jarr = json_object_new_array();
+		for (int i = 0; i < msg->mapped_addrs_count; i++) {
+			if (msg->mapped_addrs[i])
+				json_object_array_add(jarr,
+					json_object_new_string(msg->mapped_addrs[i]));
+		}
+		json_object_object_add(jobj, "mapped_addrs", jarr);
+	}
+
+	/* assisted_addrs array */
+	if (msg->assisted_addrs_count > 0 && msg->assisted_addrs) {
+		struct json_object *jarr = json_object_new_array();
+		for (int i = 0; i < msg->assisted_addrs_count; i++) {
+			if (msg->assisted_addrs[i])
+				json_object_array_add(jarr,
+					json_object_new_string(msg->assisted_addrs[i]));
+		}
+		json_object_object_add(jobj, "assisted_addrs", jarr);
+	}
+
+	const char *json_str = json_object_to_json_string(jobj);
+	int len = 0;
+	if (json_str) {
+		*out = strdup(json_str);
+		if (*out) len = strlen(json_str);
+	}
+
+	json_object_put(jobj);
+	return len;
+}
+
+/**
  * @brief Marshal a NatHoleReport message to JSON string
  */
 int nathole_report_marshal(const struct nathole_report_msg *msg, char **out)
@@ -1234,6 +1287,7 @@ void nathole_visitor_msg_free(struct nathole_visitor_msg *msg)
 	for (int i = 0; i < msg->assisted_addrs_count; i++)
 		SAFE_FREE(msg->assisted_addrs[i]);
 	SAFE_FREE(msg->assisted_addrs);
+	free(msg);
 }
 
 void nathole_client_msg_free(struct nathole_client_msg *msg)
@@ -1248,4 +1302,5 @@ void nathole_client_msg_free(struct nathole_client_msg *msg)
 	for (int i = 0; i < msg->assisted_addrs_count; i++)
 		SAFE_FREE(msg->assisted_addrs[i]);
 	SAFE_FREE(msg->assisted_addrs);
+	free(msg);
 }

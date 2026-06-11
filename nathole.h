@@ -135,7 +135,20 @@ struct nathole_resp {
 int stun_discover(const char **stun_servers, const char *local_addr,
 				  struct stun_result *result);
 
-/* ---- NAT Classification ---- */
+/**
+ * @brief Discover external addresses using an existing UDP socket.
+ *
+ * Same as stun_discover() but uses the caller's socket instead of
+ * creating a new one. The socket is NOT closed on return.
+ * This preserves the NAT mapping for subsequent hole-punching.
+ *
+ * @param sock         Existing UDP socket fd
+ * @param stun_servers Array of STUN server hostnames (NULL-terminated)
+ * @param result       Output discovery result
+ * @return 0 on success, -1 on failure
+ */
+int stun_discover_on_socket(int sock, const char **stun_servers,
+			    struct stun_result *result);
 
 /**
  * @brief Classify NAT type based on discovered external addresses

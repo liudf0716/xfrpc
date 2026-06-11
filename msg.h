@@ -181,6 +181,7 @@ struct nathole_report_msg {
 
 /* NatHole message marshalling/unmarshalling */
 int nathole_visitor_marshal(const struct nathole_visitor_msg *msg, char **out);
+int nathole_client_marshal(const struct nathole_client_msg *msg, char **out);
 int nathole_report_marshal(const struct nathole_report_msg *msg, char **out);
 
 struct nathole_resp_msg *nathole_resp_unmarshal(const char *json_str);

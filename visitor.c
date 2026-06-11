@@ -58,6 +58,7 @@ void free_all_visitor_confs(void)
 		SAFE_FREE(vc->server_name);
 		SAFE_FREE(vc->secret_key);
 		SAFE_FREE(vc->bind_addr);
+		SAFE_FREE(vc->fallback_to);
 		SAFE_FREE(vc);
 	}
 	all_visitor_confs = NULL;
@@ -115,6 +116,9 @@ int parse_visitor_section(const char *section_name, const char *key, const char 
 		vc->use_encryption = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
 	} else if (strcmp(key, "use_compression") == 0) {
 		vc->use_compression = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
+	} else if (strcmp(key, "fallback_to") == 0) {
+		SAFE_FREE(vc->fallback_to);
+		vc->fallback_to = strdup(value);
 	}
 
 	return 1;
@@ -739,4 +743,29 @@ void free_all_visitor_instances(void)
 	}
 	all_visitors = NULL;
 	debug(LOG_DEBUG, "All visitor instances freed");
+}
+
+/* ---- Fallback from XTCP to named visitor ---- */
+void visitor_fallback_connect(struct event_base *base,
+			      const char *visitor_name, evutil_socket_t fd)
+{
+	if (!visitor_name || fd < 0) {
+		if (fd >= 0) close(fd);
+		return;
+	}
+
+	/* Find the fallback visitor instance */
+	struct visitor_instance *vi = NULL;
+	HASH_FIND_STR(all_visitors, visitor_name, vi);
+	if (!vi) {
+		debug(LOG_ERR, "Fallback visitor '%s' not found", visitor_name);
+		close(fd);
+		return;
+	}
+
+	debug(LOG_INFO, "Visitor [%s]: fallback connection accepted (fd=%d)",
+	      visitor_name, fd);
+
+	/* Route through the normal visitor accept path */
+	visitor_accept_cb(vi->listener, fd, NULL, 0, vi);
 }

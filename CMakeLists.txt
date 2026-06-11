@@ -11,23 +11,58 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
 # Find required packages from the system
 find_package(LibEvent REQUIRED)
-find_package(OpenSSL REQUIRED)
 find_package(JSON-C REQUIRED)
 find_package(ZLIB REQUIRED)
 
+# TLS/SSL backend selection
+# Source code always uses #include <openssl/*.h> — on OpenWrt, the wolfssl
+# package provides compat headers at /usr/include/openssl/, so no #ifdef
+# needed in source files.  This option only controls which library is linked.
+option(USE_WOLFSSL "Use wolfSSL as TLS backend (default: ON)" ON)
+if(USE_WOLFSSL)
+    find_library(WOLFSSL_LIB wolfssl)
+    find_path(WOLFSSL_INCLUDE_DIR wolfssl/options.h)
+    if(WOLFSSL_LIB AND WOLFSSL_INCLUDE_DIR)
+        set(SSL_BACKEND "wolfssl")
+        set(SSL_LIBRARIES ${WOLFSSL_LIB})
+        include_directories(${WOLFSSL_INCLUDE_DIR})
+        message(STATUS "TLS backend: wolfSSL (${WOLFSSL_LIB})")
+    else()
+        message(STATUS "wolfSSL not found, falling back to OpenSSL")
+        set(USE_WOLFSSL OFF)
+    endif()
+endif()
+if(NOT USE_WOLFSSL)
+    find_package(OpenSSL)
+    if(OPENSSL_FOUND)
+        set(SSL_BACKEND "openssl")
+        set(SSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+        message(STATUS "TLS backend: OpenSSL (${OPENSSL_SSL_LIBRARY})")
+    else()
+        message(FATAL_ERROR "No TLS library found. Install wolfSSL or OpenSSL.")
+    endif()
+endif()
+
 # Optional: ngtcp2 for QUIC support (Xtcp P2P)
+# The ngtcp2 crypto backend should match the chosen SSL backend.
 option(ENABLE_QUIC "Enable QUIC transport via ngtcp2" OFF)
 if(ENABLE_QUIC)
     find_library(NGTCP2_LIB ngtcp2)
     find_path(NGTCP2_INCLUDE_DIR ngtcp2/ngtcp2.h)
-    # Try wolfssl backend first, then openssl
-    find_library(NGTCP2_CRYPTO_LIB ngtcp2_crypto_wolfssl)
-    if(NGTCP2_CRYPTO_LIB)
+    # Prefer crypto backend matching the chosen SSL library
+    if(USE_WOLFSSL)
+        find_library(NGTCP2_CRYPTO_LIB ngtcp2_crypto_wolfssl)
         set(NGTCP2_CRYPTO_BACKEND "wolfssl")
+        if(NOT NGTCP2_CRYPTO_LIB)
+            find_library(NGTCP2_CRYPTO_LIB ngtcp2_crypto_openssl)
+            set(NGTCP2_CRYPTO_BACKEND "openssl")
+        endif()
     else()
         find_library(NGTCP2_CRYPTO_LIB ngtcp2_crypto_openssl)
-        if(NGTCP2_CRYPTO_LIB)
-            set(NGTCP2_CRYPTO_BACKEND "openssl")
+        set(NGTCP2_CRYPTO_BACKEND "openssl")
+        if(NOT NGTCP2_CRYPTO_LIB)
+            find_library(NGTCP2_CRYPTO_LIB ngtcp2_crypto_wolfssl)
+            set(NGTCP2_CRYPTO_BACKEND "wolfssl")
         endif()
     endif()
     if(NGTCP2_LIB AND NGTCP2_CRYPTO_LIB AND NGTCP2_INCLUDE_DIR)
@@ -88,7 +123,6 @@ set(CORE_SOURCES
     zip.c
     commandline.c
     crypto.c
-    fastpbkdf2.c
     utils.c
     common.c
     login.c
@@ -137,8 +171,7 @@ set(SYSTEM_LIBS
 )
 
 set(EXTERNAL_LIBS
-    ssl
-    crypto
+    ${SSL_LIBRARIES}
     event
     event_openssl
     ${JSON-C_LIBRARIES}

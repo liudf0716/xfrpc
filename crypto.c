@@ -13,7 +13,7 @@
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
 
-#include "fastpbkdf2.h"
+
 #include "crypto.h"
 #include "config.h"
 #include "common.h"
@@ -288,13 +288,9 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 		return NULL;
 	}
 
-	fastpbkdf2_hmac_sha1((void *)token, 
-						 token_len, 
-						 (void *)salt, 
-						 strlen(salt), 
-						 64,            // Number of iterations 
-						 (void *)key, 
-						 block_size);
+	PKCS5_PBKDF2_HMAC(token, (int)token_len,
+					  (const unsigned char *)salt, (int)strlen(salt),
+					  64, EVP_sha1(), (int)block_size, key);
 	return key;
 }
 

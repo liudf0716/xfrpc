@@ -29,7 +29,6 @@
 #include "msg.h"
 #include "common.h"
 #include "debug.h"
-#include "fastpbkdf2.h"
 
 /* ============================================================
  * Internal helpers
@@ -581,13 +580,9 @@ int classify_nat_feature(const char **addrs, int addr_count,
 static void derive_nathole_key(const char *secret_key, uint8_t *out_key)
 {
 	const char *salt = "crypto";
-	fastpbkdf2_hmac_sha1(
-		(const uint8_t *)secret_key, strlen(secret_key),
-		(const uint8_t *)salt, strlen(salt),
-		64,        /* iterations */
-		out_key,   /* output */
-		16         /* key length */
-	);
+	PKCS5_PBKDF2_HMAC(secret_key, (int)strlen(secret_key),
+		(const unsigned char *)salt, (int)strlen(salt),
+		64, EVP_sha1(), 16, out_key);
 }
 
 /* Encrypt data using AES-128-CFB.

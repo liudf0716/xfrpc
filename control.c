@@ -1307,6 +1307,15 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 	static uint32_t stream_len = 0;
 	static uint8_t partial_header = 0;  /* bytes of header accumulated so far */
 
+	/* Allow explicit reset by passing NULL bev */
+	if (!bev) {
+		memset(&tmux_hdr, 0, sizeof(tmux_hdr));
+		stream_len = 0;
+		partial_header = 0;
+		set_cur_stream(NULL);
+		return;
+	}
+
 	while (len > 0) {
 		struct tmux_stream *cur = get_cur_stream();
 		size_t nr = 0;
@@ -2285,9 +2294,8 @@ static int init_dns_base(struct control *ctl)
 void init_main_control()
 {
 	// Clean up existing control if present
-	if (main_ctl && main_ctl->connect_base) {
-		event_base_loopbreak(main_ctl->connect_base);
-		free(main_ctl);
+	if (main_ctl) {
+		close_main_control();
 	}
 
 	// Allocate and initialize new control structure
@@ -2300,6 +2308,7 @@ void init_main_control()
 	// Initialize event base
 	if (init_event_base(main_ctl) != 0) {
 		free(main_ctl);
+		main_ctl = NULL;
 		exit(1);
 	}
 
@@ -2325,6 +2334,7 @@ void init_main_control()
 			debug(LOG_ERR, "Failed to initialize TLS");
 			event_base_free(main_ctl->connect_base);
 			free(main_ctl);
+			main_ctl = NULL;
 			exit(1);
 		}
 	}
@@ -2338,6 +2348,7 @@ void init_main_control()
 	if (init_dns_base(main_ctl) != 0) {
 		event_base_free(main_ctl->connect_base);
 		free(main_ctl);
+		main_ctl = NULL;
 		exit(1);
 	}
 }
@@ -2399,6 +2410,9 @@ static void clear_main_control()
 	set_xfrpc_status(false);
 	is_login = 0;
 	pong_time = 0;
+
+	// Reset TCP mux parser state (static variables in handle_tcp_mux)
+	handle_tcp_mux(NULL, 0, NULL);
 
 	// Clean up resources
 	health_check_stop_all();

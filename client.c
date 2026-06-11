@@ -625,7 +625,7 @@ int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t l
 				 (data[0] == 'P' && data[1] == 'U' && data[2] == 'T' && data[3] == ' ') ||
 				 (data[0] == 'D' && data[1] == 'E' && data[2] == 'L' && data[3] == 'E'))) {
 				/* Search for " HTTP/" in the request line to validate format */
-				for (size_t i = 4; i < len - 5; i++) {
+				for (size_t i = 4; i + 5 < len; i++) {
 					if (data[i] == ' ' && data[i+1] == 'H' && data[i+2] == 'T' &&
 					    data[i+3] == 'T' && data[i+4] == 'P' && data[i+5] == '/') {
 						client->xdpi_state = XDPI_VERIFIED;

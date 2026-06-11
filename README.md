@@ -27,6 +27,7 @@ the following table is detail  compatible feature:
 | p2p  | No |  Yes  |
 | xtcp  | Yes |  Yes  |
 | stcp  | Yes |  Yes  |
+| quic transport  | Yes |  Yes  |
 
 
 
@@ -40,32 +41,65 @@ the following table is detail  compatible feature:
 
 ### Build on Ubuntu 20.04.3 LTS
 
-To run xfrpc on Ubuntu 20.04 LTS, you will need to have the following libraries installed: libevent, openssl-dev, and json-c. Use the following command in your terminal to install these libraries:
+xfrpc requires libevent, json-c, and a TLS library (wolfSSL or OpenSSL).
+
+**Install dependencies on Ubuntu/Debian:**
 
 ```
 sudo apt-get update
 sudo apt-get install -y libjson-c-dev libevent-dev libssl-dev
 ```
 
-Once the required libraries are installed, you can download the xfrpc source code by forking the xfrpc repository on GitHub and then cloning it to your local machine using the following command:
+**Install dependencies on OpenWrt:**
+
+wolfSSL is the default TLS library on OpenWrt and is recommended. No additional TLS package is needed for basic functionality.
+
+**Build:**
 
 ```
-git clone https://github.com/${YOUR_GITHUB_ACCOUNT_NAME}/xfrpc.git
-```
-
-Navigate to the xfrp directory and create a build directory by using these commands:
-
-```
-cd xfrp
-mkdir build
-```
-Use the following commands to build and install xfrpc:
-
-```
+git clone https://github.com/liudf0716/xfrpc.git
+cd xfrpc
+mkdir build && cd build
 cmake ..
 make
 ```
+
+**Build options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `-DUSE_WOLFSSL=ON` | ON | Use wolfSSL as TLS backend (falls back to OpenSSL if not found) |
+| `-DENABLE_QUIC=ON` | OFF | Enable QUIC transport via ngtcp2 (requires ngtcp2 + nghttp3) |
+| `-DDEBUG=ON` | OFF | Enable debug build with address sanitizer |
+
+**Build with QUIC support:**
+
+```
+cmake .. -DENABLE_QUIC=ON
+make
+```
+
+**Build with OpenSSL instead of wolfSSL:**
+
+```
+cmake .. -DUSE_WOLFSSL=OFF
+make
+```
 This will compile xfrpc and create an executable in the build directory. You can then run xfrpc using the executable by running the appropriate command in terminal.
+
+### TLS Backend
+
+xfrpc uses **wolfSSL** as the default TLS backend, which is the standard TLS library on OpenWrt. wolfSSL is smaller, faster, and has native QUIC support compared to OpenSSL.
+
+On systems where wolfSSL is not installed, xfrpc automatically falls back to OpenSSL. You can explicitly choose the backend:
+
+```
+# Use wolfSSL (default, recommended)
+cmake .. -DUSE_WOLFSSL=ON
+
+# Use OpenSSL
+cmake .. -DUSE_WOLFSSL=OFF
+```
 
 ### Build static binary in Alpine container
 
@@ -132,6 +166,45 @@ local_ip = 127.0.0.1
 local_port = 22
 remote_port = 6128
 ```
+
++ xfrpc quic transport support
+
+xfrpc can connect to frps using QUIC (UDP-based transport) instead of TCP. QUIC provides faster connection establishment (0-RTT), built-in encryption (TLS 1.3), and better performance on lossy networks.
+
+**frps configuration:**
+
+```
+# frps.ini
+[common]
+bind_port = 7000
+quicBindPort = 7000
+```
+
+**xfrpc configuration:**
+
+```
+# xfrpc_quic.ini
+[common]
+server_addr = your_server_ip
+server_port = 7000
+protocol = quic
+quic_bind_port = 7000
+
+[ssh]
+type = tcp
+local_ip = 127.0.0.1
+local_port = 22
+remote_port = 6128
+```
+
+**Configuration options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `protocol` | `tcp` | Transport protocol: `tcp` or `quic` |
+| `quic_bind_port` | 0 | frps QUIC listening port (required when protocol=quic) |
+
+> **Note:** QUIC support requires building with `-DENABLE_QUIC=ON` and the ngtcp2/nghttp3 libraries installed.
 
 This configuration tells the frp server (frps) to forward incoming connections on remote port 6128 to the xfrpc client. The xfrpc client, in turn, will forward these connections to the local service running on IP address 127.0.0.1 and port 22.
 

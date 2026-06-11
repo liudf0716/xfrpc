@@ -43,6 +43,12 @@ struct common_conf {
 	int     heartbeat_timeout;     /* default 30 */
 	int     tcp_mux;              /* default 0 */
 
+	/* Transport protocol: "tcp" (default), "quic" */
+	char    *protocol;
+
+	/* QUIC settings */
+	int     quic_bind_port;       /* frps QUIC port, default 0 (disabled) */
+
 	/* TLS settings */
 	int     tls_enable;           /* default 0 */
 	char    *tls_cert_file;       /* client certificate file (optional) */

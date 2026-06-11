@@ -820,6 +820,13 @@ static int common_handler(void *user, const char *section, const char *name, con
 	else if (MATCH("common", "tcp_mux")) {
 		config->tcp_mux = !!atoi(value); // Convert to boolean
 	}
+	else if (MATCH("common", "protocol")) {
+		SAFE_FREE(config->protocol);
+		config->protocol = strdup(value);
+	}
+	else if (MATCH("common", "quic_bind_port")) {
+		config->quic_bind_port = atoi(value);
+	}
 	/* TLS settings */
 	else if (MATCH("common", "tls_enable")) {
 		config->tls_enable = !!atoi(value);
@@ -878,6 +885,8 @@ static void init_common_conf(struct common_conf *config) {
 	config->heartbeat_timeout = 90;
 	config->tcp_mux = 1;
 	config->tls_enable = 0;
+	config->protocol = strdup("tcp");
+	config->quic_bind_port = 0;
 	config->tls_cert_file = NULL;
 	config->tls_key_file = NULL;
 	config->tls_trusted_ca_file = NULL;

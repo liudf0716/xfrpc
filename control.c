@@ -37,6 +37,7 @@
 #include "tls.h"
 #include "commandline.h"
 #include "health_check.h"
+#include "quic_client_transport.h"
 
 static struct control *main_ctl;
 static bool xfrpc_status;
@@ -506,6 +507,16 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 		debug(LOG_ERR, "Invalid connection parameters: base=%p, name=%s, port=%d",
 			  base, name ? name : "NULL", port);
 		return NULL;
+	}
+
+	// If QUIC protocol and target is frps, use QUIC for work connections
+	struct common_conf *c_conf = get_common_config();
+	if (c_conf && c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0 &&
+	    strcmp(name, c_conf->server_addr) == 0) {
+		int quic_port = c_conf->quic_bind_port > 0 ?
+				c_conf->quic_bind_port : port;
+		debug(LOG_INFO, "Work conn via QUIC to %s:%d", name, quic_port);
+		return quic_connect_to_server(base, name, quic_port);
 	}
 
 	// Create new bufferevent socket
@@ -1675,7 +1686,24 @@ static int init_server_connection(struct bufferevent **bev_out,
 		*bev_out = NULL;
 	}
 
-	// Create new connection
+	struct common_conf *c_conf = get_common_config();
+
+	// QUIC transport
+	if (c_conf && c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
+		int quic_port = c_conf->quic_bind_port > 0 ?
+				c_conf->quic_bind_port : server_port;
+		debug(LOG_INFO, "Connecting to server [%s:%d] via QUIC...",
+		      server_addr, quic_port);
+		*bev_out = quic_connect_to_server(base, server_addr, quic_port);
+		if (!*bev_out) {
+			debug(LOG_ERR, "QUIC connection to [%s:%d] failed",
+			      server_addr, quic_port);
+			return -1;
+		}
+		return 0;
+	}
+
+	// TCP/TLS transport (default)
 	*bev_out = connect_server(base, server_addr, server_port);
 	if (!*bev_out) {
 		debug(LOG_ERR, "Failed to connect to server [%s:%d]: [%d: %s]",

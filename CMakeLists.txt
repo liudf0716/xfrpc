@@ -143,9 +143,12 @@ set(PROXY_SOURCES
     tcp_redir.c
     mongoose.c
 )
-# quic_transport.c is added conditionally via ENABLE_QUIC above
+# quic_transport.c is added conditionally via ENABLE_QUIC above;
+# quic_client_transport.c is always compiled (has #ifdef stubs)
 if(HAS_QUIC)
-    list(APPEND PROXY_SOURCES quic_transport.c)
+    list(APPEND PROXY_SOURCES quic_transport.c quic_client_transport.c)
+else()
+    list(APPEND PROXY_SOURCES quic_client_transport.c)
 endif()
 
 set(PLUGIN_SOURCES

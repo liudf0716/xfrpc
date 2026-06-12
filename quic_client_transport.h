@@ -21,25 +21,33 @@
 #include <event2/bufferevent.h>
 
 /**
- * @brief Establish a QUIC connection to frps and return a bufferevent.
+ * @brief Callback invoked when QUIC handshake completes (or fails).
  *
- * This function:
- *  1. Creates a UDP socket and connects to server_addr:port
- *  2. Performs QUIC handshake (ngtcp2 + wolfSSL/OpenSSL)
- *  3. Opens a QUIC stream
- *  4. Returns a bufferevent backed by socketpair <-> QUIC stream relay
+ * @param bev  bufferevent on success, NULL on failure
+ * @param arg  user-provided opaque pointer
+ */
+typedef void (*quic_handshake_cb)(struct bufferevent *bev, void *arg);
+
+/**
+ * @brief Start an async QUIC connection to frps.
  *
- * The returned bufferevent behaves exactly like a TCP bufferevent —
- * existing send_msg_frp_server() / recv_cb() code works unchanged.
+ * This function is fully async — it never calls event_base_loop().
+ * It registers UDP read + timer events on @p base and returns
+ * immediately.  The existing event loop drives the QUIC handshake;
+ * when it completes, @p cb is invoked with the resulting bev.
  *
- * @param base        libevent base
+ * @param base         libevent base (must already be running or about to dispatch)
  * @param server_addr  frps hostname or IP
  * @param port         frps QUIC port (quicBindPort)
- * @return bufferevent, or NULL on failure
+ * @param cb           completion callback (may be NULL for fire-and-forget)
+ * @param arg          opaque pointer forwarded to @p cb
+ * @return 0 on success (handshake started), -1 on immediate failure
  */
-struct bufferevent *quic_connect_to_server(struct event_base *base,
-					   const char *server_addr,
-					   int port);
+int quic_connect_to_server(struct event_base *base,
+			   const char *server_addr,
+			   int port,
+			   quic_handshake_cb cb,
+			   void *arg);
 
 /**
  * @brief Check if QUIC transport is available (ngtcp2 compiled in).

@@ -57,6 +57,7 @@ struct quic_client_ctx {
 	struct event_base  *base;
 	struct event       *udp_read_ev;
 	struct event       *timer_ev;
+	struct event       *hs_timer_ev;  /* handshake completion poll timer */
 	int                 udp_fd;
 	ngtcp2_conn        *conn;
 	ngtcp2_cid          dcid;
@@ -72,6 +73,10 @@ struct quic_client_ctx {
 	int                 draining;
 	int64_t             stream_id;     /* opened bidi stream for app data */
 	ngtcp2_crypto_conn_ref conn_ref;
+	quic_handshake_cb   hs_cb;        /* completion callback */
+	void               *hs_cb_arg;    /* opaque arg for hs_cb */
+	char                server_addr[256];
+	int                 server_port;
 	uint8_t             wbuf[QC_MAX_UDP_PAYLOAD];
 
 	/* Work stream relays: map stream_id -> socketpair fd */
@@ -428,19 +433,23 @@ static void qc_free(struct quic_client_ctx *qc)
 
 int quic_transport_available(void) { return 1; }
 
-struct bufferevent *quic_connect_to_server(struct event_base *base,
-					   const char *server_addr, int port)
+/* Forward declaration */
+static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg);
+
+int quic_connect_to_server(struct event_base *base,
+			   const char *server_addr, int port,
+			   quic_handshake_cb cb, void *cb_arg)
 {
-	if (!base || !server_addr || port <= 0) return NULL;
+	if (!base || !server_addr || port <= 0) return -1;
 
 	struct quic_client_ctx *qc = calloc(1, sizeof(*qc));
-	if (!qc) return NULL;
+	if (!qc) return -1;
 	qc->udp_fd = qc->sp_fd = qc->bev_fd = -1;
 
 	/* socketpair */
 	int sp[2];
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sp) < 0) {
-		free(qc); return NULL;
+		free(qc); return -1;
 	}
 	qc->sp_fd = sp[0]; qc->bev_fd = sp[1];
 
@@ -569,69 +578,94 @@ struct bufferevent *quic_connect_to_server(struct event_base *base,
 	event_add(qc->udp_read_ev, NULL);
 	/* Do NOT add sp_read_ev yet — prevent 1-RTT data before handshake done */
 
-	/* poll for handshake completion */
-	time_t t0 = time(NULL);
-	while (!qc->handshake_done) {
-		event_base_loop(base, EVLOOP_ONCE | EVLOOP_NONBLOCK);
-		if (qc->draining) {
-			debug(LOG_ERR, "QUIC client: connection draining");
-			goto fail;
-		}
-		if (time(NULL) - t0 > QC_HANDSHAKE_TIMEOUT) {
-			debug(LOG_ERR, "QUIC client: handshake timeout");
-			goto fail;
-		}
-		usleep(10000);
-	}
+	/* Save callback and server info for async completion */
+	qc->hs_cb = cb;
+	qc->hs_cb_arg = cb_arg;
+	qc->server_port = port;
+	strncpy(qc->server_addr, server_addr, sizeof(qc->server_addr) - 1);
+	qc->server_addr[sizeof(qc->server_addr) - 1] = '\0';
 
-	debug(LOG_INFO, "QUIC client: connected to %s:%d", server_addr, port);
+	/* Register a 10 ms repeating timer to poll for handshake completion.
+	 * This avoids calling event_base_loop() (which would be reentrant
+	 * when called from within an existing event callback). */
+	qc->hs_timer_ev = evtimer_new(base, qc_handshake_timer_cb, qc);
+	if (!qc->hs_timer_ev) goto fail;
+	struct timeval hs_interval = { 0, 10000 }; /* 10 ms */
+	evtimer_add(qc->hs_timer_ev, &hs_interval);
 
-	/* Continue draining handshake packets from server (ACK Handshake) */
-	for (int i = 0; i < 100; i++) {
-		qc_write_udp(qc);
-		event_base_loop(base, EVLOOP_ONCE | EVLOOP_NONBLOCK);
-		if (qc->draining) goto fail;
-		usleep(1000);
-	}
-
-	/* Open the first client-initiated bidirectional stream (stream 0).
-	 * This must be done before sending any application data. */
-	{
-		int64_t sid;
-		rv = ngtcp2_conn_open_bidi_stream(qc->conn, &sid, NULL);
-		if (rv != 0) {
-			debug(LOG_ERR, "QUIC client: failed to open bidi stream: %s",
-			      ngtcp2_strerror(rv));
-			goto fail;
-		}
-		qc->stream_id = sid;
-		debug(LOG_INFO, "QUIC client: opened bidi stream %zd", (ssize_t)sid);
-	}
-
-	qc->draining = 0; /* clear any transient draining during handshake drain */
-
-	/* Store globally for work stream reuse */
-	g_qc = qc;
-
-	/* Now safe to enable application data flow */
-	event_add(qc->sp_read_ev, NULL);
-
-	struct bufferevent *bev = bufferevent_socket_new(base, qc->bev_fd,
-							BEV_OPT_CLOSE_ON_FREE);
-	if (!bev) goto fail;
-	qc->bev_fd = -1;
-	return bev;
+	/* Handshake will complete asynchronously via timer + UDP read callbacks.
+	 * The caller will be notified through the hs_cb callback. */
+	return 0;
 
 fail:
 	if (qc->bev_fd >= 0) close(qc->bev_fd);
 	qc_free(qc);
-	return NULL;
+	return -1;
 }
 
 /* ============================================================
- * Work stream support — open additional streams on the existing
- * QUIC connection for proxy work connections.
+ * Handshake completion timer — runs inside the event loop,
+ * polls ngtcp2 for handshake completion.
  * ============================================================ */
+static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg)
+{
+	(void)fd; (void)what;
+	struct quic_client_ctx *qc = arg;
+	struct event_base *base = qc->base;
+
+	/* Drive ngtcp2 state machine */
+	qc_write_udp(qc);
+
+	if (qc->draining) {
+		debug(LOG_ERR, "QUIC client: connection draining during handshake");
+		if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
+		qc_free(qc);
+		return;
+	}
+
+	if (!qc->handshake_done) {
+		/* Not done yet — re-arm timer */
+		struct timeval hs_interval = { 0, 10000 };
+		evtimer_add(qc->hs_timer_ev, &hs_interval);
+		return;
+	}
+
+	/* Handshake completed! */
+	debug(LOG_INFO, "QUIC client: connected to %s:%d", qc->server_addr, qc->server_port);
+
+	/* Open the first client-initiated bidirectional stream (stream 0). */
+	int64_t sid;
+	int rv = ngtcp2_conn_open_bidi_stream(qc->conn, &sid, NULL);
+	if (rv != 0) {
+		debug(LOG_ERR, "QUIC client: failed to open bidi stream: %s",
+		      ngtcp2_strerror(rv));
+		if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
+		qc_free(qc);
+		return;
+	}
+	qc->stream_id = sid;
+	debug(LOG_INFO, "QUIC client: opened bidi stream %zd", (ssize_t)sid);
+
+	qc->draining = 0;
+	g_qc = qc;
+
+	/* Enable application data flow */
+	event_add(qc->sp_read_ev, NULL);
+
+	/* Create the bufferevent for the caller */
+	struct bufferevent *bev = bufferevent_socket_new(base, qc->bev_fd,
+						BEV_OPT_CLOSE_ON_FREE);
+	if (!bev) {
+		debug(LOG_ERR, "QUIC client: failed to create bev");
+		if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
+		qc_free(qc);
+		return;
+	}
+	qc->bev_fd = -1;
+
+	/* Notify caller */
+	if (qc->hs_cb) qc->hs_cb(bev, qc->hs_cb_arg);
+}
 
 static void qc_work_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 {
@@ -735,12 +769,13 @@ struct bufferevent *quic_open_work_stream(struct event_base *base)
 #include "quic_client_transport.h"
 #include "debug.h"
 int quic_transport_available(void) { return 0; }
-struct bufferevent *quic_connect_to_server(struct event_base *b,
-					   const char *a, int p)
+int quic_connect_to_server(struct event_base *b,
+			   const char *a, int p,
+			   quic_handshake_cb cb, void *cb_arg)
 {
-	(void)b; (void)a; (void)p;
+	(void)b; (void)a; (void)p; (void)cb; (void)cb_arg;
 	debug(LOG_ERR, "QUIC not compiled in");
-	return NULL;
+	return -1;
 }
 struct bufferevent *quic_open_work_stream(struct event_base *b)
 {

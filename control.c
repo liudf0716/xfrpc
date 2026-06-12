@@ -1690,6 +1690,9 @@ static void keep_control_alive()
 	debug(LOG_DEBUG, "Control keepalive initialized successfully");
 }
 
+/* Forward declaration — defined after init_server_connection */
+static void quic_connect_done_cb(struct bufferevent *bev, void *arg);
+
 /**
  * @brief Initializes a server connection and sets up the bufferevent
  * @param[out] bev_out Double pointer to bufferevent structure to be initialized
@@ -1713,18 +1716,22 @@ static int init_server_connection(struct bufferevent **bev_out,
 
 	struct common_conf *c_conf = get_common_config();
 
-	// QUIC transport
+	// QUIC transport — async handshake, bev delivered via callback
 	if (c_conf && c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
 		int quic_port = c_conf->quic_bind_port > 0 ?
 				c_conf->quic_bind_port : server_port;
 		debug(LOG_INFO, "Connecting to server [%s:%d] via QUIC...",
 		      server_addr, quic_port);
-		*bev_out = quic_connect_to_server(base, server_addr, quic_port);
-		if (!*bev_out) {
+		int rv = quic_connect_to_server(base, server_addr, quic_port,
+						quic_connect_done_cb, bev_out);
+		if (rv != 0) {
 			debug(LOG_ERR, "QUIC connection to [%s:%d] failed",
 			      server_addr, quic_port);
 			return -1;
 		}
+		/* bev_out will be populated by quic_connect_done_cb when handshake
+		 * completes.  Setup callbacks after it fires (in start_base_connect).
+		 * For now return success — the caller must defer callback setup. */
 		return 0;
 	}
 
@@ -1770,6 +1777,41 @@ static int setup_server_callbacks(struct bufferevent *bev)
  * 
  * @note This function is static and can only be called from within the control.c file
  */
+/* QUIC handshake completion callback — called from qc_handshake_timer_cb
+ * when the QUIC handshake finishes (or fails).  Populates bev_out and
+ * sets up server callbacks + triggers login. */
+
+static void quic_connect_done_cb(struct bufferevent *bev, void *arg)
+{
+	struct bufferevent **bev_out = arg;
+
+	if (!bev) {
+		debug(LOG_ERR, "QUIC handshake failed");
+		/* Schedule a reconnect */
+		struct common_conf *c_conf = get_common_config();
+		if (c_conf) {
+			static int retry = 0;
+			handle_connection_failure(c_conf, &retry);
+		}
+		return;
+	}
+
+	*bev_out = bev;
+	main_ctl->connect_bev = bev;
+
+	/* Setup read/write/event callbacks on the new bev */
+	if (setup_server_callbacks(bev) != 0) {
+		debug(LOG_ERR, "QUIC: failed to setup server callbacks");
+		bufferevent_free(bev);
+		return;
+	}
+
+	/* BEV_EVENT_CONNECTED won't fire for a socketpair-backed bev,
+	 * so trigger login immediately. */
+	debug(LOG_INFO, "QUIC handshake complete, triggering login");
+	handle_connection_success(bev);
+}
+
 static void start_base_connect()
 {
 	struct common_conf *c_conf = get_common_config();
@@ -1786,18 +1828,19 @@ static void start_base_connect()
 		exit(1);
 	}
 
+	/* For QUIC transport, init_server_connection starts an async handshake.
+	 * The bev and callbacks are set up in quic_connect_done_cb when the
+	 * handshake completes.  For non-QUIC, set up immediately. */
+	if (c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
+		debug(LOG_INFO, "QUIC handshake started (async)");
+		/* connect_bev will be populated by quic_connect_done_cb */
+		return;
+	}
+
 	// Setup callbacks for the connection
 	if (setup_server_callbacks(main_ctl->connect_bev) != 0) {
 		bufferevent_free(main_ctl->connect_bev);
 		exit(1);
-	}
-
-	/* For QUIC transport, quic_connect_to_server() returns an already-connected
-	 * bufferevent (handshake done synchronously). BEV_EVENT_CONNECTED will NOT
-	 * fire from libevent, so we must manually trigger the connected handler. */
-	if (c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
-		debug(LOG_INFO, "QUIC control connection already connected, triggering login");
-		handle_connection_success(main_ctl->connect_bev);
 	}
 }
 

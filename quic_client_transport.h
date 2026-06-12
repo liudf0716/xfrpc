@@ -47,4 +47,15 @@ struct bufferevent *quic_connect_to_server(struct event_base *base,
  */
 int quic_transport_available(void);
 
+/**
+ * @brief Open a new QUIC stream on the existing connection.
+ *
+ * Used for work connections that share the same QUIC connection as the
+ * control connection. Returns a bufferevent backed by socketpair <-> QUIC stream.
+ *
+ * @param base  libevent base
+ * @return bufferevent, or NULL on failure
+ */
+struct bufferevent *quic_open_work_stream(struct event_base *base);
+
 #endif /* XFRPC_QUIC_CLIENT_TRANSPORT_H */

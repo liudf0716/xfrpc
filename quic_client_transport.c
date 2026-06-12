@@ -40,6 +40,14 @@
 #include "quic_client_transport.h"
 #include "debug.h"
 
+/* Getter functions from tls.c — avoids config.h -> tcpmux.h DATA conflict with wolfSSL */
+extern char *tls_get_ca_file(void);
+extern char *tls_get_cert_file(void);
+extern char *tls_get_key_file(void);
+
+/* Global QUIC connection context — reused for work streams */
+static struct quic_client_ctx *g_qc = NULL;
+
 #define QC_MAX_UDP_PAYLOAD   65527
 #define QC_HANDSHAKE_TIMEOUT 10
 #define QC_MAX_IDLE_SEC      120
@@ -62,7 +70,17 @@ struct quic_client_ctx {
 	struct evbuffer    *quic_out_buf;
 	int                 handshake_done;
 	int                 draining;
+	int64_t             stream_id;     /* opened bidi stream for app data */
+	ngtcp2_crypto_conn_ref conn_ref;
 	uint8_t             wbuf[QC_MAX_UDP_PAYLOAD];
+
+	/* Work stream relays: map stream_id -> socketpair fd */
+	struct work_stream_relay {
+		int64_t  stream_id;
+		int      sp_fd;      /* write end: data from QUIC -> bev */
+		struct evbuffer *out_buf;
+	} work_streams[64];
+	int work_stream_count;
 };
 
 static ngtcp2_tstamp qc_ts(void)
@@ -83,6 +101,8 @@ static void qc_flush_sp(struct quic_client_ctx *qc)
 
 static int qc_write_udp(struct quic_client_ctx *qc)
 {
+	if (qc->draining) return -1;
+
 	ngtcp2_path_storage ps;
 	struct sockaddr_in la;
 	socklen_t al = sizeof(la);
@@ -99,8 +119,17 @@ static int qc_write_udp(struct quic_client_ctx *qc)
 			-1, NULL, 0, qc_ts());
 		if (n <= 0) {
 			if (n == NGTCP2_ERR_WRITE_MORE) continue;
+			if (n == NGTCP2_ERR_DRAINING) {
+				qc->draining = 1;
+				debug(LOG_ERR, "QUIC client: connection entered draining state");
+				return -1;
+			}
+			if (n < 0)
+				debug(LOG_ERR, "QUIC client: writev_stream returned %zd: %s",
+				      n, ngtcp2_strerror((int)n));
 			break;
 		}
+		debug(LOG_DEBUG, "QUIC client: sending %zd bytes", n);
 		ssize_t sent = send(qc->udp_fd, qc->wbuf, (size_t)n, 0);
 		if (sent < 0) return -1;
 	}
@@ -120,6 +149,14 @@ static int qc_write_udp(struct quic_client_ctx *qc)
 }
 
 /* ---- ngtcp2 callbacks ---- */
+
+static ngtcp2_conn *qc_get_conn(ngtcp2_crypto_conn_ref *ref)
+{
+	struct quic_client_ctx *qc =
+		(struct quic_client_ctx *)((char *)ref -
+			offsetof(struct quic_client_ctx, conn_ref));
+	return qc->conn;
+}
 
 static int qc_client_initial(ngtcp2_conn *conn, void *ud)
 {
@@ -156,11 +193,35 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 			  void *ud, void *sud)
 {
 	struct quic_client_ctx *qc = ud;
-	(void)conn; (void)flags; (void)sid; (void)off; (void)sud;
-	if (len > 0) {
-		evbuffer_add(qc->quic_out_buf, data, len);
-		qc_flush_sp(qc);
+	(void)conn; (void)flags; (void)off; (void)sud;
+	if (len <= 0) return 0;
+
+	debug(LOG_DEBUG, "QUIC client: stream %zd recv %zu bytes",
+	      (ssize_t)sid, len);
+
+	/* Route to work stream relay if not the control stream */
+	if (sid != qc->stream_id) {
+		for (int i = 0; i < qc->work_stream_count; i++) {
+			if (qc->work_streams[i].stream_id == sid &&
+			    qc->work_streams[i].sp_fd >= 0) {
+				if (qc->work_streams[i].out_buf) {
+					evbuffer_add(qc->work_streams[i].out_buf, data, len);
+					int n = evbuffer_write(qc->work_streams[i].out_buf,
+							       qc->work_streams[i].sp_fd);
+					if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+						debug(LOG_ERR, "QUIC work stream %zd write err: %s",
+						      (ssize_t)sid, strerror(errno));
+				}
+				return 0;
+			}
+		}
+		debug(LOG_WARNING, "QUIC client: data for unknown stream %zd", (ssize_t)sid);
+		return 0;
 	}
+
+	/* Control stream: write to control socketpair */
+	evbuffer_add(qc->quic_out_buf, data, len);
+	qc_flush_sp(qc);
 	return 0;
 }
 
@@ -191,6 +252,41 @@ static void qc_rand(uint8_t *dest, size_t len,
 	RAND_bytes(dest, (int)len);
 }
 
+static int qc_get_new_cid(ngtcp2_conn *c, ngtcp2_cid *cid,
+			  uint8_t *token, size_t cidlen, void *ud)
+{
+	(void)c; (void)ud;
+	RAND_bytes(cid->data, cidlen);
+	cid->datalen = (uint8_t)cidlen;
+	if (token) RAND_bytes(token, NGTCP2_STATELESS_RESET_TOKENLEN);
+	return 0;
+}
+
+static int qc_update_key(ngtcp2_conn *c,
+			  uint8_t *rx_secret, uint8_t *tx_secret,
+			  ngtcp2_crypto_aead_ctx *rx_aead_ctx,
+			  uint8_t *rx_iv,
+			  ngtcp2_crypto_aead_ctx *tx_aead_ctx,
+			  uint8_t *tx_iv,
+			  const uint8_t *cur_rx_secret,
+			  const uint8_t *cur_tx_secret,
+			  size_t secretlen, void *ud)
+{
+	(void)ud;
+	return ngtcp2_crypto_update_key_cb(c, rx_secret, tx_secret,
+					   rx_aead_ctx, rx_iv,
+					   tx_aead_ctx, tx_iv,
+					   cur_rx_secret, cur_tx_secret,
+					   secretlen, ud);
+}
+
+static int qc_path_challenge(ngtcp2_conn *c, uint8_t *data, void *ud)
+{
+	(void)c; (void)ud;
+	RAND_bytes(data, 8);
+	return 0;
+}
+
 static void qc_del_aead(ngtcp2_conn *c, ngtcp2_crypto_aead_ctx *a, void *ud)
 {
 	(void)ud;
@@ -207,8 +303,15 @@ static ngtcp2_callbacks qc_cbs = {
 	.client_initial           = qc_client_initial,
 	.recv_crypto_data         = qc_recv_crypto,
 	.handshake_completed      = qc_handshake_done,
+	.encrypt                  = ngtcp2_crypto_encrypt_cb,
+	.decrypt                  = ngtcp2_crypto_decrypt_cb,
+	.hp_mask                  = ngtcp2_crypto_hp_mask_cb,
 	.recv_stream_data         = qc_recv_stream,
 	.acked_stream_data_offset = qc_acked,
+	.recv_retry               = ngtcp2_crypto_recv_retry_cb,
+	.get_new_connection_id    = qc_get_new_cid,
+	.update_key               = qc_update_key,
+	.get_path_challenge_data  = qc_path_challenge,
 	.stream_open              = qc_stream_open,
 	.stream_close             = qc_stream_close,
 	.rand                     = qc_rand,
@@ -229,6 +332,8 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 			     (struct sockaddr *)&pa, &pal);
 	if (n <= 0) return;
 
+	debug(LOG_DEBUG, "QUIC client: received %zd bytes from server", n);
+
 	struct sockaddr_in la;
 	socklen_t lal = sizeof(la);
 	getsockname(fd, (struct sockaddr *)&la, &lal);
@@ -240,9 +345,15 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 
 	int rv = ngtcp2_conn_read_pkt(qc->conn, &path_st.path, NULL,
 				      buf, (size_t)n, qc_ts());
-	if (rv != 0 && ngtcp2_err_is_fatal(rv)) {
-		qc->draining = 1;
-		return;
+	if (rv != 0) {
+		if (ngtcp2_err_is_fatal(rv)) {
+			debug(LOG_ERR, "QUIC client: fatal error in read_pkt: %s (%d)",
+			      ngtcp2_strerror(rv), rv);
+			qc->draining = 1;
+			return;
+		}
+		debug(LOG_DEBUG, "QUIC client: read_pkt non-fatal: %s (%d)",
+		      ngtcp2_strerror(rv), rv);
 	}
 	qc_flush_sp(qc);
 	qc_write_udp(qc);
@@ -252,6 +363,8 @@ static void qc_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 {
 	struct quic_client_ctx *qc = arg;
 	(void)what;
+	if (qc->draining) return;
+
 	uint8_t buf[QC_RELAY_BUF_SIZE];
 	ssize_t n = read(fd, buf, sizeof(buf));
 	if (n <= 0) { if (n < 0 && errno == EAGAIN) return; return; }
@@ -265,10 +378,21 @@ static void qc_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 	ngtcp2_pkt_info pi;
 	memset(&pi, 0, sizeof(pi));
 
-	ngtcp2_conn_writev_stream(qc->conn, &ps.path, &pi,
-				  qc->wbuf, sizeof(qc->wbuf), NULL,
-				  NGTCP2_WRITE_STREAM_FLAG_NONE,
-				  0, &dv, 1, qc_ts());
+	ngtcp2_ssize nw = ngtcp2_conn_writev_stream(
+			qc->conn, &ps.path, &pi,
+			qc->wbuf, sizeof(qc->wbuf), NULL,
+			NGTCP2_WRITE_STREAM_FLAG_NONE,
+			qc->stream_id, &dv, 1, qc_ts());
+	if (nw == NGTCP2_ERR_DRAINING) {
+		qc->draining = 1;
+		debug(LOG_ERR, "QUIC client: connection draining in sp_read_cb");
+		return;
+	}
+	if (nw < 0) {
+		debug(LOG_ERR, "QUIC client: writev_stream in sp_read_cb: %s",
+		      ngtcp2_strerror((int)nw));
+		return;
+	}
 	qc_write_udp(qc);
 }
 
@@ -350,11 +474,45 @@ struct bufferevent *quic_connect_to_server(struct event_base *base,
 	/* TLS */
 #ifdef USE_NGTCP2_WOLFSSL
 	qc->ssl_ctx = SSL_CTX_new(wolfTLSv1_3_client_method());
+	if (!qc->ssl_ctx) goto fail;
+	if (ngtcp2_crypto_wolfssl_configure_client_context(qc->ssl_ctx) != 0) {
+		debug(LOG_ERR, "QUIC client: wolfssl configure failed");
+		goto fail;
+	}
 #else
 	qc->ssl_ctx = SSL_CTX_new(TLS_client_method());
 	SSL_CTX_set_min_proto_version(qc->ssl_ctx, TLS1_3_VERSION);
 #endif
 	if (!qc->ssl_ctx) goto fail;
+
+	/* Load TLS certificates from config (for mTLS support).
+	 * Must use the same SSL API as the SSL_CTX was created with. */
+	{
+		char *ca_file = tls_get_ca_file();
+		char *cert_file = tls_get_cert_file();
+		char *key_file = tls_get_key_file();
+		if (ca_file) {
+			if (SSL_CTX_load_verify_locations(qc->ssl_ctx, ca_file, NULL) != 1)
+				debug(LOG_ERR, "QUIC client: failed to load CA: %s", ca_file);
+			else {
+				SSL_CTX_set_verify(qc->ssl_ctx, SSL_VERIFY_PEER, NULL);
+				debug(LOG_INFO, "QUIC client: CA loaded: %s", ca_file);
+			}
+		}
+		if (cert_file) {
+			if (SSL_CTX_use_certificate_chain_file(qc->ssl_ctx, cert_file) != 1)
+				debug(LOG_ERR, "QUIC client: failed to load cert: %s", cert_file);
+			else
+				debug(LOG_INFO, "QUIC client: cert loaded: %s", cert_file);
+		}
+		if (key_file) {
+			if (SSL_CTX_use_PrivateKey_file(qc->ssl_ctx, key_file, SSL_FILETYPE_PEM) != 1)
+				debug(LOG_ERR, "QUIC client: failed to load key: %s", key_file);
+			else
+				debug(LOG_INFO, "QUIC client: key loaded: %s", key_file);
+		}
+	}
+
 	unsigned char alpn[] = { 3, 'f', 'r', 'p' };
 	SSL_CTX_set_alpn_protos(qc->ssl_ctx, alpn, sizeof(alpn));
 	qc->ssl = SSL_new(qc->ssl_ctx);
@@ -387,6 +545,13 @@ struct bufferevent *quic_connect_to_server(struct event_base *base,
 	}
 	ngtcp2_conn_set_tls_native_handle(qc->conn, qc->ssl);
 
+	/* Set up conn_ref for wolfssl QUIC crypto callbacks */
+	qc->conn_ref.get_conn = qc_get_conn;
+	qc->conn_ref.user_data = qc;
+#ifdef USE_NGTCP2_WOLFSSL
+	wolfSSL_set_app_data(qc->ssl, &qc->conn_ref);
+#endif
+
 	/* events */
 	qc->base = base;
 	qc->udp_read_ev = event_new(base, qc->udp_fd, EV_READ|EV_PERSIST,
@@ -399,15 +564,19 @@ struct bufferevent *quic_connect_to_server(struct event_base *base,
 		goto fail;
 
 	/* kick off handshake — generate Initial packet */
-	qc_write_udp(qc);
+	int wv = qc_write_udp(qc);
+	debug(LOG_INFO, "QUIC client: qc_write_udp returned %d", wv);
 	event_add(qc->udp_read_ev, NULL);
-	event_add(qc->sp_read_ev, NULL);
+	/* Do NOT add sp_read_ev yet — prevent 1-RTT data before handshake done */
 
-	/* poll for handshake */
+	/* poll for handshake completion */
 	time_t t0 = time(NULL);
 	while (!qc->handshake_done) {
 		event_base_loop(base, EVLOOP_ONCE | EVLOOP_NONBLOCK);
-		if (qc->draining) goto fail;
+		if (qc->draining) {
+			debug(LOG_ERR, "QUIC client: connection draining");
+			goto fail;
+		}
 		if (time(NULL) - t0 > QC_HANDSHAKE_TIMEOUT) {
 			debug(LOG_ERR, "QUIC client: handshake timeout");
 			goto fail;
@@ -416,6 +585,36 @@ struct bufferevent *quic_connect_to_server(struct event_base *base,
 	}
 
 	debug(LOG_INFO, "QUIC client: connected to %s:%d", server_addr, port);
+
+	/* Continue draining handshake packets from server (ACK Handshake) */
+	for (int i = 0; i < 100; i++) {
+		qc_write_udp(qc);
+		event_base_loop(base, EVLOOP_ONCE | EVLOOP_NONBLOCK);
+		if (qc->draining) goto fail;
+		usleep(1000);
+	}
+
+	/* Open the first client-initiated bidirectional stream (stream 0).
+	 * This must be done before sending any application data. */
+	{
+		int64_t sid;
+		rv = ngtcp2_conn_open_bidi_stream(qc->conn, &sid, NULL);
+		if (rv != 0) {
+			debug(LOG_ERR, "QUIC client: failed to open bidi stream: %s",
+			      ngtcp2_strerror(rv));
+			goto fail;
+		}
+		qc->stream_id = sid;
+		debug(LOG_INFO, "QUIC client: opened bidi stream %zd", (ssize_t)sid);
+	}
+
+	qc->draining = 0; /* clear any transient draining during handshake drain */
+
+	/* Store globally for work stream reuse */
+	g_qc = qc;
+
+	/* Now safe to enable application data flow */
+	event_add(qc->sp_read_ev, NULL);
 
 	struct bufferevent *bev = bufferevent_socket_new(base, qc->bev_fd,
 							BEV_OPT_CLOSE_ON_FREE);
@@ -429,6 +628,108 @@ fail:
 	return NULL;
 }
 
+/* ============================================================
+ * Work stream support — open additional streams on the existing
+ * QUIC connection for proxy work connections.
+ * ============================================================ */
+
+static void qc_work_sp_read_cb(evutil_socket_t fd, short what, void *arg)
+{
+	struct work_stream_relay *relay = arg;
+	struct quic_client_ctx *qc = g_qc;
+	(void)what;
+	if (!qc || qc->draining) return;
+
+	uint8_t buf[QC_RELAY_BUF_SIZE];
+	ssize_t n = read(fd, buf, sizeof(buf));
+	if (n <= 0) { if (n < 0 && errno == EAGAIN) return; return; }
+
+	ngtcp2_vec dv = { .base = buf, .len = (size_t)n };
+	ngtcp2_path_storage ps;
+	struct sockaddr_in la;
+	socklen_t al = sizeof(la);
+	getsockname(qc->udp_fd, (struct sockaddr *)&la, &al);
+	ngtcp2_path_storage_init(&ps, (struct sockaddr *)&la, al, NULL, 0, NULL);
+	ngtcp2_pkt_info pi;
+	memset(&pi, 0, sizeof(pi));
+
+	ngtcp2_ssize nw = ngtcp2_conn_writev_stream(
+			qc->conn, &ps.path, &pi,
+			qc->wbuf, sizeof(qc->wbuf), NULL,
+			NGTCP2_WRITE_STREAM_FLAG_NONE,
+			relay->stream_id, &dv, 1, qc_ts());
+	if (nw == NGTCP2_ERR_DRAINING) {
+		qc->draining = 1;
+		debug(LOG_ERR, "QUIC work stream: connection draining");
+		return;
+	}
+	if (nw < 0) {
+		debug(LOG_ERR, "QUIC work stream: writev_stream: %s",
+		      ngtcp2_strerror((int)nw));
+		return;
+	}
+	qc_write_udp(qc);
+}
+
+struct bufferevent *quic_open_work_stream(struct event_base *base)
+{
+	if (!g_qc || g_qc->draining || !base) return NULL;
+	struct quic_client_ctx *qc = g_qc;
+
+	/* Open a new bidirectional stream */
+	int64_t sid;
+	int rv = ngtcp2_conn_open_bidi_stream(qc->conn, &sid, NULL);
+	if (rv != 0) {
+		debug(LOG_ERR, "QUIC: failed to open work stream: %s",
+		      ngtcp2_strerror(rv));
+		return NULL;
+	}
+
+	/* Create socketpair for this stream */
+	int sp[2];
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sp) < 0) {
+		debug(LOG_ERR, "QUIC: socketpair failed: %s", strerror(errno));
+		return NULL;
+	}
+
+	/* Register relay */
+	if (qc->work_stream_count >= 64) {
+		debug(LOG_ERR, "QUIC: too many work streams");
+		close(sp[0]); close(sp[1]);
+		return NULL;
+	}
+	struct work_stream_relay *relay = &qc->work_streams[qc->work_stream_count++];
+	relay->stream_id = sid;
+	relay->sp_fd = sp[0];
+	relay->out_buf = evbuffer_new();
+
+	/* Set up event to read from bev side and send via QUIC */
+	struct event *sp_ev = event_new(base, sp[0], EV_READ|EV_PERSIST,
+					qc_work_sp_read_cb, relay);
+	if (!sp_ev) {
+		close(sp[0]); close(sp[1]);
+		evbuffer_free(relay->out_buf);
+		qc->work_stream_count--;
+		return NULL;
+	}
+	event_add(sp_ev, NULL);
+
+	debug(LOG_INFO, "QUIC: opened work stream %zd", (ssize_t)sid);
+
+	/* Return bufferevent from the other end of the socketpair */
+	struct bufferevent *bev = bufferevent_socket_new(base, sp[1],
+							BEV_OPT_CLOSE_ON_FREE);
+	if (!bev) {
+		close(sp[1]);
+		event_free(sp_ev);
+		evbuffer_free(relay->out_buf);
+		close(relay->sp_fd);
+		qc->work_stream_count--;
+		return NULL;
+	}
+	return bev;
+}
+
 #else /* !HAVE_NGTCP2 */
 
 #include "quic_client_transport.h"
@@ -438,6 +739,12 @@ struct bufferevent *quic_connect_to_server(struct event_base *b,
 					   const char *a, int p)
 {
 	(void)b; (void)a; (void)p;
+	debug(LOG_ERR, "QUIC not compiled in");
+	return NULL;
+}
+struct bufferevent *quic_open_work_stream(struct event_base *b)
+{
+	(void)b;
 	debug(LOG_ERR, "QUIC not compiled in");
 	return NULL;
 }

@@ -46,6 +46,33 @@ int tls_is_enabled(void)
 }
 
 /**
+ * Get the CA file path from config. Used by QUIC transport.
+ */
+char *tls_get_ca_file(void)
+{
+	struct common_conf *conf = get_common_config();
+	return conf ? conf->tls_trusted_ca_file : NULL;
+}
+
+/**
+ * Get the client cert file path from config. Used by QUIC transport.
+ */
+char *tls_get_cert_file(void)
+{
+	struct common_conf *conf = get_common_config();
+	return conf ? conf->tls_cert_file : NULL;
+}
+
+/**
+ * Get the client key file path from config. Used by QUIC transport.
+ */
+char *tls_get_key_file(void)
+{
+	struct common_conf *conf = get_common_config();
+	return conf ? conf->tls_key_file : NULL;
+}
+
+/**
  * Verify callback for SSL certificate chain.
  * Returns 1 to accept, 0 to reject.
  */
@@ -245,4 +272,63 @@ void tls_cleanup(void)
 		g_ssl_ctx = NULL;
 		debug(LOG_DEBUG, "[TLS] SSL context freed");
 	}
+}
+
+/**
+ * Load TLS certificates from config into an external SSL_CTX.
+ * This is used by the QUIC transport which creates its own SSL_CTX.
+ * Uses void* to avoid type conflicts between OpenSSL and wolfSSL.
+ *
+ * @param ctx  The SSL_CTX to configure with certs from common_conf (as void*)
+ * @return 0 on success, -1 on fatal failure
+ */
+int tls_load_certs_to_ctx(void *vctx)
+{
+	SSL_CTX *ctx = (SSL_CTX *)vctx;
+	if (!ctx) return -1;
+
+	struct common_conf *conf = get_common_config();
+	if (!conf) return 0; /* no config, nothing to load */
+
+	/* Load CA for server verification */
+	if (conf->tls_trusted_ca_file) {
+		if (SSL_CTX_load_verify_locations(ctx,
+				conf->tls_trusted_ca_file, NULL) != 1) {
+			debug(LOG_ERR, "[TLS/QUIC] Failed to load CA: %s",
+			      conf->tls_trusted_ca_file);
+			tls_log_errors("QUIC CA load");
+		} else {
+			SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+			debug(LOG_INFO, "[TLS/QUIC] CA loaded: %s",
+			      conf->tls_trusted_ca_file);
+		}
+	}
+
+	/* Load client certificate (for mTLS) */
+	if (conf->tls_cert_file) {
+		if (SSL_CTX_use_certificate_chain_file(ctx,
+				conf->tls_cert_file) != 1) {
+			debug(LOG_ERR, "[TLS/QUIC] Failed to load cert: %s",
+			      conf->tls_cert_file);
+			tls_log_errors("QUIC cert load");
+		} else {
+			debug(LOG_INFO, "[TLS/QUIC] Client cert loaded: %s",
+			      conf->tls_cert_file);
+		}
+	}
+
+	/* Load client private key */
+	if (conf->tls_key_file) {
+		if (SSL_CTX_use_PrivateKey_file(ctx,
+				conf->tls_key_file, SSL_FILETYPE_PEM) != 1) {
+			debug(LOG_ERR, "[TLS/QUIC] Failed to load key: %s",
+			      conf->tls_key_file);
+			tls_log_errors("QUIC key load");
+		} else {
+			debug(LOG_INFO, "[TLS/QUIC] Private key loaded: %s",
+			      conf->tls_key_file);
+		}
+	}
+
+	return 0;
 }

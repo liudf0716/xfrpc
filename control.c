@@ -150,8 +150,14 @@ static void handle_client_connected(struct proxy_client *client, struct bufferev
 	bufferevent_setcb(bev, recv_cb, NULL, client_start_event_cb, client);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
-	// Initialize work connection
-	new_work_connection(bev, &main_ctl->stream);
+	struct common_conf *c_conf = get_common_config();
+
+	// Initialize work connection — use raw framing when tcp_mux is off
+	if (c_conf && c_conf->tcp_mux) {
+		new_work_connection(bev, &main_ctl->stream);
+	} else {
+		new_work_connection(bev, NULL);
+	}
 	set_xfrpc_status(true);
 
 	debug(LOG_INFO, "Proxy service started successfully");
@@ -260,6 +266,17 @@ static int init_direct_client(struct proxy_client *client,
 
 	client->ctl_bev = bev;
 	bufferevent_enable(bev, EV_WRITE);
+
+	/* For QUIC transport, connect_server() returns an already-connected
+	 * bufferevent (handshake done synchronously). BEV_EVENT_CONNECTED will
+	 * NOT fire, so we must handle the connected state immediately. */
+	struct common_conf *c_conf = get_common_config();
+	if (c_conf && c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
+		debug(LOG_INFO, "Work conn via QUIC — already connected");
+		handle_client_connected(client, bev);
+		return 0;
+	}
+
 	bufferevent_setcb(bev, NULL, NULL, client_start_event_cb, client);
 	
 	return 0;
@@ -512,11 +529,9 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 	// If QUIC protocol and target is frps, use QUIC for work connections
 	struct common_conf *c_conf = get_common_config();
 	if (c_conf && c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0 &&
-	    strcmp(name, c_conf->server_addr) == 0) {
-		int quic_port = c_conf->quic_bind_port > 0 ?
-				c_conf->quic_bind_port : port;
-		debug(LOG_INFO, "Work conn via QUIC to %s:%d", name, quic_port);
-		return quic_connect_to_server(base, name, quic_port);
+	    strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
+		debug(LOG_INFO, "Work conn via QUIC stream to %s:%d", name, port);
+		return quic_open_work_stream(base);
 	}
 
 	// Create new bufferevent socket
@@ -1775,6 +1790,14 @@ static void start_base_connect()
 	if (setup_server_callbacks(main_ctl->connect_bev) != 0) {
 		bufferevent_free(main_ctl->connect_bev);
 		exit(1);
+	}
+
+	/* For QUIC transport, quic_connect_to_server() returns an already-connected
+	 * bufferevent (handshake done synchronously). BEV_EVENT_CONNECTED will NOT
+	 * fire from libevent, so we must manually trigger the connected handler. */
+	if (c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
+		debug(LOG_INFO, "QUIC control connection already connected, triggering login");
+		handle_connection_success(main_ctl->connect_bev);
 	}
 }
 

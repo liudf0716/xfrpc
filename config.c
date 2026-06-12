@@ -948,6 +948,15 @@ void load_config(const char *confile) {
 		exit(EXIT_FAILURE);
 	}
 
+	/* QUIC protocol already provides stream multiplexing, so tcp_mux
+	 * is not needed and would cause protocol mismatch with frps. */
+	if (c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
+		if (c_conf->tcp_mux) {
+			debug(LOG_INFO, "QUIC protocol: disabling tcp_mux (QUIC provides native mux)");
+			c_conf->tcp_mux = 0;
+		}
+	}
+
 	dump_common_conf();
 
 	// Validate heartbeat settings

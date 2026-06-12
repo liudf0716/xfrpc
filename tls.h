@@ -50,4 +50,14 @@ int tls_is_enabled(void);
  */
 void tls_log_errors(const char *context);
 
+/**
+ * Load TLS certificates from config into an SSL_CTX.
+ * Uses void* to avoid type conflicts between OpenSSL and wolfSSL headers.
+ * The actual type is SSL_CTX* (OpenSSL) or WOLFSSL_CTX* (wolfSSL).
+ *
+ * @param ctx  The SSL_CTX to configure (passed as void* for compatibility)
+ * @return 0 on success, -1 on failure
+ */
+int tls_load_certs_to_ctx(void *ctx);
+
 #endif /* XFRPC_TLS_H */

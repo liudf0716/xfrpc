@@ -43,6 +43,7 @@ static struct control *main_ctl;
 static bool xfrpc_status;
 static int is_login;
 static time_t pong_time;
+static volatile int g_reconnect_requested;
 
 static void new_work_connection(struct bufferevent *bev, struct tmux_stream *stream);
 static void recv_cb(struct bufferevent *bev, void *ctx);
@@ -714,7 +715,9 @@ static void check_server_timeout(time_t current_time) {
 
 		reset_session_id();
 		clear_main_control();
-		run_control();
+		g_reconnect_requested = 1;
+		if (main_ctl && main_ctl->connect_base)
+			event_base_loopbreak(main_ctl->connect_base);
 	}
 }
 
@@ -1521,7 +1524,12 @@ static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx)
 	debug(LOG_INFO, "Reconnecting after delay...");
 	reset_session_id();
 	clear_main_control();
-	run_control();
+	/* Break the current event loop instead of calling run_control()
+	 * reentrantly — run_control() will re-enter event_base_dispatch
+	 * after the loop exits. */
+	g_reconnect_requested = 1;
+	if (main_ctl && main_ctl->connect_base)
+		event_base_loopbreak(main_ctl->connect_base);
 }
 
 /**
@@ -1558,7 +1566,9 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
 		debug(LOG_ERR, "Failed to create reconnect timer, falling back to immediate retry");
 		reset_session_id();
 		clear_main_control();
-		run_control();
+		g_reconnect_requested = 1;
+		if (main_ctl && main_ctl->connect_base)
+			event_base_loopbreak(main_ctl->connect_base);
 	}
 }
 
@@ -2619,13 +2629,17 @@ void close_main_control()
 
 void run_control() 
 {
-	start_base_connect();
+	/* Reconnect loop: when reconnect_timer_cb fires, it sets
+	 * g_reconnect_requested and breaks the event loop.  We then
+	 * re-enter start_base_connect + event_base_dispatch. */
+	do {
+		g_reconnect_requested = 0;
+		start_base_connect();
 
-	/* Run the event loop - this blocks until event_base_loopbreak() is called */
-	if (main_ctl && main_ctl->connect_base) {
-		if (event_base_dispatch(main_ctl->connect_base) < 0) {
-			debug(LOG_ERR, "event_base_dispatch failed");
+		/* Run the event loop — blocks until event_base_loopbreak() */
+		if (main_ctl && main_ctl->connect_base) {
+			event_base_dispatch(main_ctl->connect_base);
 		}
-	}
+	} while (g_reconnect_requested);
 }
 

@@ -70,6 +70,7 @@ struct quic_client_ctx {
 	struct event       *sp_read_ev;
 	struct evbuffer    *quic_out_buf;
 	int                 handshake_done;
+	int                 handshake_confirmed;
 	int                 draining;
 	int64_t             stream_id;     /* opened bidi stream for app data */
 	ngtcp2_crypto_conn_ref conn_ref;
@@ -99,7 +100,10 @@ static void qc_flush_sp(struct quic_client_ctx *qc)
 {
 	if (!qc->quic_out_buf || evbuffer_get_length(qc->quic_out_buf) == 0)
 		return;
+	size_t before = evbuffer_get_length(qc->quic_out_buf);
 	int n = evbuffer_write(qc->quic_out_buf, qc->sp_fd);
+	debug(LOG_DEBUG, "QUIC client: sp flush %d bytes (buf %zu -> %zu)",
+	      n, before, evbuffer_get_length(qc->quic_out_buf));
 	if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
 		debug(LOG_ERR, "QUIC client: sp write err: %s", strerror(errno));
 }
@@ -125,13 +129,15 @@ static int qc_write_udp(struct quic_client_ctx *qc)
 		if (n <= 0) {
 			if (n == NGTCP2_ERR_WRITE_MORE) continue;
 			if (n == NGTCP2_ERR_DRAINING) {
-				qc->draining = 1;
-				debug(LOG_ERR, "QUIC client: connection entered draining state");
+				debug(LOG_DEBUG, "QUIC client: writev_stream: ERR_DRAINING");
 				return -1;
 			}
-			if (n < 0)
+			if (n == 0) {
+				debug(LOG_DEBUG, "QUIC client: writev_stream returned 0 (nothing to write)");
+			} else {
 				debug(LOG_ERR, "QUIC client: writev_stream returned %zd: %s",
 				      n, ngtcp2_strerror((int)n));
+			}
 			break;
 		}
 		debug(LOG_DEBUG, "QUIC client: sending %zd bytes", n);
@@ -176,10 +182,21 @@ static int qc_recv_crypto(ngtcp2_conn *conn, ngtcp2_encryption_level level,
 	struct quic_client_ctx *qc = ud;
 	(void)off;
 	int rv = ngtcp2_crypto_recv_crypto_data_cb(conn, level, 0, data, len, ud);
-	if (rv != 0) return NGTCP2_ERR_CALLBACK_FAILURE;
-	if (!qc->handshake_done && ngtcp2_conn_get_handshake_completed(conn)) {
+	int tls_err = ngtcp2_conn_get_tls_error(conn);
+	int completed = ngtcp2_conn_get_handshake_completed(conn);
+	debug(LOG_DEBUG, "QUIC client: recv_crypto level=%d len=%zu rv=%d completed=%d hs_done=%d tls_err=%d",
+	      level, len, rv, completed, qc->handshake_done, tls_err);
+	if (rv != 0) {
+		debug(LOG_ERR, "QUIC client: crypto_recv_cb failed: rv=%d tls_err=%d", rv, tls_err);
+		return NGTCP2_ERR_CALLBACK_FAILURE;
+	}
+	if (!qc->handshake_done && completed) {
 		qc->handshake_done = 1;
-		debug(LOG_INFO, "QUIC client: handshake complete");
+		debug(LOG_INFO, "QUIC client: handshake complete (tls_err=%d)", tls_err);
+	}
+	/* If TLS handshake is done, tell ngtcp2 explicitly */
+	if (completed && !qc->handshake_done) {
+		ngtcp2_conn_tls_handshake_completed(conn);
 	}
 	return 0;
 }
@@ -189,6 +206,16 @@ static int qc_handshake_done(ngtcp2_conn *conn, void *ud)
 	(void)conn;
 	struct quic_client_ctx *qc = ud;
 	qc->handshake_done = 1;
+	debug(LOG_INFO, "QUIC client: handshake_completed callback fired");
+	return 0;
+}
+
+static int qc_handshake_confirmed(ngtcp2_conn *conn, void *ud)
+{
+	(void)conn;
+	struct quic_client_ctx *qc = ud;
+	debug(LOG_INFO, "QUIC client: handshake_confirmed callback fired");
+	qc->handshake_confirmed = 1;
 	return 0;
 }
 
@@ -200,6 +227,11 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 	struct quic_client_ctx *qc = ud;
 	(void)conn; (void)flags; (void)off; (void)sud;
 	if (len <= 0) return 0;
+
+	/* Direct fprintf for debugging — bypass debug() level filter */
+	fprintf(stderr, "[QUIC-RECV] stream=%zd len=%zu flags=0x%x\n",
+		(ssize_t)sid, len, flags);
+	fflush(stderr);
 
 	debug(LOG_DEBUG, "QUIC client: stream %zd recv %zu bytes",
 	      (ssize_t)sid, len);
@@ -225,8 +257,12 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 	}
 
 	/* Control stream: write to control socketpair */
+	debug(LOG_DEBUG, "QUIC client: stream %zd -> control sp (buf=%zu + %zu)",
+	      (ssize_t)sid, evbuffer_get_length(qc->quic_out_buf), len);
 	evbuffer_add(qc->quic_out_buf, data, len);
 	qc_flush_sp(qc);
+	debug(LOG_DEBUG, "QUIC client: control sp flushed (buf=%zu)",
+	      evbuffer_get_length(qc->quic_out_buf));
 	return 0;
 }
 
@@ -308,6 +344,7 @@ static ngtcp2_callbacks qc_cbs = {
 	.client_initial           = qc_client_initial,
 	.recv_crypto_data         = qc_recv_crypto,
 	.handshake_completed      = qc_handshake_done,
+	.handshake_confirmed      = qc_handshake_confirmed,
 	.encrypt                  = ngtcp2_crypto_encrypt_cb,
 	.decrypt                  = ngtcp2_crypto_decrypt_cb,
 	.hp_mask                  = ngtcp2_crypto_hp_mask_cb,
@@ -337,7 +374,12 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 			     (struct sockaddr *)&pa, &pal);
 	if (n <= 0) return;
 
-	debug(LOG_DEBUG, "QUIC client: received %zd bytes from server", n);
+	/* Log first 32 bytes of received packet for full structure analysis */
+	char hex[128] = {0};
+	int hexlen = n < 32 ? (int)n : 32;
+	for (int i = 0; i < hexlen; i++)
+		snprintf(hex + i * 3, 4, "%02x ", buf[i]);
+	debug(LOG_DEBUG, "QUIC client: recv %zd bytes: [%s]", n, hex);
 
 	struct sockaddr_in la;
 	socklen_t lal = sizeof(la);
@@ -350,10 +392,14 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 
 	int rv = ngtcp2_conn_read_pkt(qc->conn, &path_st.path, NULL,
 				      buf, (size_t)n, qc_ts());
+	int tls_err = ngtcp2_conn_get_tls_error(qc->conn);
+	debug(LOG_DEBUG, "QUIC client: read_pkt returned %d (hs_done=%d, confirmed=%d, stream_id=%zd, draining=%d, tls_err=%d)",
+	      rv, qc->handshake_done, qc->handshake_confirmed,
+	      (ssize_t)qc->stream_id, qc->draining, tls_err);
 	if (rv != 0) {
 		if (ngtcp2_err_is_fatal(rv)) {
-			debug(LOG_ERR, "QUIC client: fatal error in read_pkt: %s (%d)",
-			      ngtcp2_strerror(rv), rv);
+			debug(LOG_ERR, "QUIC client: fatal error in read_pkt: %s (%d), tls_err=%d",
+			      ngtcp2_strerror(rv), rv, tls_err);
 			qc->draining = 1;
 			return;
 		}
@@ -554,6 +600,9 @@ int quic_connect_to_server(struct event_base *base,
 	}
 	ngtcp2_conn_set_tls_native_handle(qc->conn, qc->ssl);
 
+	debug(LOG_DEBUG, "QUIC client: callbacks registered: recv_stream_data=%p",
+	      (void *)qc_cbs.recv_stream_data);
+
 	/* Set up conn_ref for wolfssl QUIC crypto callbacks */
 	qc->conn_ref.get_conn = qc_get_conn;
 	qc->conn_ref.user_data = qc;
@@ -617,9 +666,22 @@ static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg)
 	qc_write_udp(qc);
 
 	if (qc->draining) {
-		debug(LOG_ERR, "QUIC client: connection draining during handshake");
-		if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
-		qc_free(qc);
+		/* If the handshake is confirmed, the draining state is real.
+		 * But if it's not confirmed yet, the draining might be transient —
+		 * ngtcp2 can enter draining before the handshake_confirmed callback
+		 * fires. Reset and wait for the next packet. */
+		if (qc->handshake_confirmed || qc->handshake_done) {
+			debug(LOG_ERR, "QUIC client: connection draining during handshake (confirmed=%d, done=%d)",
+			      qc->handshake_confirmed, qc->handshake_done);
+			if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
+			qc_free(qc);
+			return;
+		}
+		/* Transient draining — reset and re-arm timer */
+		debug(LOG_DEBUG, "QUIC client: transient draining (not confirmed yet), resetting");
+		qc->draining = 0;
+		struct timeval hs_interval = { 0, 10000 };
+		evtimer_add(qc->hs_timer_ev, &hs_interval);
 		return;
 	}
 
@@ -630,7 +692,13 @@ static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	/* Handshake completed! */
+	/* Handshake completed — stop the handshake timer */
+	if (qc->hs_timer_ev) {
+		evtimer_del(qc->hs_timer_ev);
+		event_free(qc->hs_timer_ev);
+		qc->hs_timer_ev = NULL;
+	}
+
 	debug(LOG_INFO, "QUIC client: connected to %s:%d", qc->server_addr, qc->server_port);
 
 	/* Open the first client-initiated bidirectional stream (stream 0). */

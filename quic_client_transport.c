@@ -181,6 +181,14 @@ static int qc_recv_crypto(ngtcp2_conn *conn, ngtcp2_encryption_level level,
 {
 	struct quic_client_ctx *qc = ud;
 	(void)off;
+
+	/*
+	 * BUG FIX: quic-go sends post-handshake TLS data (NewSessionTicket)
+	 * as 1RTT CRYPTO frames. We must still pass these to wolfSSL for
+	 * proper TLS processing. But we also need to ensure stream 0 is
+	 * opened ASAP so that STREAM frames (LoginResp etc.) from the
+	 * server can be delivered via recv_stream_data.
+	 */
 	int rv = ngtcp2_crypto_recv_crypto_data_cb(conn, level, 0, data, len, ud);
 	int tls_err = ngtcp2_conn_get_tls_error(conn);
 	int completed = ngtcp2_conn_get_handshake_completed(conn);
@@ -207,6 +215,26 @@ static int qc_handshake_done(ngtcp2_conn *conn, void *ud)
 	struct quic_client_ctx *qc = ud;
 	qc->handshake_done = 1;
 	debug(LOG_INFO, "QUIC client: handshake_completed callback fired");
+
+	/*
+	 * CRITICAL: Open bidi stream 0 immediately when handshake completes.
+	 * quic-go (frps) sends LoginResp as a STREAM frame on stream 0
+	 * right after the handshake. If stream 0 is not registered in
+	 * ngtcp2 by the time the STREAM frame arrives, ngtcp2 silently
+	 * drops it and recv_stream_data never fires.
+	 */
+	if (qc->stream_id < 0) {
+		int64_t sid;
+		int rv = ngtcp2_conn_open_bidi_stream(conn, &sid, NULL);
+		if (rv == 0) {
+			qc->stream_id = sid;
+			debug(LOG_INFO, "QUIC client: opened bidi stream %zd (in handshake_completed)",
+			      (ssize_t)sid);
+		} else {
+			debug(LOG_ERR, "QUIC client: failed to open bidi stream: %s",
+			      ngtcp2_strerror(rv));
+		}
+	}
 	return 0;
 }
 
@@ -227,11 +255,6 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 	struct quic_client_ctx *qc = ud;
 	(void)conn; (void)flags; (void)off; (void)sud;
 	if (len <= 0) return 0;
-
-	/* Direct fprintf for debugging — bypass debug() level filter */
-	fprintf(stderr, "[QUIC-RECV] stream=%zd len=%zu flags=0x%x\n",
-		(ssize_t)sid, len, flags);
-	fflush(stderr);
 
 	debug(LOG_DEBUG, "QUIC client: stream %zd recv %zu bytes",
 	      (ssize_t)sid, len);
@@ -420,6 +443,9 @@ static void qc_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 	ssize_t n = read(fd, buf, sizeof(buf));
 	if (n <= 0) { if (n < 0 && errno == EAGAIN) return; return; }
 
+	debug(LOG_DEBUG, "QUIC client: sp_read_cb: n=%zd stream_id=%zd",
+	      n, (ssize_t)qc->stream_id);
+
 	ngtcp2_vec dv = { .base = buf, .len = (size_t)n };
 	ngtcp2_path_storage ps;
 	struct sockaddr_in la;
@@ -434,6 +460,8 @@ static void qc_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 			qc->wbuf, sizeof(qc->wbuf), NULL,
 			NGTCP2_WRITE_STREAM_FLAG_NONE,
 			qc->stream_id, &dv, 1, qc_ts());
+	debug(LOG_DEBUG, "QUIC client: sp_writev: nw=%zd stream_id=%zd",
+	      (ssize_t)nw, (ssize_t)qc->stream_id);
 	if (nw == NGTCP2_ERR_DRAINING) {
 		qc->draining = 1;
 		debug(LOG_ERR, "QUIC client: connection draining in sp_read_cb");
@@ -491,6 +519,7 @@ int quic_connect_to_server(struct event_base *base,
 	struct quic_client_ctx *qc = calloc(1, sizeof(*qc));
 	if (!qc) return -1;
 	qc->udp_fd = qc->sp_fd = qc->bev_fd = -1;
+	qc->stream_id = -1;  /* not yet opened */
 
 	/* socketpair */
 	int sp[2];
@@ -701,18 +730,24 @@ static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg)
 
 	debug(LOG_INFO, "QUIC client: connected to %s:%d", qc->server_addr, qc->server_port);
 
-	/* Open the first client-initiated bidirectional stream (stream 0). */
-	int64_t sid;
-	int rv = ngtcp2_conn_open_bidi_stream(qc->conn, &sid, NULL);
-	if (rv != 0) {
-		debug(LOG_ERR, "QUIC client: failed to open bidi stream: %s",
-		      ngtcp2_strerror(rv));
-		if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
-		qc_free(qc);
-		return;
+	/* Open the first client-initiated bidirectional stream (stream 0).
+	 * This may already have been opened early in recv_crypto — if so, skip. */
+	if (qc->stream_id < 0) {
+		int64_t sid;
+		int rv = ngtcp2_conn_open_bidi_stream(qc->conn, &sid, NULL);
+		if (rv != 0) {
+			debug(LOG_ERR, "QUIC client: failed to open bidi stream: %s",
+			      ngtcp2_strerror(rv));
+			if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
+			qc_free(qc);
+			return;
+		}
+		qc->stream_id = sid;
+		debug(LOG_INFO, "QUIC client: opened bidi stream %zd", (ssize_t)sid);
+	} else {
+		debug(LOG_INFO, "QUIC client: bidi stream %zd already opened (early)",
+		      (ssize_t)qc->stream_id);
 	}
-	qc->stream_id = sid;
-	debug(LOG_INFO, "QUIC client: opened bidi stream %zd", (ssize_t)sid);
 
 	qc->draining = 0;
 	g_qc = qc;

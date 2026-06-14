@@ -1,0 +1,13 @@
+# frps config for QUIC test scenario
+bindAddr = "127.0.0.1"
+bindPort = 17002
+quicBindPort = 17003
+auth.method = "token"
+auth.token = "e2e-test-token-2026"
+transport.tls.force = false
+transport.heartbeatTimeout = 90
+transport.quic.maxIdleTimeout = 120
+transport.quic.keepalivePeriod = 10
+transport.quic.maxIncomingStreams = 100000
+log.to = "console"
+log.level = "info"

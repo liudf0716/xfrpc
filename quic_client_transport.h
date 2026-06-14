@@ -67,6 +67,20 @@ int quic_transport_available(void);
 struct bufferevent *quic_open_work_stream(struct event_base *base);
 
 /**
+ * @brief Send initial data synchronously on the most recently opened work stream.
+ *
+ * Writes @p data directly to the QUIC wire via ngtcp2, bypassing the
+ * socketpair/event-loop.  This is needed because frps may accept the
+ * QUIC stream and then immediately FIN it if no STREAM data arrives
+ * before the next event-loop pass.
+ *
+ * @param data  payload to send (e.g. the marshalled NewWorkConn message)
+ * @param len   payload length
+ * @return 0 on success, -1 on failure
+ */
+int quic_work_stream_send_initial(const void *data, size_t len);
+
+/**
  * @brief Reset QUIC connection state for clean reconnection.
  */
 void quic_transport_reset(void);

@@ -1,0 +1,10 @@
+# frps config for TCP + mux test scenario
+bindAddr = "127.0.0.1"
+bindPort = 17001
+auth.method = "token"
+auth.token = "e2e-test-token-2026"
+transport.tcpMux = true
+transport.tls.force = false
+transport.heartbeatTimeout = 90
+log.to = "console"
+log.level = "info"

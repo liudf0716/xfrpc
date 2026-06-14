@@ -53,6 +53,9 @@ static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
 static void reload_check_timer_cb(evutil_socket_t fd, short what, void *ctx);
 static void start_proxy_services(void);
+static int prepare_message(const enum msg_type type, const char *msg,
+			   const size_t msg_len, struct msg_hdr **msg_out,
+			   size_t *total_len);
 static void health_check_result_cb(struct proxy_service *ps, int healthy, void *ctx);
 static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx);
 
@@ -488,7 +491,26 @@ static void new_work_connection(struct bufferevent *bev, struct tmux_stream *str
 
 	// Send work connection request
 	debug(LOG_DEBUG, "Sending new work connection request: length=%d", msg_len);
-	send_msg_frp_server(bev, TypeNewWorkConn, work_conn_msg, msg_len, stream);
+
+	/* For QUIC work streams, send the initial NewWorkConn synchronously
+	 * on the QUIC wire so frps sees data before it can FIN the stream.
+	 * The bev/socketpair path is used for subsequent data relay. */
+	struct common_conf *conf = get_common_config();
+	if (conf && conf->protocol && strcmp(conf->protocol, "quic") == 0
+	    && bev != main_ctl->connect_bev) {
+		struct msg_hdr *qmsg = NULL;
+		size_t qtotal = 0;
+		if (prepare_message(TypeNewWorkConn, work_conn_msg, msg_len,
+				    &qmsg, &qtotal) == 0) {
+			if (quic_work_stream_send_initial(qmsg, qtotal) < 0)
+				debug(LOG_ERR, "QUIC initial work conn send failed");
+			free(qmsg);
+		} else {
+			debug(LOG_ERR, "QUIC: prepare_message failed");
+		}
+	} else {
+		send_msg_frp_server(bev, TypeNewWorkConn, work_conn_msg, msg_len, stream);
+	}
 
 	// Cleanup
 	SAFE_FREE(work_conn_msg);
@@ -2093,10 +2115,30 @@ void send_msg_frp_server(struct bufferevent *bev,
 			evbuffer_free(tmp);
 		}
 	} else {
-		if (bufferevent_write(bout, (uint8_t *)req_msg, total_len) < 0) {
-			debug(LOG_ERR, "Failed to write message directly"); 
+		/* For QUIC work streams the bev is backed by a socketpair whose
+		 * read end is serviced by the QUIC transport event callback.
+		 * bufferevent_flush only moves data into the socketpair buffer;
+		 * the QUIC transport won't pick it up until the next event-loop
+		 * iteration — by which time frps may have already sent FIN on
+		 * the stream (it accepted the stream but saw no data).  Writing
+		 * directly to the fd ensures the bytes land in the socketpair
+		 * immediately; the QUIC transport's sp_read_cb will fire in the
+		 * same event-loop pass as the incoming QUIC packets. */
+		struct common_conf *conf = get_common_config();
+		if (conf && conf->protocol && strcmp(conf->protocol, "quic") == 0
+		    && bev != main_ctl->connect_bev) {
+			evutil_socket_t fd = bufferevent_getfd(bout);
+			if (fd >= 0) {
+				ssize_t w = write(fd, req_msg, total_len);
+				if (w < 0)
+					debug(LOG_ERR, "QUIC work stream write: %s", strerror(errno));
+			}
 		} else {
-			bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+			if (bufferevent_write(bout, (uint8_t *)req_msg, total_len) < 0) {
+				debug(LOG_ERR, "Failed to write message directly");
+			} else {
+				bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+			}
 		}
 	}
 

@@ -1,0 +1,9 @@
+# frps config for plain TCP test scenario
+bindAddr = "127.0.0.1"
+bindPort = 17000
+auth.method = "token"
+auth.token = "e2e-test-token-2026"
+transport.tls.force = false
+transport.heartbeatTimeout = 90
+log.to = "console"
+log.level = "info"

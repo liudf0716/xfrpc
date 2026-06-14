@@ -987,6 +987,45 @@ struct bufferevent *quic_open_work_stream(struct event_base *base)
 	return bev;
 }
 
+int quic_work_stream_send_initial(const void *data, size_t len)
+{
+	if (!g_qc || g_qc->draining || !data || len == 0) return -1;
+	struct quic_client_ctx *qc = g_qc;
+
+	if (qc->work_stream_count <= 0) return -1;
+	struct work_stream_relay *relay =
+		&qc->work_streams[qc->work_stream_count - 1];
+
+	ngtcp2_vec dv = { .base = (uint8_t *)data, .len = len };
+	ngtcp2_path_storage ps;
+	struct sockaddr_in la;
+	socklen_t al = sizeof(la);
+	getsockname(qc->udp_fd, (struct sockaddr *)&la, &al);
+	ngtcp2_path_storage_init(&ps, (struct sockaddr *)&la, al, NULL, 0, NULL);
+	ngtcp2_pkt_info pi;
+	memset(&pi, 0, sizeof(pi));
+
+	ngtcp2_ssize nw = ngtcp2_conn_writev_stream(
+			qc->conn, &ps.path, &pi,
+			qc->wbuf, sizeof(qc->wbuf), NULL,
+			NGTCP2_WRITE_STREAM_FLAG_NONE,
+			relay->stream_id, &dv, 1, qc_ts());
+	if (nw <= 0) {
+		debug(LOG_ERR, "QUIC work stream send_initial: writev_stream returned %zd (%s)",
+		      (ssize_t)nw, nw < 0 ? ngtcp2_strerror((int)nw) : "nothing to write");
+		return -1;
+	}
+	ssize_t sent = send(qc->udp_fd, qc->wbuf, (size_t)nw, 0);
+	if (sent < 0) {
+		debug(LOG_ERR, "QUIC work stream send_initial: send: %s", strerror(errno));
+		return -1;
+	}
+	debug(LOG_DEBUG, "QUIC work stream %zd: sent %zd initial bytes",
+	      (ssize_t)relay->stream_id, (ssize_t)len);
+	qc_write_udp(qc);
+	return 0;
+}
+
 void quic_transport_reset(void)
 {
 	if (g_qc) {

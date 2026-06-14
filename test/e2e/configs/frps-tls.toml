@@ -1,0 +1,11 @@
+# frps config for TLS test scenario
+bindAddr = "127.0.0.1"
+bindPort = 17004
+auth.method = "token"
+auth.token = "e2e-test-token-2026"
+transport.tls.force = true
+transport.tls.certFile = "test/e2e/certs/server.crt"
+transport.tls.keyFile = "test/e2e/certs/server.key"
+transport.heartbeatTimeout = 90
+log.to = "console"
+log.level = "info"

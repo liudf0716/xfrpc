@@ -56,7 +56,7 @@ SCENARIOS = {
         "remote_port": 16002,
     },
     "quic": {
-        "desc": "QUIC transport (work stream FIN issue — see #QUIC-WS)",
+        "desc": "QUIC transport",
         "frps_cfg": CONFIGS_DIR / "frps-quic.toml",
         "xfrpc_cfg": CONFIGS_DIR / "xfrpc-quic.ini",
         "remote_port": 16003,

@@ -85,6 +85,7 @@ struct quic_client_ctx {
 		int64_t  stream_id;
 		int      sp_fd;      /* write end: data from QUIC -> bev */
 		struct evbuffer *out_buf;
+		struct event *read_ev; /* re-trigger sp_read_cb for partial sends */
 	} work_streams[64];
 	int work_stream_count;
 };
@@ -257,6 +258,10 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 			for (int i = 0; i < qc->work_stream_count; i++) {
 				if (qc->work_streams[i].stream_id == sid) {
 					debug(LOG_WARNING, "QUIC client: work stream %zd FIN", (ssize_t)sid);
+					if (qc->work_streams[i].read_ev) {
+						event_free(qc->work_streams[i].read_ev);
+						qc->work_streams[i].read_ev = NULL;
+					}
 					if (qc->work_streams[i].sp_fd >= 0) {
 						close(qc->work_streams[i].sp_fd);
 						qc->work_streams[i].sp_fd = -1;
@@ -290,12 +295,19 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 			if (qc->work_streams[i].stream_id == sid &&
 			    qc->work_streams[i].sp_fd >= 0) {
 				if (qc->work_streams[i].out_buf) {
+					size_t before = evbuffer_get_length(qc->work_streams[i].out_buf);
 					evbuffer_add(qc->work_streams[i].out_buf, data, len);
 					int n = evbuffer_write(qc->work_streams[i].out_buf,
 							       qc->work_streams[i].sp_fd);
+					size_t after = evbuffer_get_length(qc->work_streams[i].out_buf);
+					debug(LOG_DEBUG, "QUIC work stream %zd: relay %zu bytes, wrote %d, "
+					      "buf %zu->%zu", (ssize_t)sid, len, n, before, after);
 					if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
 						debug(LOG_ERR, "QUIC work stream %zd write err: %s",
 						      (ssize_t)sid, strerror(errno));
+					if (after > 0)
+						debug(LOG_WARNING, "QUIC work stream %zd: %zu bytes stuck in out_buf!",
+						      (ssize_t)sid, after);
 				}
 				return 0;
 			}
@@ -361,6 +373,10 @@ static int qc_stream_close(ngtcp2_conn *c, uint32_t flags, int64_t sid,
 		if (qc->work_streams[i].stream_id == sid) {
 			debug(LOG_WARNING, "QUIC client: work stream %zd closed by peer",
 			      (ssize_t)sid);
+			if (qc->work_streams[i].read_ev) {
+				event_free(qc->work_streams[i].read_ev);
+				qc->work_streams[i].read_ev = NULL;
+			}
 			if (qc->work_streams[i].sp_fd >= 0) {
 				close(qc->work_streams[i].sp_fd);
 				qc->work_streams[i].sp_fd = -1;
@@ -895,10 +911,30 @@ static void qc_work_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 	if (!qc || qc->draining) return;
 
 	uint8_t buf[QC_RELAY_BUF_SIZE];
-	ssize_t n = read(fd, buf, sizeof(buf));
-	if (n <= 0) { if (n < 0 && errno == EAGAIN) return; return; }
+	const uint8_t *send_ptr;
+	size_t send_len;
 
-	ngtcp2_vec dv = { .base = buf, .len = (size_t)n };
+	/* If there's leftover data from a previous partial send, send that first */
+	if (relay->out_buf && evbuffer_get_length(relay->out_buf) > 0) {
+		/* Append any new data from sp[0] */
+		ssize_t n = read(fd, buf, sizeof(buf));
+		if (n > 0) evbuffer_add(relay->out_buf, buf, (size_t)n);
+		send_len = evbuffer_get_length(relay->out_buf);
+		if (send_len == 0) return;
+		struct evbuffer_iovec iov;
+		if (evbuffer_peek(relay->out_buf, send_len, NULL, &iov, 1) < 1) return;
+		send_ptr = iov.iov_base;
+	} else {
+		ssize_t n = read(fd, buf, sizeof(buf));
+		if (n <= 0) { if (n < 0 && errno == EAGAIN) return; return; }
+		send_ptr = buf;
+		send_len = (size_t)n;
+	}
+
+	debug(LOG_DEBUG, "QUIC work sp_read_cb: stream %zd sending %zu bytes",
+	      (ssize_t)relay->stream_id, send_len);
+
+	ngtcp2_vec dv = { .base = (uint8_t *)send_ptr, .len = send_len };
 	ngtcp2_path_storage ps;
 	struct sockaddr_in la;
 	socklen_t al = sizeof(la);
@@ -907,9 +943,10 @@ static void qc_work_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 	ngtcp2_pkt_info pi;
 	memset(&pi, 0, sizeof(pi));
 
+	ngtcp2_ssize pdatalen = 0;
 	ngtcp2_ssize nw = ngtcp2_conn_writev_stream(
 			qc->conn, &ps.path, &pi,
-			qc->wbuf, sizeof(qc->wbuf), NULL,
+			qc->wbuf, sizeof(qc->wbuf), &pdatalen,
 			NGTCP2_WRITE_STREAM_FLAG_NONE,
 			relay->stream_id, &dv, 1, qc_ts());
 	if (nw == NGTCP2_ERR_DRAINING) {
@@ -922,11 +959,29 @@ static void qc_work_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 		      ngtcp2_strerror((int)nw));
 		return;
 	}
-	/* CRITICAL: Send the packet immediately before qc_write_udp overwrites wbuf */
 	if (nw > 0) {
 		send(qc->udp_fd, qc->wbuf, (size_t)nw, 0);
 	}
 	qc_write_udp(qc);
+
+	/* Handle partial consumption by ngtcp2 */
+	size_t consumed = (pdatalen >= 0) ? (size_t)pdatalen : send_len;
+	if (relay->out_buf && evbuffer_get_length(relay->out_buf) > 0) {
+		/* Drain consumed bytes from out_buf */
+		evbuffer_drain(relay->out_buf, consumed);
+		/* If data remains, re-trigger to flush */
+		if (evbuffer_get_length(relay->out_buf) > 0 && relay->read_ev)
+			event_active(relay->read_ev, EV_READ, 0);
+	} else if (consumed < send_len) {
+		/* Stash unconsumed data in out_buf */
+		size_t leftover = send_len - consumed;
+		debug(LOG_DEBUG, "QUIC work stream %zd: partial send %zu/%zu, "
+		      "%zu bytes stashed", (ssize_t)relay->stream_id,
+		      consumed, send_len, leftover);
+		if (!relay->out_buf) relay->out_buf = evbuffer_new();
+		evbuffer_add(relay->out_buf, send_ptr + consumed, leftover);
+		if (relay->read_ev) event_active(relay->read_ev, EV_READ, 0);
+	}
 }
 
 struct bufferevent *quic_open_work_stream(struct event_base *base)
@@ -970,6 +1025,7 @@ struct bufferevent *quic_open_work_stream(struct event_base *base)
 		qc->work_stream_count--;
 		return NULL;
 	}
+	relay->read_ev = sp_ev;
 	event_add(sp_ev, NULL);
 
 	debug(LOG_INFO, "QUIC: opened work stream %zd", (ssize_t)sid);

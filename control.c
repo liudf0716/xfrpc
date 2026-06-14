@@ -1112,6 +1112,23 @@ static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
 }
 
 /**
+ * @brief Creates a null-terminated copy of msg->data for JSON parsing.
+ *
+ * msg->data points into an evbuffer (or decrypted buffer) and is NOT
+ * null-terminated.  json_tokener_parse requires a C string.
+ * The caller must free() the returned pointer.
+ */
+static char *msg_data_to_json(const struct msg_hdr *msg)
+{
+	int data_len = (int)msg_hton(msg->length);
+	char *json_str = malloc(data_len + 1);
+	if (!json_str) return NULL;
+	memcpy(json_str, msg->data, data_len);
+	json_str[data_len] = '\0';
+	return json_str;
+}
+
+/**
  * @brief Handles the control work based on received buffer data
  *
  * Processes control messages received in the buffer and performs
@@ -1152,16 +1169,26 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 	case TypeUDPPacket:
 		handle_type_udp_packet(msg, ctx);
 		break;
-	case TypeNewVisitorConnResp:
-		handle_visitor_conn_resp((const char *)msg->data, (struct proxy_client *)ctx);
-		break;
-	case TypeNatHoleResp:
-		/* Handle XTCP NAT hole-punch response (visitor or client) */
-		debug(LOG_DEBUG, "[CTRL_WORK] NatHoleResp received");
-		if (!xtcp_client_handle_nat_hole_resp((const char *)msg->data)) {
-			xtcp_handle_nat_hole_resp_msg((const char *)msg->data);
+	case TypeNewVisitorConnResp: {
+		char *json = msg_data_to_json(msg);
+		if (json) {
+			handle_visitor_conn_resp(json, (struct proxy_client *)ctx);
+			free(json);
 		}
 		break;
+	}
+	case TypeNatHoleResp: {
+		/* Handle XTCP NAT hole-punch response (visitor or client) */
+		debug(LOG_DEBUG, "[CTRL_WORK] NatHoleResp received");
+		char *json = msg_data_to_json(msg);
+		if (json) {
+			if (!xtcp_client_handle_nat_hole_resp(json)) {
+				xtcp_handle_nat_hole_resp_msg(json);
+			}
+			free(json);
+		}
+		break;
+	}
 	case TypeNatHoleReport:
 		/* NatHoleReport acknowledgment - no action needed */
 		debug(LOG_DEBUG, "[CTRL_WORK] NatHoleReport ack received");

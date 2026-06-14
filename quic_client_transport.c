@@ -255,11 +255,16 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 			shutdown(qc->sp_fd, SHUT_WR);
 		} else {
 			for (int i = 0; i < qc->work_stream_count; i++) {
-				if (qc->work_streams[i].stream_id == sid &&
-				    qc->work_streams[i].sp_fd >= 0) {
+				if (qc->work_streams[i].stream_id == sid) {
 					debug(LOG_WARNING, "QUIC client: work stream %zd FIN", (ssize_t)sid);
-					close(qc->work_streams[i].sp_fd);
-					qc->work_streams[i].sp_fd = -1;
+					if (qc->work_streams[i].sp_fd >= 0) {
+						close(qc->work_streams[i].sp_fd);
+						qc->work_streams[i].sp_fd = -1;
+					}
+					if (qc->work_streams[i].out_buf) {
+						evbuffer_free(qc->work_streams[i].out_buf);
+						qc->work_streams[i].out_buf = NULL;
+					}
 					break;
 				}
 			}
@@ -973,10 +978,9 @@ struct bufferevent *quic_open_work_stream(struct event_base *base)
 	struct bufferevent *bev = bufferevent_socket_new(base, sp[1],
 							BEV_OPT_CLOSE_ON_FREE);
 	if (!bev) {
-		close(sp[1]);
 		event_free(sp_ev);
 		evbuffer_free(relay->out_buf);
-		close(relay->sp_fd);
+		close(sp[0]); close(sp[1]);
 		qc->work_stream_count--;
 		return NULL;
 	}
@@ -989,8 +993,7 @@ void quic_transport_reset(void)
 		debug(LOG_DEBUG, "QUIC: resetting global connection context");
 		struct quic_client_ctx *qc = g_qc;
 		g_qc = NULL;
-		/* Don't fully free here — the bufferevent owns the socketpair.
-		 * Just mark as draining so callbacks stop firing. */
+		/* Mark as draining so callbacks stop firing. */
 		qc->draining = 1;
 		if (qc->udp_read_ev) event_del(qc->udp_read_ev);
 		if (qc->sp_read_ev) event_del(qc->sp_read_ev);
@@ -999,6 +1002,18 @@ void quic_transport_reset(void)
 			event_free(qc->hs_timer_ev);
 			qc->hs_timer_ev = NULL;
 		}
+		/* Clean up work stream relays to avoid fd/evbuffer leaks */
+		for (int i = 0; i < qc->work_stream_count; i++) {
+			if (qc->work_streams[i].sp_fd >= 0) {
+				close(qc->work_streams[i].sp_fd);
+				qc->work_streams[i].sp_fd = -1;
+			}
+			if (qc->work_streams[i].out_buf) {
+				evbuffer_free(qc->work_streams[i].out_buf);
+				qc->work_streams[i].out_buf = NULL;
+			}
+		}
+		qc->work_stream_count = 0;
 	}
 }
 

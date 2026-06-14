@@ -173,6 +173,7 @@ struct frp_coder *clone_coder(const struct frp_coder *coder)
 	memcpy(enc, coder, sizeof(*coder));
 	enc->token = strdup(coder->token);
 	enc->salt = strdup(coder->salt);
+	enc->iv_sent = 0;  /* fresh clone has not sent IV yet */
 
 	if (!enc->token || !enc->salt) {
 		free_frp_coder(enc);
@@ -191,13 +192,23 @@ struct frp_coder *clone_coder(const struct frp_coder *coder)
  *
  * @return Pointer to the initialized main encoder instance
  */
-struct frp_coder *init_main_encoder() 
+struct frp_coder *init_main_encoder()
 {
+	if (main_encoder) {
+		free_frp_coder(main_encoder);
+		main_encoder = NULL;
+	}
 	if (main_decoder) {
 		main_encoder = clone_coder(main_decoder);
 	} else {
 		struct common_conf *c_conf = get_common_config();
 		main_encoder = new_coder(c_conf->auth_token, default_salt);
+	}
+	/* Reset persistent encryption context so it re-initializes with
+	 * the new encoder's key/IV on next encrypt_data() call. */
+	if (enc_ctx) {
+		EVP_CIPHER_CTX_free(enc_ctx);
+		enc_ctx = NULL;
 	}
 	return main_encoder;
 }
@@ -218,12 +229,22 @@ struct frp_coder *init_main_decoder(const uint8_t *iv)
 		debug(LOG_ERR, "init_main_decoder: invalid parameters");
 		return NULL;
 	}
+	if (main_decoder) {
+		free_frp_coder(main_decoder);
+		main_decoder = NULL;
+	}
 	main_decoder = new_coder(c_conf->auth_token, default_salt);
 	if (!main_decoder) {
 		debug(LOG_ERR, "init_main_decoder: new_coder failed");
 		return NULL;
 	}
 	memcpy(main_decoder->iv, iv, block_size);
+	/* Reset persistent decryption context so it re-initializes with
+	 * the new decoder's key/IV on next decrypt_data() call. */
+	if (dec_ctx) {
+		EVP_CIPHER_CTX_free(dec_ctx);
+		dec_ctx = NULL;
+	}
 	return main_decoder;
 }
 

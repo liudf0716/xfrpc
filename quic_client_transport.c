@@ -48,7 +48,7 @@ extern char *tls_get_key_file(void);
 /* Global QUIC connection context — reused for work streams */
 static struct quic_client_ctx *g_qc = NULL;
 
-#define QC_MAX_UDP_PAYLOAD   65527
+#define QC_MAX_UDP_PAYLOAD   1452
 #define QC_HANDSHAKE_TIMEOUT 10
 #define QC_MAX_IDLE_SEC      120
 #define QC_RELAY_BUF_SIZE    65536
@@ -172,7 +172,10 @@ static ngtcp2_conn *qc_get_conn(ngtcp2_crypto_conn_ref *ref)
 static int qc_client_initial(ngtcp2_conn *conn, void *ud)
 {
 	(void)ud;
-	return ngtcp2_crypto_client_initial_cb(conn, ud);
+	debug(LOG_DEBUG, "QUIC client: qc_client_initial called");
+	int rv = ngtcp2_crypto_client_initial_cb(conn, ud);
+	debug(LOG_DEBUG, "QUIC client: qc_client_initial returned %d", rv);
+	return rv;
 }
 
 static int qc_recv_crypto(ngtcp2_conn *conn, ngtcp2_encryption_level level,
@@ -189,7 +192,7 @@ static int qc_recv_crypto(ngtcp2_conn *conn, ngtcp2_encryption_level level,
 	 * opened ASAP so that STREAM frames (LoginResp etc.) from the
 	 * server can be delivered via recv_stream_data.
 	 */
-	int rv = ngtcp2_crypto_recv_crypto_data_cb(conn, level, 0, data, len, ud);
+	int rv = ngtcp2_crypto_recv_crypto_data_cb(conn, level, off, data, len, ud);
 	int tls_err = ngtcp2_conn_get_tls_error(conn);
 	int completed = ngtcp2_conn_get_handshake_completed(conn);
 	debug(LOG_DEBUG, "QUIC client: recv_crypto level=%d len=%zu rv=%d completed=%d hs_done=%d tls_err=%d",
@@ -215,26 +218,7 @@ static int qc_handshake_done(ngtcp2_conn *conn, void *ud)
 	struct quic_client_ctx *qc = ud;
 	qc->handshake_done = 1;
 	debug(LOG_INFO, "QUIC client: handshake_completed callback fired");
-
-	/*
-	 * CRITICAL: Open bidi stream 0 immediately when handshake completes.
-	 * quic-go (frps) sends LoginResp as a STREAM frame on stream 0
-	 * right after the handshake. If stream 0 is not registered in
-	 * ngtcp2 by the time the STREAM frame arrives, ngtcp2 silently
-	 * drops it and recv_stream_data never fires.
-	 */
-	if (qc->stream_id < 0) {
-		int64_t sid;
-		int rv = ngtcp2_conn_open_bidi_stream(conn, &sid, NULL);
-		if (rv == 0) {
-			qc->stream_id = sid;
-			debug(LOG_INFO, "QUIC client: opened bidi stream %zd (in handshake_completed)",
-			      (ssize_t)sid);
-		} else {
-			debug(LOG_ERR, "QUIC client: failed to open bidi stream: %s",
-			      ngtcp2_strerror(rv));
-		}
-	}
+	/* Stream 0 will be opened in handshake_confirmed callback */
 	return 0;
 }
 
@@ -244,6 +228,9 @@ static int qc_handshake_confirmed(ngtcp2_conn *conn, void *ud)
 	struct quic_client_ctx *qc = ud;
 	debug(LOG_INFO, "QUIC client: handshake_confirmed callback fired");
 	qc->handshake_confirmed = 1;
+	/* Stream 0 will be opened in qc_handshake_timer_cb after the
+	 * handshake timer finishes, to ensure quic-go has fully processed
+	 * the handshake confirmation before we open streams. */
 	return 0;
 }
 
@@ -254,10 +241,43 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 {
 	struct quic_client_ctx *qc = ud;
 	(void)conn; (void)flags; (void)off; (void)sud;
+
+	debug(LOG_DEBUG, "QUIC client: recv_stream_data ENTER sid=%zd len=%zu flags=0x%x",
+	      (ssize_t)sid, len, flags);
+
+	/* Handle FIN with no data — peer closed the stream for writing.
+	 * Signal EOF to the socketpair so the control code sees it promptly,
+	 * rather than waiting for the stream_close callback. */
+	if (len == 0 && (flags & NGTCP2_STREAM_DATA_FLAG_FIN)) {
+		debug(LOG_INFO, "QUIC client: stream %zd received FIN (no data)", (ssize_t)sid);
+		if (sid == qc->stream_id && qc->sp_fd >= 0) {
+			debug(LOG_WARNING, "QUIC client: control stream FIN, notifying control code");
+			shutdown(qc->sp_fd, SHUT_WR);
+		} else {
+			for (int i = 0; i < qc->work_stream_count; i++) {
+				if (qc->work_streams[i].stream_id == sid &&
+				    qc->work_streams[i].sp_fd >= 0) {
+					debug(LOG_WARNING, "QUIC client: work stream %zd FIN", (ssize_t)sid);
+					close(qc->work_streams[i].sp_fd);
+					qc->work_streams[i].sp_fd = -1;
+					break;
+				}
+			}
+		}
+		return 0;
+	}
+
 	if (len <= 0) return 0;
 
-	debug(LOG_DEBUG, "QUIC client: stream %zd recv %zu bytes",
-	      (ssize_t)sid, len);
+	/* Log first 32 bytes of received data */
+	if (len > 0) {
+		int show = len < 32 ? (int)len : 32;
+		char hex[100];
+		for (int i = 0; i < show; i++) snprintf(hex + i*3, 4, "%02x ", data[i]);
+		hex[show*3] = 0;
+		debug(LOG_DEBUG, "QUIC client: stream %zd recv %zu bytes: [%s]",
+		      (ssize_t)sid, len, hex);
+	}
 
 	/* Route to work stream relay if not the control stream */
 	if (sid != qc->stream_id) {
@@ -299,13 +319,54 @@ static int qc_acked(ngtcp2_conn *c, int64_t sid, uint64_t off,
 
 static int qc_stream_open(ngtcp2_conn *c, int64_t sid, void *ud)
 {
-	(void)c; (void)sid; (void)ud; return 0;
+	(void)c; (void)ud;
+	debug(LOG_DEBUG, "QUIC client: stream_open sid=%zd", (ssize_t)sid);
+	return 0;
 }
 
 static int qc_stream_close(ngtcp2_conn *c, uint32_t flags, int64_t sid,
 			   uint64_t ec, void *ud, void *sud)
 {
-	(void)c; (void)flags; (void)sid; (void)ec; (void)ud; (void)sud;
+	struct quic_client_ctx *qc = ud;
+	(void)c; (void)sud;
+
+	debug(LOG_INFO, "QUIC client: stream_close sid=%zd flags=0x%x ec=%llu",
+	      (ssize_t)sid, flags, (unsigned long long)ec);
+
+	if (!qc) return 0;
+
+	/* If the control stream is closed by the peer, close the write end
+	 * of the socketpair so the libevent control code sees EOF and can
+	 * trigger reconnection. Without this, the control code blocks forever
+	 * on the socketpair read. */
+	if (sid == qc->stream_id) {
+		debug(LOG_WARNING, "QUIC client: control stream %zd closed by peer, "
+		      "notifying control code", (ssize_t)sid);
+		if (qc->sp_fd >= 0) {
+			/* Shutdown the write side so the bev read end gets EOF.
+			 * We use shutdown(SHUT_WR) rather than close() because
+			 * the bufferevent owns the other end of the socketpair. */
+			shutdown(qc->sp_fd, SHUT_WR);
+		}
+		return 0;
+	}
+
+	/* If a work stream is closed by the peer, close its socketpair end */
+	for (int i = 0; i < qc->work_stream_count; i++) {
+		if (qc->work_streams[i].stream_id == sid) {
+			debug(LOG_WARNING, "QUIC client: work stream %zd closed by peer",
+			      (ssize_t)sid);
+			if (qc->work_streams[i].sp_fd >= 0) {
+				close(qc->work_streams[i].sp_fd);
+				qc->work_streams[i].sp_fd = -1;
+			}
+			if (qc->work_streams[i].out_buf) {
+				evbuffer_free(qc->work_streams[i].out_buf);
+				qc->work_streams[i].out_buf = NULL;
+			}
+			break;
+		}
+	}
 	return 0;
 }
 
@@ -424,6 +485,14 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 			debug(LOG_ERR, "QUIC client: fatal error in read_pkt: %s (%d), tls_err=%d",
 			      ngtcp2_strerror(rv), rv, tls_err);
 			qc->draining = 1;
+			/* Remove UDP read event to prevent CPU spin on draining connection */
+			if (qc->udp_read_ev) {
+				event_del(qc->udp_read_ev);
+			}
+			/* Notify caller of failure so reconnect can happen */
+			if (qc->hs_cb && !qc->handshake_confirmed) {
+				qc->hs_cb(NULL, qc->hs_cb_arg);
+			}
 			return;
 		}
 		debug(LOG_DEBUG, "QUIC client: read_pkt non-fatal: %s (%d)",
@@ -465,12 +534,22 @@ static void qc_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 	if (nw == NGTCP2_ERR_DRAINING) {
 		qc->draining = 1;
 		debug(LOG_ERR, "QUIC client: connection draining in sp_read_cb");
+		/* Stop events to prevent CPU spin */
+		if (qc->udp_read_ev) event_del(qc->udp_read_ev);
+		if (qc->sp_read_ev) event_del(qc->sp_read_ev);
 		return;
 	}
 	if (nw < 0) {
 		debug(LOG_ERR, "QUIC client: writev_stream in sp_read_cb: %s",
 		      ngtcp2_strerror((int)nw));
 		return;
+	}
+	/* Send the packet generated by writev_stream immediately.
+	 * qc_write_udp() overwrites qc->wbuf, so the packet must be sent first
+	 * to avoid losing stream data. */
+	if (nw > 0) {
+		ssize_t sent = send(qc->udp_fd, qc->wbuf, (size_t)nw, 0);
+		(void)sent;
 	}
 	qc_write_udp(qc);
 }
@@ -479,9 +558,28 @@ static void qc_timer_cb(evutil_socket_t fd, short what, void *arg)
 {
 	struct quic_client_ctx *qc = arg;
 	(void)fd; (void)what;
-	if (ngtcp2_conn_handle_expiry(qc->conn, qc_ts()) != 0) {
-		qc->draining = 1;
-		return;
+	if (qc->draining) return;  /* Already draining — do nothing */
+	int rv = ngtcp2_conn_handle_expiry(qc->conn, qc_ts());
+	if (rv != 0) {
+		debug(LOG_DEBUG, "QUIC client: timer expiry returned %d (%s), "
+		      "hs_done=%d confirmed=%d",
+		      rv, ngtcp2_strerror(rv),
+		      qc->handshake_done, qc->handshake_confirmed);
+		/* Only drain for truly fatal errors; let handshake timer
+		 * handle transient issues during the handshake phase. */
+		if (ngtcp2_err_is_fatal(rv) &&
+		    (rv != NGTCP2_ERR_HANDSHAKE_TIMEOUT || qc->handshake_done)) {
+			qc->draining = 1;
+			/* Stop UDP read to prevent CPU spin */
+			if (qc->udp_read_ev) event_del(qc->udp_read_ev);
+			/* Notify caller if handshake never completed */
+			if (qc->hs_cb && !qc->handshake_confirmed) {
+				qc->hs_cb(NULL, qc->hs_cb_arg);
+			}
+			return;
+		}
+		/* Transient or handshake-timeout during handshake phase —
+		 * the handshake timer will handle retransmission/retry. */
 	}
 	qc_write_udp(qc);
 }
@@ -489,6 +587,8 @@ static void qc_timer_cb(evutil_socket_t fd, short what, void *arg)
 static void qc_free(struct quic_client_ctx *qc)
 {
 	if (!qc) return;
+	/* Clear global pointer if it points to this context */
+	if (g_qc == qc) g_qc = NULL;
 	if (qc->conn) ngtcp2_conn_del(qc->conn);
 	if (qc->ssl) SSL_free(qc->ssl);
 	if (qc->ssl_ctx) SSL_CTX_free(qc->ssl_ctx);
@@ -609,8 +709,9 @@ int quic_connect_to_server(struct event_base *base,
 	/* ngtcp2 settings */
 	ngtcp2_settings settings;
 	ngtcp2_settings_default(&settings);
+	/* settings.initial_ts = 0; -- use default (0 = epoch, ngtcp2 handles this) */
 	settings.max_tx_udp_payload_size = QC_MAX_UDP_PAYLOAD;
-	settings.handshake_timeout = QC_HANDSHAKE_TIMEOUT * NGTCP2_SECONDS;
+	/* Use ngtcp2 default handshake_timeout (UINT64_MAX = no timeout) */
 
 	ngtcp2_transport_params tp;
 	ngtcp2_transport_params_default(&tp);
@@ -618,6 +719,7 @@ int quic_connect_to_server(struct event_base *base,
 	tp.initial_max_stream_data_bidi_local = 512 * 1024;
 	tp.initial_max_stream_data_bidi_remote = 512 * 1024;
 	tp.initial_max_streams_bidi = 100;
+	tp.initial_max_streams_uni = 10;
 	tp.max_idle_timeout = (uint64_t)QC_MAX_IDLE_SEC * NGTCP2_SECONDS;
 
 	int rv = ngtcp2_conn_client_new(&qc->conn, &qc->dcid, &qc->scid,
@@ -695,19 +797,19 @@ static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg)
 	qc_write_udp(qc);
 
 	if (qc->draining) {
-		/* If the handshake is confirmed, the draining state is real.
-		 * But if it's not confirmed yet, the draining might be transient —
-		 * ngtcp2 can enter draining before the handshake_confirmed callback
-		 * fires. Reset and wait for the next packet. */
-		if (qc->handshake_confirmed || qc->handshake_done) {
-			debug(LOG_ERR, "QUIC client: connection draining during handshake (confirmed=%d, done=%d)",
-			      qc->handshake_confirmed, qc->handshake_done);
+		/* Only treat draining as permanent failure when the handshake is
+		 * fully confirmed.  ngtcp2 can enter a transient draining state
+		 * between handshake_done and handshake_confirmed — in that window
+		 * the connection is still recoverable. */
+		if (qc->handshake_confirmed) {
+			debug(LOG_ERR, "QUIC client: connection draining after handshake confirmed");
 			if (qc->hs_cb) qc->hs_cb(NULL, qc->hs_cb_arg);
 			qc_free(qc);
 			return;
 		}
 		/* Transient draining — reset and re-arm timer */
-		debug(LOG_DEBUG, "QUIC client: transient draining (not confirmed yet), resetting");
+		debug(LOG_DEBUG, "QUIC client: transient draining (confirmed=%d, done=%d), resetting",
+		      qc->handshake_confirmed, qc->handshake_done);
 		qc->draining = 0;
 		struct timeval hs_interval = { 0, 10000 };
 		evtimer_add(qc->hs_timer_ev, &hs_interval);
@@ -721,7 +823,17 @@ static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	/* Handshake completed — stop the handshake timer */
+	/* Wait for handshake_confirmed before proceeding.
+	 * quic-go v0.55.0 may not accept stream data until the handshake
+	 * is fully confirmed (not just completed). */
+	if (!qc->handshake_confirmed) {
+		debug(LOG_DEBUG, "QUIC client: handshake done but not confirmed, waiting...");
+		struct timeval hs_interval = { 0, 10000 };
+		evtimer_add(qc->hs_timer_ev, &hs_interval);
+		return;
+	}
+
+	/* Handshake completed and confirmed — stop the handshake timer */
 	if (qc->hs_timer_ev) {
 		evtimer_del(qc->hs_timer_ev);
 		event_free(qc->hs_timer_ev);
@@ -805,6 +917,10 @@ static void qc_work_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 		      ngtcp2_strerror((int)nw));
 		return;
 	}
+	/* CRITICAL: Send the packet immediately before qc_write_udp overwrites wbuf */
+	if (nw > 0) {
+		send(qc->udp_fd, qc->wbuf, (size_t)nw, 0);
+	}
 	qc_write_udp(qc);
 }
 
@@ -865,6 +981,25 @@ struct bufferevent *quic_open_work_stream(struct event_base *base)
 		return NULL;
 	}
 	return bev;
+}
+
+void quic_transport_reset(void)
+{
+	if (g_qc) {
+		debug(LOG_DEBUG, "QUIC: resetting global connection context");
+		struct quic_client_ctx *qc = g_qc;
+		g_qc = NULL;
+		/* Don't fully free here — the bufferevent owns the socketpair.
+		 * Just mark as draining so callbacks stop firing. */
+		qc->draining = 1;
+		if (qc->udp_read_ev) event_del(qc->udp_read_ev);
+		if (qc->sp_read_ev) event_del(qc->sp_read_ev);
+		if (qc->hs_timer_ev) {
+			evtimer_del(qc->hs_timer_ev);
+			event_free(qc->hs_timer_ev);
+			qc->hs_timer_ev = NULL;
+		}
+	}
 }
 
 #else /* !HAVE_NGTCP2 */

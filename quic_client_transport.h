@@ -66,4 +66,9 @@ int quic_transport_available(void);
  */
 struct bufferevent *quic_open_work_stream(struct event_base *base);
 
+/**
+ * @brief Reset QUIC connection state for clean reconnection.
+ */
+void quic_transport_reset(void);
+
 #endif /* XFRPC_QUIC_CLIENT_TRANSPORT_H */

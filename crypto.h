@@ -22,6 +22,7 @@ struct frp_coder {
 	char        *salt;      /**< Salt value for key derivation */
 	uint8_t     iv[16];     /**< Initialization vector */
 	char        *token;     /**< Authentication token */
+	int         iv_sent;    /**< Whether IV has been sent (golib compat) */
 };
 
 /**

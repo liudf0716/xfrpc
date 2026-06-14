@@ -873,6 +873,7 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 			debug(LOG_ERR, "Failed to initialize decoder");
 			return -1;
 		}
+		{ char ivh[33]; for(int i=0;i<16;i++) snprintf(ivh+i*2,3,"%02x",buf[i]); ivh[32]=0; debug(LOG_DEBUG, "[ENC_MSG] IV=%s", ivh); }
 
 		buf += block_size;
 		remaining_len -= block_size;
@@ -886,6 +887,7 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 	}
 
 	// Decrypt the message
+	{ char eh[64]; int elen = remaining_len < 16 ? remaining_len : 16; for(int i=0;i<elen;i++) snprintf(eh+i*2,3,"%02x",buf[i]); eh[elen*2]=0; debug(LOG_DEBUG, "[ENC_MSG] enc_data(%d)=%s", remaining_len, eh); }
 	uint8_t *dec_msg = NULL;
 	size_t dec_len = decrypt_data(buf, remaining_len, get_main_decoder(), &dec_msg);
 	
@@ -935,7 +937,14 @@ static void handle_type_req_work_conn(void *ctx)
  */
 static void handle_type_new_proxy_resp(struct msg_hdr *msg)
 {
-	struct new_proxy_response *npr = new_proxy_resp_unmarshal((const char *)msg->data);
+	int data_len = (int)msg_hton(msg->length);
+	char *json_str = malloc(data_len + 1);
+	if (!json_str) return;
+	memcpy(json_str, msg->data, data_len);
+	json_str[data_len] = '\0';
+
+	struct new_proxy_response *npr = new_proxy_resp_unmarshal(json_str);
+	free(json_str);
 	if (!npr) {
 		debug(LOG_ERR, "Failed to unmarshal new proxy response");
 		return;
@@ -990,7 +999,18 @@ static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
     debug(LOG_DEBUG, "[START_WORK_CONN] Received TypeStartWorkConn, data_len=%d",
           msg_hton(msg->length));
 
-    struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal((const char *)msg->data);
+int data_len = (int)msg_hton(msg->length);
+	debug(LOG_DEBUG, "[START_WORK_CONN] Raw data: %.*s",
+          data_len, msg->data);
+
+	/* null-terminate before passing to json_tokener_parse (same fix as login) */
+	char *json_str = malloc(data_len + 1);
+	if (!json_str) return;
+	memcpy(json_str, msg->data, data_len);
+	json_str[data_len] = '\0';
+
+	struct start_work_conn_resp *sr = start_work_conn_resp_unmarshal(json_str);
+	free(json_str);
     if (!sr) {
         debug(LOG_ERR, "Failed to unmarshal TypeStartWorkConn");
         return;
@@ -1061,7 +1081,14 @@ static void handle_type_start_work_conn(struct msg_hdr *msg, int len, void *ctx)
  */
 static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
 {
-	struct udp_packet *udp = udp_packet_unmarshal((const char *)msg->data);
+	int data_len = (int)msg_hton(msg->length);
+	char *json_str = malloc(data_len + 1);
+	if (!json_str) return;
+	memcpy(json_str, msg->data, data_len);
+	json_str[data_len] = '\0';
+
+	struct udp_packet *udp = udp_packet_unmarshal(json_str);
+	free(json_str);
 	if (!udp) {
 		debug(LOG_ERR, "Failed to unmarshal TypeUDPPacket");
 		return;
@@ -1167,7 +1194,20 @@ static int validate_login_msg(const struct msg_hdr *mhdr) {
  * @return Returns status code: 0 on success, negative value on failure
  */
 static int process_login_response(const struct msg_hdr *mhdr) {
-	struct login_resp *lres = login_resp_unmarshal((const char *)mhdr->data);
+	/* mhdr->data points into an evbuffer and is NOT null-terminated.
+	 * json_tokener_parse requires a C string, so we must copy and
+	 * null-terminate before passing it. */
+	int data_len = (int)msg_hton(mhdr->length);
+	char *json_str = malloc(data_len + 1);
+	if (!json_str) {
+		debug(LOG_ERR, "Failed to allocate login response buffer");
+		return 0;
+	}
+	memcpy(json_str, mhdr->data, data_len);
+	json_str[data_len] = '\0';
+
+	struct login_resp *lres = login_resp_unmarshal(json_str);
+	free(json_str);
 	if (!lres) {
 		debug(LOG_ERR, "Failed to unmarshal login response");
 		return 0;
@@ -1183,46 +1223,6 @@ static int process_login_response(const struct msg_hdr *mhdr) {
 
 	return 1;
 }
-
-/**
- * @brief Handles any remaining data after processing the message header
- * 
- * Processes remaining data from a message after the header has been handled.
- * 
- * @param mhdr Pointer to the message header structure
- * @param login_len Length of the login data
- * @param ilen Input length of the data
- * 
- * @note This function assumes the message header has already been validated
- */
-static void handle_remaining_data(struct msg_hdr *mhdr, int login_len, int ilen) {
-	struct common_conf *c_conf = get_common_config();
-	if (!c_conf || c_conf->tcp_mux) {
-		return;
-	}
-
-	uint8_t *enc_msg = mhdr->data + login_len;
-	uint8_t *frps_cmd = NULL;
-	
-	int nret = handle_enc_msg(enc_msg, ilen, &frps_cmd);
-	if (nret <= 0 || !frps_cmd) {
-		debug(LOG_ERR, "Failed to handle encrypted message");
-		return;
-	}
-
-	if (frps_cmd[0] != TypeReqWorkConn) {
-		debug(LOG_ERR, "Unexpected message type: %d", frps_cmd[0]);
-		free(frps_cmd);
-		return;
-	}
-
-	start_proxy_services();
-	set_xfrpc_status(true);
-	new_client_connect();
-	
-	free(frps_cmd);
-}
-
 
 /**
  * @brief Handles the response received after a login attempt
@@ -1255,18 +1255,26 @@ static int handle_login_response(const uint8_t *buf, int len)
 	is_login = 1;
 	
 	int login_len = msg_hton(mhdr->length);
-	int remaining_len = len - login_len - sizeof(struct msg_hdr);
+	int consumed = login_len + sizeof(struct msg_hdr);
+	int remaining_len = len - consumed;
 	
-	debug(LOG_INFO, "Login successful - message length: %d, total length: %d, remaining: %d", 
-		  login_len, len, remaining_len);
+	debug(LOG_INFO, "Login successful - message length: %d, total length: %d, consumed: %d, remaining: %d", 
+		  login_len, len, consumed, remaining_len);
 
+	/* Don't process remaining bytes here — they belong to the encrypted
+	 * control channel (IV + encrypted ReqWorkConn etc.) that frps starts
+	 * writing immediately after LoginResp.  Leave them in the evbuffer
+	 * so the next recv_cb picks them up through the normal
+	 * handle_control_work -> handle_enc_msg path. */
 	if (remaining_len > 0) {
-		debug(LOG_DEBUG, "[LOGIN] Remaining %d bytes after LoginResp, first_byte=0x%02x",
-		      remaining_len, mhdr->data[login_len]);
-		handle_remaining_data(mhdr, login_len, remaining_len);
+		debug(LOG_DEBUG, "[LOGIN] %d remaining bytes left in buffer for encrypted channel",
+		      remaining_len);
 	}
 
-	return 1;
+	/* Return only the bytes consumed (LoginResp portion).
+	 * The caller (handle_non_mux) will drain only this many bytes
+	 * from the evbuffer, preserving any trailing encrypted data. */
+	return consumed;
 }
 
 /**
@@ -1471,17 +1479,69 @@ static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int 
 	struct evbuffer_iovec iov;
 	int n = evbuffer_peek(input, len, NULL, &iov, 1);
 	if (n >= 1 && (int)iov.iov_len >= len) {
+		/* Before login, the buffer may contain LoginResp followed by
+		 * encrypted control-channel data (IV + ReqWorkConn).  The
+		 * LoginResp is sent unencrypted by frps through the original
+		 * connection, while subsequent data flows through the crypto
+		 * wrapper.  We must only drain the LoginResp bytes so the
+		 * encrypted tail stays in the evbuffer for the next recv_cb,
+		 * where it will be handled through handle_enc_msg. */
+		int drain_len = len;
+		if (!is_login && len > (int)sizeof(struct msg_hdr)) {
+			struct msg_hdr *mhdr = (struct msg_hdr *)iov.iov_base;
+			if (mhdr->type == TypeLoginResp) {
+				int msg_data_len = (int)msg_hton(mhdr->length);
+				int login_total = msg_data_len + (int)sizeof(struct msg_hdr);
+				if (login_total > 0 && login_total <= len) {
+					drain_len = login_total;
+					debug(LOG_DEBUG, "[NON_MUX] LoginResp: draining %d of %d bytes, "
+					      "leaving %d for encrypted channel",
+					      drain_len, len, len - drain_len);
+				}
+			}
+		}
 		handle_frps_msg((uint8_t *)iov.iov_base, len, ctx);
-		evbuffer_drain(input, len);
+		evbuffer_drain(input, drain_len);
 	} else {
 		/* Fallback: data spans multiple chunks, copy to contiguous buffer */
 		uint8_t *buf = malloc(len);
 		assert(buf);
 		evbuffer_remove(input, buf, len);
+
+		int drain_len = len;
+		if (!is_login && len > (int)sizeof(struct msg_hdr)) {
+			struct msg_hdr *mhdr = (struct msg_hdr *)buf;
+			if (mhdr->type == TypeLoginResp) {
+				int msg_data_len = (int)msg_hton(mhdr->length);
+				int login_total = msg_data_len + (int)sizeof(struct msg_hdr);
+				if (login_total > 0 && login_total <= len) {
+					drain_len = login_total;
+					debug(LOG_DEBUG, "[NON_MUX] LoginResp fallback: draining %d of %d bytes",
+					      drain_len, len);
+				}
+			}
+		}
 		handle_frps_msg(buf, len, ctx);
+
+		if (drain_len < len) {
+			/* Put back unconsumed encrypted bytes */
+			evbuffer_prepend(input, buf + drain_len, len - drain_len);
+		}
 		free(buf);
 	}
 }
+
+/*
+ * NOTE: After LoginResp is consumed, subsequent encrypted control data
+ * (IV + AES-CFB ciphertext) may arrive in the same recv_cb.  In QUIC mode
+ * the frps Writer sends IV(16) + ciphertext in two writes that the QUIC
+ * stream may coalesce.  The ciphertext may span multiple QUIC STREAM
+ * frames, so handle_enc_msg may only get a partial message on the first
+ * pass.  The recv_cb loop re-invokes handle_non_mux once after login
+ * succeeds so the buffered IV+data is picked up; if the message is still
+ * incomplete the data stays in the evbuffer (decoder state is preserved)
+ * and the next recv_cb continues decryption.
+ */
 
 /**
  * @brief Callback function for handling received data from a bufferevent
@@ -1494,21 +1554,31 @@ static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int 
  */
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
-	struct evbuffer *input = bufferevent_get_input(bev);
-	int len = evbuffer_get_length(input);
-	if (len <= 0) {
-		return;
-	}
-
 	struct common_conf *c_conf = get_common_config();
 
-	debug(LOG_DEBUG, "[RECV_CB] %d bytes, tcp_mux=%d, is_login=%d",
-		  len, c_conf->tcp_mux, is_login);
+	debug(LOG_DEBUG, "[RECV_CB] %zu bytes, tcp_mux=%d, is_login=%d",
+		  evbuffer_get_length(bufferevent_get_input(bev)), c_conf->tcp_mux, is_login);
 
 	if (c_conf->tcp_mux) {
-		handle_tcp_mux(bev, len, ctx);
+		struct evbuffer *input = bufferevent_get_input(bev);
+		int len = evbuffer_get_length(input);
+		if (len > 0)
+			handle_tcp_mux(bev, len, ctx);
 	} else {
-		handle_non_mux(bev, input, len, ctx);
+		/* Loop to handle the transition from LoginResp to encrypted
+		 * control channel: after draining LoginResp, remaining bytes
+		 * (IV + encrypted ReqWorkConn) must be processed in the same
+		 * event-loop iteration so the proxy startup is not deferred
+		 * until the next network event. */
+		int prev_login;
+		do {
+			prev_login = is_login;
+			struct evbuffer *input = bufferevent_get_input(bev);
+			int len = evbuffer_get_length(input);
+			if (len <= 0) break;
+			handle_non_mux(bev, input, len, ctx);
+		} while (!prev_login && is_login &&
+		         evbuffer_get_length(bufferevent_get_input(bev)) > 0);
 	}
 }
 
@@ -1695,9 +1765,17 @@ static void keep_control_alive()
 		return;
 	}
 
-	// Start ticker timer
-	schedule_heartbeat_timer(main_ctl->ticker_ping);
-	debug(LOG_DEBUG, "Control keepalive initialized successfully");
+	/* Schedule the first heartbeat after a short delay (1 second) instead
+	 * of the full heartbeat_interval (30s).  This ensures the server sees
+	 * activity promptly after login, preventing QUIC interop issues between
+	 * ngtcp2 and quic-go where the server may close the connection if no
+	 * application-level heartbeat arrives within the first 30 seconds.
+	 * The heartbeat_handler callback will reschedule at the normal interval. */
+	struct timeval tv = { 1, 0 };  /* 1 second initial delay */
+	if (event_add(main_ctl->ticker_ping, &tv) < 0) {
+		debug(LOG_ERR, "Failed to schedule initial heartbeat timer");
+	}
+	debug(LOG_DEBUG, "Control keepalive initialized (first heartbeat in 1s)");
 }
 
 /* Forward declaration — defined after init_server_connection */
@@ -2079,11 +2157,7 @@ static int initialize_encoder(struct bufferevent *bout, struct tmux_stream *stre
 			evbuffer_free(tmp);
 		}
 	} else {
-		if (bufferevent_write(bout, coder->iv, 16) < 0) {
-			debug(LOG_ERR, "Failed to write IV directly");
-			return -1;
-		}
-		bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+		/* IV will be sent together with encrypted data in send_enc_msg_frp_server */
 	}
 	return 0;
 }
@@ -2121,6 +2195,15 @@ void send_enc_msg_frp_server(struct bufferevent *bev,
 		return;
 	}
 
+	// Debug: log first bytes of encrypted message (IV + encrypted data)
+	{
+		int show = enc_len < 48 ? enc_len : 48;
+		char hex[160];
+		for (int i = 0; i < show; i++) snprintf(hex + i*3, 4, "%02x ", enc_msg[i]);
+		hex[show*3] = 0;
+		debug(LOG_DEBUG, "[SEND_ENC] type=%d enc_len=%zu first_bytes=[%s]", type, enc_len, hex);
+	}
+
 	// Send encrypted message
 	struct common_conf *c_conf = get_common_config();
 	if (c_conf->tcp_mux) {
@@ -2134,11 +2217,23 @@ void send_enc_msg_frp_server(struct bufferevent *bev,
 			evbuffer_free(tmp);
 		}
 	} else {
-		if (bufferevent_write(bout, enc_msg, enc_len) < 0) {
-			debug(LOG_ERR, "Failed to write encrypted message directly");
-		} else {
-			bufferevent_flush(bout, EV_WRITE, BEV_FLUSH);
+		/* Write IV (first message only) + encrypted data as a single
+		 * atomic write to the socketpair.  The frps golib Reader only
+		 * reads the IV once — sending it with every message causes the
+		 * frps to treat the extra IV bytes as ciphertext, producing
+		 * garbage that crashes its readLoop. */
+		struct evbuffer *tmp = evbuffer_new();
+		struct frp_coder *enc = get_main_encoder();
+		if (!enc->iv_sent) {
+			evbuffer_add(tmp, enc->iv, 16);
+			enc->iv_sent = 1;
 		}
+		evbuffer_add(tmp, enc_msg, enc_len);
+		evutil_socket_t fd = bufferevent_getfd(bout);
+		if (fd >= 0) {
+			evbuffer_write(tmp, fd);
+		}
+		evbuffer_free(tmp);
 	}
 
 	free(enc_msg);
@@ -2495,13 +2590,23 @@ static void clear_main_control()
 	clear_all_proxy_client();
 	free_crypto_resources();
 
-	// Reinitialize TCP multiplexing if enabled
-	struct common_conf *conf = get_common_config();
-	if (conf && conf->tcp_mux) {
-		uint32_t session_id = get_next_session_id();
-		init_tmux_stream(&main_ctl->stream, session_id, INIT);
-		debug(LOG_DEBUG, "Reinitialized TCP mux stream with session ID %u", session_id);
-	}
+        // Free QUIC/TCP connection bufferevent
+        if (main_ctl->connect_bev) {
+                bufferevent_free(main_ctl->connect_bev);
+                main_ctl->connect_bev = NULL;
+        }
+
+        // Reset QUIC connection state for clean reconnect
+        extern void quic_transport_reset(void);
+        quic_transport_reset();
+
+        // Reinitialize TCP multiplexing if enabled
+        struct common_conf *conf = get_common_config();
+        if (conf && conf->tcp_mux) {
+                uint32_t session_id = get_next_session_id();
+                init_tmux_stream(&main_ctl->stream, session_id, INIT);
+                debug(LOG_DEBUG, "Reinitialized TCP mux stream with session ID %u", session_id);
+        }
 }
 
 /**

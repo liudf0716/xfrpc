@@ -319,11 +319,9 @@ unsigned char *encrypt_key(const char *token, size_t token_len, const char *salt
 		return NULL;
 	}
 
-    debug(LOG_DEBUG, "CRYPTO: token=[%s] salt=[%s] token_len=%zu", token, salt, token_len);
 	PKCS5_PBKDF2_HMAC(token, (int)token_len,
 					  (const unsigned char *)salt, (int)strlen(salt),
 					  64, EVP_sha1(), (int)block_size, key);
-	{ char kh[33]; for(int i=0;i<16;i++) snprintf(kh+i*2,3,"%02x",key[i]); kh[32]=0; debug(LOG_DEBUG, "CRYPTO: derived_key=%s", kh); }
 	return key;
 }
 
@@ -393,9 +391,6 @@ size_t encrypt_data(const uint8_t *src_data, size_t srclen,
 			debug(LOG_ERR, "Failed to create cipher context");
 			return 0;
 		}
-		{ char kh[33]; for(int i=0;i<16;i++) snprintf(kh+i*2,3,"%02x",encoder->key[i]); kh[32]=0;
-		  char ivh[33]; for(int i=0;i<16;i++) snprintf(ivh+i*2,3,"%02x",encoder->iv[i]); ivh[32]=0;
-		  debug(LOG_DEBUG, "[ENCRYPT] key=%s iv=%s", kh, ivh); }
 		EVP_EncryptInit_ex(enc_ctx, EVP_aes_128_cfb(), NULL, 
 						  encoder->key, encoder->iv);
 	}
@@ -462,9 +457,6 @@ size_t decrypt_data(const uint8_t *enc_data, size_t enclen,
 			debug(LOG_ERR, "Failed to create cipher context");
 			return 0;
 		}
-		{ char kh[33]; for(int i=0;i<16;i++) snprintf(kh+i*2,3,"%02x",decoder->key[i]); kh[32]=0;
-		  char ivh[33]; for(int i=0;i<16;i++) snprintf(ivh+i*2,3,"%02x",decoder->iv[i]); ivh[32]=0;
-		  debug(LOG_DEBUG, "[DECRYPT] key=%s iv=%s", kh, ivh); }
 		EVP_DecryptInit_ex(dec_ctx, EVP_aes_128_cfb(), NULL, 
 						  decoder->key, decoder->iv);
 	}

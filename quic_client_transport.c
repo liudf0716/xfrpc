@@ -134,14 +134,13 @@ static int qc_write_udp(struct quic_client_ctx *qc)
 				return -1;
 			}
 			if (n == 0) {
-				debug(LOG_DEBUG, "QUIC client: writev_stream returned 0 (nothing to write)");
+				break;
 			} else {
 				debug(LOG_ERR, "QUIC client: writev_stream returned %zd: %s",
 				      n, ngtcp2_strerror((int)n));
 			}
 			break;
 		}
-		debug(LOG_DEBUG, "QUIC client: sending %zd bytes", n);
 		ssize_t sent = send(qc->udp_fd, qc->wbuf, (size_t)n, 0);
 		if (sent < 0) return -1;
 	}
@@ -173,9 +172,7 @@ static ngtcp2_conn *qc_get_conn(ngtcp2_crypto_conn_ref *ref)
 static int qc_client_initial(ngtcp2_conn *conn, void *ud)
 {
 	(void)ud;
-	debug(LOG_DEBUG, "QUIC client: qc_client_initial called");
 	int rv = ngtcp2_crypto_client_initial_cb(conn, ud);
-	debug(LOG_DEBUG, "QUIC client: qc_client_initial returned %d", rv);
 	return rv;
 }
 
@@ -196,8 +193,6 @@ static int qc_recv_crypto(ngtcp2_conn *conn, ngtcp2_encryption_level level,
 	int rv = ngtcp2_crypto_recv_crypto_data_cb(conn, level, off, data, len, ud);
 	int tls_err = ngtcp2_conn_get_tls_error(conn);
 	int completed = ngtcp2_conn_get_handshake_completed(conn);
-	debug(LOG_DEBUG, "QUIC client: recv_crypto level=%d len=%zu rv=%d completed=%d hs_done=%d tls_err=%d",
-	      level, len, rv, completed, qc->handshake_done, tls_err);
 	if (rv != 0) {
 		debug(LOG_ERR, "QUIC client: crypto_recv_cb failed: rv=%d tls_err=%d", rv, tls_err);
 		return NGTCP2_ERR_CALLBACK_FAILURE;
@@ -243,9 +238,6 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 	struct quic_client_ctx *qc = ud;
 	(void)conn; (void)flags; (void)off; (void)sud;
 
-	debug(LOG_DEBUG, "QUIC client: recv_stream_data ENTER sid=%zd len=%zu flags=0x%x",
-	      (ssize_t)sid, len, flags);
-
 	/* Handle FIN with no data — peer closed the stream for writing.
 	 * Signal EOF to the socketpair so the control code sees it promptly,
 	 * rather than waiting for the stream_close callback. */
@@ -279,35 +271,18 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 
 	if (len <= 0) return 0;
 
-	/* Log first 32 bytes of received data */
-	if (len > 0) {
-		int show = len < 32 ? (int)len : 32;
-		char hex[100];
-		for (int i = 0; i < show; i++) snprintf(hex + i*3, 4, "%02x ", data[i]);
-		hex[show*3] = 0;
-		debug(LOG_DEBUG, "QUIC client: stream %zd recv %zu bytes: [%s]",
-		      (ssize_t)sid, len, hex);
-	}
-
 	/* Route to work stream relay if not the control stream */
 	if (sid != qc->stream_id) {
 		for (int i = 0; i < qc->work_stream_count; i++) {
 			if (qc->work_streams[i].stream_id == sid &&
 			    qc->work_streams[i].sp_fd >= 0) {
 				if (qc->work_streams[i].out_buf) {
-					size_t before = evbuffer_get_length(qc->work_streams[i].out_buf);
 					evbuffer_add(qc->work_streams[i].out_buf, data, len);
 					int n = evbuffer_write(qc->work_streams[i].out_buf,
 							       qc->work_streams[i].sp_fd);
-					size_t after = evbuffer_get_length(qc->work_streams[i].out_buf);
-					debug(LOG_DEBUG, "QUIC work stream %zd: relay %zu bytes, wrote %d, "
-					      "buf %zu->%zu", (ssize_t)sid, len, n, before, after);
 					if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
 						debug(LOG_ERR, "QUIC work stream %zd write err: %s",
 						      (ssize_t)sid, strerror(errno));
-					if (after > 0)
-						debug(LOG_WARNING, "QUIC work stream %zd: %zu bytes stuck in out_buf!",
-						      (ssize_t)sid, after);
 				}
 				return 0;
 			}
@@ -317,12 +292,8 @@ static int qc_recv_stream(ngtcp2_conn *conn, uint32_t flags,
 	}
 
 	/* Control stream: write to control socketpair */
-	debug(LOG_DEBUG, "QUIC client: stream %zd -> control sp (buf=%zu + %zu)",
-	      (ssize_t)sid, evbuffer_get_length(qc->quic_out_buf), len);
 	evbuffer_add(qc->quic_out_buf, data, len);
 	qc_flush_sp(qc);
-	debug(LOG_DEBUG, "QUIC client: control sp flushed (buf=%zu)",
-	      evbuffer_get_length(qc->quic_out_buf));
 	return 0;
 }
 
@@ -337,7 +308,6 @@ static int qc_acked(ngtcp2_conn *c, int64_t sid, uint64_t off,
 static int qc_stream_open(ngtcp2_conn *c, int64_t sid, void *ud)
 {
 	(void)c; (void)ud;
-	debug(LOG_DEBUG, "QUIC client: stream_open sid=%zd", (ssize_t)sid);
 	return 0;
 }
 
@@ -479,13 +449,6 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 			     (struct sockaddr *)&pa, &pal);
 	if (n <= 0) return;
 
-	/* Log first 32 bytes of received packet for full structure analysis */
-	char hex[128] = {0};
-	int hexlen = n < 32 ? (int)n : 32;
-	for (int i = 0; i < hexlen; i++)
-		snprintf(hex + i * 3, 4, "%02x ", buf[i]);
-	debug(LOG_DEBUG, "QUIC client: recv %zd bytes: [%s]", n, hex);
-
 	struct sockaddr_in la;
 	socklen_t lal = sizeof(la);
 	getsockname(fd, (struct sockaddr *)&la, &lal);
@@ -497,11 +460,8 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 
 	int rv = ngtcp2_conn_read_pkt(qc->conn, &path_st.path, NULL,
 				      buf, (size_t)n, qc_ts());
-	int tls_err = ngtcp2_conn_get_tls_error(qc->conn);
-	debug(LOG_DEBUG, "QUIC client: read_pkt returned %d (hs_done=%d, confirmed=%d, stream_id=%zd, draining=%d, tls_err=%d)",
-	      rv, qc->handshake_done, qc->handshake_confirmed,
-	      (ssize_t)qc->stream_id, qc->draining, tls_err);
 	if (rv != 0) {
+		int tls_err = ngtcp2_conn_get_tls_error(qc->conn);
 		if (ngtcp2_err_is_fatal(rv)) {
 			debug(LOG_ERR, "QUIC client: fatal error in read_pkt: %s (%d), tls_err=%d",
 			      ngtcp2_strerror(rv), rv, tls_err);
@@ -516,8 +476,6 @@ static void qc_udp_read_cb(evutil_socket_t fd, short what, void *arg)
 			}
 			return;
 		}
-		debug(LOG_DEBUG, "QUIC client: read_pkt non-fatal: %s (%d)",
-		      ngtcp2_strerror(rv), rv);
 	}
 	qc_flush_sp(qc);
 	qc_write_udp(qc);
@@ -533,9 +491,6 @@ static void qc_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 	ssize_t n = read(fd, buf, sizeof(buf));
 	if (n <= 0) { if (n < 0 && errno == EAGAIN) return; return; }
 
-	debug(LOG_DEBUG, "QUIC client: sp_read_cb: n=%zd stream_id=%zd",
-	      n, (ssize_t)qc->stream_id);
-
 	ngtcp2_vec dv = { .base = buf, .len = (size_t)n };
 	ngtcp2_path_storage ps;
 	struct sockaddr_in la;
@@ -550,8 +505,6 @@ static void qc_sp_read_cb(evutil_socket_t fd, short what, void *arg)
 			qc->wbuf, sizeof(qc->wbuf), NULL,
 			NGTCP2_WRITE_STREAM_FLAG_NONE,
 			qc->stream_id, &dv, 1, qc_ts());
-	debug(LOG_DEBUG, "QUIC client: sp_writev: nw=%zd stream_id=%zd",
-	      (ssize_t)nw, (ssize_t)qc->stream_id);
 	if (nw == NGTCP2_ERR_DRAINING) {
 		qc->draining = 1;
 		debug(LOG_ERR, "QUIC client: connection draining in sp_read_cb");
@@ -582,10 +535,6 @@ static void qc_timer_cb(evutil_socket_t fd, short what, void *arg)
 	if (qc->draining) return;  /* Already draining — do nothing */
 	int rv = ngtcp2_conn_handle_expiry(qc->conn, qc_ts());
 	if (rv != 0) {
-		debug(LOG_DEBUG, "QUIC client: timer expiry returned %d (%s), "
-		      "hs_done=%d confirmed=%d",
-		      rv, ngtcp2_strerror(rv),
-		      qc->handshake_done, qc->handshake_confirmed);
 		/* Only drain for truly fatal errors; let handshake timer
 		 * handle transient issues during the handshake phase. */
 		if (ngtcp2_err_is_fatal(rv) &&
@@ -752,10 +701,6 @@ int quic_connect_to_server(struct event_base *base,
 	}
 	ngtcp2_conn_set_tls_native_handle(qc->conn, qc->ssl);
 
-	debug(LOG_DEBUG, "QUIC client: callbacks registered: recv_stream_data=%p",
-	      (void *)qc_cbs.recv_stream_data);
-
-	/* Set up conn_ref for wolfssl QUIC crypto callbacks */
 	qc->conn_ref.get_conn = qc_get_conn;
 	qc->conn_ref.user_data = qc;
 #ifdef USE_NGTCP2_WOLFSSL
@@ -848,7 +793,6 @@ static void qc_handshake_timer_cb(evutil_socket_t fd, short what, void *arg)
 	 * quic-go v0.55.0 may not accept stream data until the handshake
 	 * is fully confirmed (not just completed). */
 	if (!qc->handshake_confirmed) {
-		debug(LOG_DEBUG, "QUIC client: handshake done but not confirmed, waiting...");
 		struct timeval hs_interval = { 0, 10000 };
 		evtimer_add(qc->hs_timer_ev, &hs_interval);
 		return;

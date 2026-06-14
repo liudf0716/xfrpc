@@ -80,7 +80,6 @@ static void set_xfrpc_status(bool is_connected)
 {
 	// Set global connection status flag 
 	xfrpc_status = is_connected;
-	debug(LOG_DEBUG, "xfrpc connection status set to: %s", is_connected ? "connected" : "disconnected");
 }
 
 /**
@@ -895,7 +894,6 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 			debug(LOG_ERR, "Failed to initialize decoder");
 			return -1;
 		}
-		{ char ivh[33]; for(int i=0;i<16;i++) snprintf(ivh+i*2,3,"%02x",buf[i]); ivh[32]=0; debug(LOG_DEBUG, "[ENC_MSG] IV=%s", ivh); }
 
 		buf += block_size;
 		remaining_len -= block_size;
@@ -909,7 +907,6 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 	}
 
 	// Decrypt the message
-	{ char eh[64]; int elen = remaining_len < 16 ? remaining_len : 16; for(int i=0;i<elen;i++) snprintf(eh+i*2,3,"%02x",buf[i]); eh[elen*2]=0; debug(LOG_DEBUG, "[ENC_MSG] enc_data(%d)=%s", remaining_len, eh); }
 	uint8_t *dec_msg = NULL;
 	size_t dec_len = decrypt_data(buf, remaining_len, get_main_decoder(), &dec_msg);
 	
@@ -917,9 +914,6 @@ static int handle_enc_msg(const uint8_t *enc_msg, int ilen, uint8_t **out)
 		debug(LOG_ERR, "Decryption failed: dec_len=%zu, dec_msg=%p", dec_len, dec_msg);
 		return -1;
 	}
-
-	debug(LOG_DEBUG, "[ENC_MSG] Decrypted %zu bytes -> %zu bytes, first_byte=0x%02x",
-	      remaining_len, dec_len, dec_msg[0]);
 
 	*out = dec_msg;
 	return dec_len;
@@ -1175,9 +1169,6 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 	struct msg_hdr *msg = (struct msg_hdr *)frps_cmd;
 	uint8_t cmd_type = msg->type;
 
-	debug(LOG_DEBUG, "[CTRL_WORK] cmd_type=0x%02x('%c'), len=%d, ctx=%p",
-	      cmd_type, (cmd_type >= 32 && cmd_type < 127) ? cmd_type : '.', len, ctx);
-
 	switch (cmd_type) {
 	case TypeReqWorkConn:
 		handle_type_req_work_conn(ctx);
@@ -1344,9 +1335,6 @@ static void handle_frps_msg(uint8_t *buf, int len, void *ctx)
 		return;
 	}
 
-	debug(LOG_DEBUG, "[FRPS_MSG] len=%d, first_byte=0x%02x('%c'), is_login=%d, ctx=%p",
-	      len, buf[0], (buf[0] >= 32 && buf[0] < 127) ? buf[0] : '.', is_login, ctx);
-
 	// Handle message based on login state
 	if (!is_login) {
 		// Handle login response first
@@ -1356,7 +1344,6 @@ static void handle_frps_msg(uint8_t *buf, int len, void *ctx)
 		}
 	} else {
 		// Handle control messages after successful login
-		debug(LOG_DEBUG, "Processing control message: length=%d", len);
 		handle_control_work(buf, len, ctx);
 	}
 }
@@ -1604,9 +1591,6 @@ static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int 
 static void recv_cb(struct bufferevent *bev, void *ctx)
 {
 	struct common_conf *c_conf = get_common_config();
-
-	debug(LOG_DEBUG, "[RECV_CB] %zu bytes, tcp_mux=%d, is_login=%d",
-		  evbuffer_get_length(bufferevent_get_input(bev)), c_conf->tcp_mux, is_login);
 
 	if (c_conf->tcp_mux) {
 		struct evbuffer *input = bufferevent_get_input(bev);
@@ -2028,7 +2012,6 @@ void login(void) {
 	}
 
 	// Send login request
-	debug(LOG_DEBUG, "Sending login request: length=%d", msg_len);
 	send_msg_frp_server(NULL, TypeLogin, login_msg, msg_len, &main_ctl->stream);
 
 	// Cleanup
@@ -2087,12 +2070,6 @@ void send_msg_frp_server(struct bufferevent *bev,
 	if (!bout) {
 		debug(LOG_ERR, "No valid bufferevent");
 		return;
-	}
-
-	// Log debug info
-	debug(LOG_DEBUG, "Sending message: type=%d, len=%zu", type, msg_len);
-	if (msg) {
-		debug(LOG_DEBUG, "Message content: %s", msg);
 	}
 
 	// Prepare message
@@ -2262,15 +2239,6 @@ void send_enc_msg_frp_server(struct bufferevent *bev,
 	size_t enc_len = 0;
 	if (prepare_encrypted_message(type, msg, msg_len, &enc_msg, &enc_len) != 0) {
 		return;
-	}
-
-	// Debug: log first bytes of encrypted message (IV + encrypted data)
-	{
-		int show = enc_len < 48 ? enc_len : 48;
-		char hex[160];
-		for (int i = 0; i < show; i++) snprintf(hex + i*3, 4, "%02x ", enc_msg[i]);
-		hex[show*3] = 0;
-		debug(LOG_DEBUG, "[SEND_ENC] type=%d enc_len=%zu first_bytes=[%s]", type, enc_len, hex);
 	}
 
 	// Send encrypted message

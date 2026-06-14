@@ -7,7 +7,7 @@
 #ifndef XFRPC_VERSION_H
 #define XFRPC_VERSION_H
 
-#define VERSION   "5.06.916"
+#define VERSION   "5.06.952"
 #define PROTOCOL_VERESION "0.69.1"
 #define CLIENT_V 1
 

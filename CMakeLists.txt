@@ -15,9 +15,11 @@ find_package(JSON-C REQUIRED)
 find_package(ZLIB REQUIRED)
 
 # TLS/SSL backend selection
-# Source code always uses #include <openssl/*.h> — on OpenWrt, the wolfssl
-# package provides compat headers at /usr/include/openssl/, so no #ifdef
-# needed in source files.  This option only controls which library is linked.
+# Source code always uses #include <openssl/*.h>. When wolfSSL is the
+# backend we add ${WOLFSSL_INCLUDE_DIR}/wolfssl to the include path so
+# that <openssl/ssl.h> resolves to wolfSSL's compat header (which defines
+# #define SSL_CTX_free wolfSSL_CTX_free etc.). This must come BEFORE the
+# system include path to shadow the real OpenSSL headers.
 option(USE_WOLFSSL "Use wolfSSL as TLS backend (default: ON)" ON)
 if(USE_WOLFSSL)
     find_library(WOLFSSL_LIB wolfssl)
@@ -25,6 +27,9 @@ if(USE_WOLFSSL)
     if(WOLFSSL_LIB AND WOLFSSL_INCLUDE_DIR)
         set(SSL_BACKEND "wolfssl")
         set(SSL_LIBRARIES ${WOLFSSL_LIB})
+        # wolfSSL compat headers live under ${WOLFSSL_INCLUDE_DIR}/wolfssl/openssl/
+        # Adding /wolfssl lets #include <openssl/ssl.h> pick them up.
+        include_directories(BEFORE ${WOLFSSL_INCLUDE_DIR}/wolfssl)
         include_directories(${WOLFSSL_INCLUDE_DIR})
         message(STATUS "TLS backend: wolfSSL (${WOLFSSL_LIB})")
     else()

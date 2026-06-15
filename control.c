@@ -494,26 +494,30 @@ static void new_work_connection(struct bufferevent *bev, struct tmux_stream *str
 	/* For QUIC work streams, send the initial NewWorkConn synchronously
 	 * on the QUIC wire so frps sees data before it can FIN the stream.
 	 * The bev/socketpair path is used for subsequent data relay. */
-	struct common_conf *conf = get_common_config();
-	if (conf && conf->protocol && strcmp(conf->protocol, "quic") == 0
-	    && bev != main_ctl->connect_bev) {
-		struct msg_hdr *qmsg = NULL;
-		size_t qtotal = 0;
-		if (prepare_message(TypeNewWorkConn, work_conn_msg, msg_len,
-				    &qmsg, &qtotal) == 0) {
-			if (quic_work_stream_send_initial(qmsg, qtotal) < 0)
-				debug(LOG_ERR, "QUIC initial work conn send failed");
-			free(qmsg);
-		} else {
-			debug(LOG_ERR, "QUIC: prepare_message failed");
-		}
-	} else {
-		send_msg_frp_server(bev, TypeNewWorkConn, work_conn_msg, msg_len, stream);
-	}
+#ifdef HAVE_NGTCP2
+        {
+                struct common_conf *qconf = get_common_config();
+                if (qconf && qconf->protocol && strcmp(qconf->protocol, "quic") == 0
+                    && bev != main_ctl->connect_bev) {
+                        struct msg_hdr *qmsg = NULL;
+                        size_t qtotal = 0;
+                        if (prepare_message(TypeNewWorkConn, work_conn_msg, msg_len,
+                                            &qmsg, &qtotal) == 0) {
+                                if (quic_work_stream_send_initial(qmsg, qtotal) < 0)
+                                        debug(LOG_ERR, "QUIC initial work conn send failed");
+                                free(qmsg);
+                                goto work_conn_cleanup;
+                        }
+                }
+        }
+#endif
+        send_msg_frp_server(bev, TypeNewWorkConn, work_conn_msg, msg_len, stream);
 
-	// Cleanup
-	SAFE_FREE(work_conn_msg);
-	SAFE_FREE(work_c);
+#ifdef HAVE_NGTCP2
+	work_conn_cleanup:
+#endif
+        SAFE_FREE(work_conn_msg);
+        SAFE_FREE(work_c);
 }
 
 /**
@@ -1420,13 +1424,13 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 				break;
 			}
 
-			if (tmux_hdr.type == DATA) {
+			if (tmux_hdr.type == TMUX_DATA) {
 				uint32_t stream_id = ntohl(tmux_hdr.stream_id);
 				stream_len = ntohl(tmux_hdr.length);
-				debug(LOG_DEBUG, "[TMUX] DATA frame: stream=%u, payload=%u, buf_remain=%d",
+				debug(LOG_DEBUG, "[TMUX] TMUX_DATA frame: stream=%u, payload=%u, buf_remain=%d",
 				      stream_id, stream_len, len);
 				if (stream_len > MAX_STREAM_WINDOW_SIZE) {
-					debug(LOG_ERR, "Stream %u: DATA length %u exceeds maximum %u, aborting",
+					debug(LOG_ERR, "Stream %u: TMUX_DATA length %u exceeds maximum %u, aborting",
 					      stream_id, stream_len, MAX_STREAM_WINDOW_SIZE);
 					break;
 				}
@@ -1447,8 +1451,8 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 			}
 		}
 
-		/* ---- Payload consumption (DATA type only) ---- */
-		if (tmux_hdr.type == DATA && stream_len > 0) {
+		/* ---- Payload consumption (TMUX_DATA type only) ---- */
+		if (tmux_hdr.type == TMUX_DATA && stream_len > 0) {
 			uint32_t to_read = (uint32_t)len < stream_len ? (uint32_t)len : stream_len;
 
 			if (cur == &abandon_stream) {
@@ -2634,8 +2638,10 @@ static void clear_main_control()
         }
 
         // Reset QUIC connection state for clean reconnect
+#ifdef HAVE_NGTCP2
         extern void quic_transport_reset(void);
         quic_transport_reset();
+#endif
 
         // Reinitialize TCP multiplexing if enabled
         struct common_conf *conf = get_common_config();

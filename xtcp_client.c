@@ -37,8 +37,9 @@
 #include "config.h"
 #include "utils.h"
 #include "crypto.h"
+#include "ssl_compat.h"
 
-#include <openssl/rand.h>
+
 
 #ifdef HAVE_NGTCP2
 #include "quic_transport.h"

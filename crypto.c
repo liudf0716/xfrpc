@@ -10,8 +10,7 @@
 #include <assert.h>
 #include <time.h>
 #include <syslog.h>
-#include <openssl/ssl.h>
-#include <openssl/rand.h>
+#include "ssl_compat.h"
 
 
 #include "crypto.h"

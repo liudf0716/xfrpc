@@ -23,7 +23,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <json-c/json.h>
-#include <openssl/rand.h>
+#include "ssl_compat.h"
+
 
 #include <event2/event.h>
 #include <event2/bufferevent.h>

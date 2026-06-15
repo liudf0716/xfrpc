@@ -15,23 +15,27 @@ find_package(JSON-C REQUIRED)
 find_package(ZLIB REQUIRED)
 
 # TLS/SSL backend selection
-# Source code always uses #include <openssl/*.h>. When wolfSSL is the
-# backend we add ${WOLFSSL_INCLUDE_DIR}/wolfssl to the include path so
-# that <openssl/ssl.h> resolves to wolfSSL's compat header (which defines
-# #define SSL_CTX_free wolfSSL_CTX_free etc.). This must come BEFORE the
-# system include path to shadow the real OpenSSL headers.
+# tls.c uses real OpenSSL API (bufferevent_openssl requires struct ssl_st *).
+# crypto.c uses wolfSSL for PBKDF2/AES when USE_WOLFSSL is defined.
+# When wolfSSL is the backend, link both wolfSSL and OpenSSL.
 option(USE_WOLFSSL "Use wolfSSL as TLS backend (default: ON)" ON)
 if(USE_WOLFSSL)
     find_library(WOLFSSL_LIB wolfssl)
     find_path(WOLFSSL_INCLUDE_DIR wolfssl/options.h)
     if(WOLFSSL_LIB AND WOLFSSL_INCLUDE_DIR)
         set(SSL_BACKEND "wolfssl")
-        set(SSL_LIBRARIES ${WOLFSSL_LIB})
-        # wolfSSL compat headers live under ${WOLFSSL_INCLUDE_DIR}/wolfssl/openssl/
-        # Adding /wolfssl lets #include <openssl/ssl.h> pick them up.
-        include_directories(BEFORE ${WOLFSSL_INCLUDE_DIR}/wolfssl)
         include_directories(${WOLFSSL_INCLUDE_DIR})
-        message(STATUS "TLS backend: wolfSSL (${WOLFSSL_LIB})")
+        add_definitions(-DUSE_WOLFSSL)
+        # tls.c uses real OpenSSL for libevent bufferevent_ssl compat.
+        # crypto.c uses wolfSSL for PBKDF2/AES. Link both.
+        find_package(OpenSSL)
+        if(OPENSSL_FOUND)
+            set(SSL_LIBRARIES ${WOLFSSL_LIB} ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+            message(STATUS "TLS backend: wolfSSL (${WOLFSSL_LIB}) + OpenSSL (${OPENSSL_SSL_LIBRARY})")
+        else()
+            set(SSL_LIBRARIES ${WOLFSSL_LIB})
+            message(STATUS "TLS backend: wolfSSL only (${WOLFSSL_LIB})")
+        endif()
     else()
         message(STATUS "wolfSSL not found, falling back to OpenSSL")
         set(USE_WOLFSSL OFF)

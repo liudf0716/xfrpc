@@ -20,7 +20,7 @@ enum go_away_type {
 };
 
 enum tcp_mux_type {
-    DATA,
+    TMUX_DATA,
     WINDOW_UPDATE,
     PING,
     GO_AWAY,

@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <json-c/json.h>
-#include <openssl/evp.h>
+#include "ssl_compat.h"
 #include <time.h>
 #include <assert.h>
 #include <syslog.h>

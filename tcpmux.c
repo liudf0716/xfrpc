@@ -363,7 +363,7 @@ void tcp_mux_send_data(struct bufferevent *bout, enum tcp_mux_flag flags,
 
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
-    tcp_mux_encode(DATA, flags, stream_id, length, &tmux_hdr);
+    tcp_mux_encode(TMUX_DATA, flags, stream_id, length, &tmux_hdr);
     
     if (bufferevent_write(bout, &tmux_hdr, sizeof(tmux_hdr)) < 0) {
         debug(LOG_ERR, "Failed to send data header for stream %u", stream_id);
@@ -543,7 +543,7 @@ void send_window_update(struct bufferevent *bout, struct tmux_stream *stream, ui
 }
 
 /**
- * @brief Processes data from a tmux DATA frame and dispatches to protocol handlers.
+ * @brief Processes data from a tmux TMUX_DATA frame and dispatches to protocol handlers.
  *
  * Reads the payload directly from the control bev (no intermediate ring buffer)
  * and dispatches to the appropriate protocol handler.
@@ -807,7 +807,7 @@ void handle_tcp_mux_go_away(struct tcp_mux_header *tmux_hdr) {
 /**
  * @brief Handles TCP multiplexing stream data and control messages (window updates only).
  *
- * With the rx_ring removed, DATA frames are handled directly in handle_tcp_mux
+ * With the rx_ring removed, TMUX_DATA frames are handled directly in handle_tcp_mux
  * by reading the payload from bev and calling process_data. This function now
  * only handles WINDOW_UPDATE messages and flag processing.
  */
@@ -895,7 +895,7 @@ int tmux_stream_write(struct bufferevent *bev,
 
     struct tcp_mux_header tmux_hdr;
     memset(&tmux_hdr, 0, sizeof(tmux_hdr));
-    tcp_mux_encode(DATA, flags, stream->id, to_send, &tmux_hdr);
+    tcp_mux_encode(TMUX_DATA, flags, stream->id, to_send, &tmux_hdr);
 
     // 1. 直接写header到out
     if (evbuffer_add(out, &tmux_hdr, sizeof(tmux_hdr)) < 0) {

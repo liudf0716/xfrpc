@@ -1436,8 +1436,8 @@ struct mg_tls {
 
 #if MG_TLS == MG_TLS_OPENSSL
 
-#include <openssl/err.h>
-#include <openssl/ssl.h>
+#include "ssl_compat.h"
+/* ssl_compat.h already included */
 
 struct mg_tls {
   SSL_CTX *ctx;

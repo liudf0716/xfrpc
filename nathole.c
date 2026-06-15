@@ -22,8 +22,8 @@
 #include <net/if.h>
 #include <ifaddrs.h>
 #include <json-c/json.h>
-#include <openssl/evp.h>
-#include <openssl/rand.h>
+#include "ssl_compat.h"
+
 
 #include "nathole.h"
 #include "msg.h"

@@ -1,9 +1,0 @@
-bindAddr = "0.0.0.0"
-bindPort = 7000
-quicBindPort = 7002
-auth.method = "token"
-auth.token = "test-quic-token-2026"
-transport.tls.force = false
-log.to = "console"
-log.level = "debug"
-detailedErrorsToClient = true

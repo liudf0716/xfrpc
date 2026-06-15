@@ -705,12 +705,15 @@ int quic_connect_to_server(struct event_base *base,
 	qc->conn_ref.user_data = qc;
 #ifdef USE_NGTCP2_WOLFSSL
 	wolfSSL_set_app_data(qc->ssl, &qc->conn_ref);
+#elif defined(USE_NGTCP2_OSSL)
+	ngtcp2_crypto_ossl_configure_client_session(qc->ssl);
+	SSL_set_app_data(qc->ssl, &qc->conn_ref);
 #endif
 
-	/* events */
-	qc->base = base;
-	qc->udp_read_ev = event_new(base, qc->udp_fd, EV_READ|EV_PERSIST,
-				    qc_udp_read_cb, qc);
+        /* events */
+        qc->base = base;
+        qc->udp_read_ev = event_new(base, qc->udp_fd, EV_READ|EV_PERSIST,
+                                    qc_udp_read_cb, qc);
 	qc->timer_ev = evtimer_new(base, qc_timer_cb, qc);
 	qc->sp_read_ev = event_new(base, qc->sp_fd, EV_READ|EV_PERSIST,
 				   qc_sp_read_cb, qc);

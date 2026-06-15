@@ -35,6 +35,7 @@
 #else
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/rand.h>
 #include <ngtcp2/ngtcp2_crypto_ossl.h>
 #endif
 
@@ -637,8 +638,11 @@ static SSL *quic_create_ssl(SSL_CTX *ctx, const struct quic_config *config)
 		return NULL;
 
 	/* Set transport as QUIC */
-#ifndef USE_NGTCP2_WOLFSSL
-	SSL_set_quic_method(ssl, &ngtcp2_crypto_openssl_quic_method);
+#ifdef USE_NGTCP2_OSSL
+	if (config->is_server)
+		ngtcp2_crypto_ossl_configure_server_session(ssl);
+	else
+		ngtcp2_crypto_ossl_configure_client_session(ssl);
 #endif
 
 	if (!config->is_server) {

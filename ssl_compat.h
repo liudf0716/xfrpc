@@ -2,28 +2,24 @@
 /*
  * SSL/TLS compatibility header.
  *
- * When USE_WOLFSSL is defined (via CMake), crypto functions use wolfSSL's
- * OpenSSL-compat headers.  tls.c keeps using real OpenSSL for libevent
- * bufferevent_ssl compatibility (bufferevent_openssl_socket_new expects
- * struct ssl_st *).
+ * Always includes real OpenSSL headers for crypto (EVP, RAND, MD5) and
+ * TLS (SSL) APIs.  wolfSSL's OpenSSL-compat layer is incomplete — it
+ * lacks EVP_aes_128_cfb128 and other ciphers required by frp's protocol.
+ *
+ * libevent's bufferevent_openssl_socket_new also requires real OpenSSL's
+ * struct ssl_st, so tls.c uses real OpenSSL directly.
+ *
+ * Files that need only wolfSSL for a specific purpose should include
+ * wolfssl/options.h and wolfssl/openssl/ssl.h directly.
  */
 
 #ifndef XFRPC_SSL_COMPAT_H
 #define XFRPC_SSL_COMPAT_H
 
-#ifdef USE_WOLFSSL
-#include <wolfssl/options.h>
-#include <wolfssl/openssl/ssl.h>
-#include <wolfssl/openssl/err.h>
-#include <wolfssl/openssl/evp.h>
-#include <wolfssl/openssl/rand.h>
-#include <wolfssl/openssl/md5.h>
-#else
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/md5.h>
-#endif
 
 #endif /* XFRPC_SSL_COMPAT_H */

@@ -1,0 +1,42 @@
+# xfrpc TOML configuration example (frp-compatible format)
+# This file demonstrates the TOML format support in xfrpc
+
+# Server address and port
+serverAddr = "43.159.38.154"
+serverPort = 7070
+
+# Authentication
+auth.method = "token"
+auth.token = "fc21625021dd5517c3de0d939bd1ede627ee53a1af4eaaa5"
+
+# Transport settings
+transport.protocol = "tcp"
+transport.tcpMux = true
+transport.poolCount = 5
+
+# TLS configuration
+transport.tls.enable = true
+transport.tls.certFile = "/etc/xfrpc-client.crt"
+transport.tls.keyFile = "/etc/xfrpc-client.key"
+transport.tls.trustedCaFile = "/etc/xfrpc-ca.crt"
+
+# Heartbeat settings
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+# STCP proxy: expose local SSH as a secret TCP service
+[[proxies]]
+name = "nokia_ssh"
+type = "stcp"
+secretKey = "stcp_nokia_ssh_2026"
+localIP = "127.0.0.1"
+localPort = 22
+
+# STCP visitor: connect to the remote STCP proxy
+[[visitors]]
+name = "nokia_ssh_visitor"
+type = "stcp"
+serverName = "nokia_ssh"
+secretKey = "stcp_nokia_ssh_2026"
+bindAddr = "192.168.8.1"
+bindPort = 6000

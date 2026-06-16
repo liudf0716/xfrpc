@@ -16,6 +16,7 @@
 #include <crypt.h>
 
 #include "ini.h"
+#include "toml_parser.h"
 #include "uthash.h"
 #include "config.h"
 #include "visitor.h"
@@ -921,6 +922,350 @@ static void validate_heartbeat_config(void) {
 }
 
 /**
+ * @brief Checks if a file path has a .toml extension
+ */
+static int is_toml_file(const char *path)
+{
+	if (!path)
+		return 0;
+	const char *ext = strrchr(path, '.');
+	return ext && strcmp(ext, ".toml") == 0;
+}
+
+/**
+ * @brief Set a string field on a proxy_service, freeing any previous value
+ */
+static void ps_set_string(char **field, const char *value)
+{
+	SAFE_FREE(*field);
+	*field = strdup(value);
+	assert(*field);
+}
+
+/**
+ * @brief Load common configuration from a parsed TOML document
+ *
+ * Maps frp-style TOML keys to xfrpc common_conf fields:
+ *   serverAddr          -> server_addr
+ *   serverPort          -> server_port
+ *   user                -> user
+ *   auth.method         -> (ignored, xfrpc uses token only)
+ *   auth.token          -> auth_token
+ *   transport.protocol  -> protocol
+ *   transport.poolCount -> (ignored)
+ *   transport.tls.*     -> tls_*
+ *   transport.heartbeat.* -> heartbeat_*
+ *   transport.tcpMux    -> tcp_mux
+ *   log.to / log.level  -> (ignored, xfrpc uses its own logging)
+ */
+static void load_toml_common(struct toml_doc *doc)
+{
+	struct toml_section *root = toml_find_array_section(doc, "", -1);
+	/* Root section is stored as "default" by the parser */
+	if (!root) {
+		for (int i = 0; i < doc->section_count; i++) {
+			if (strcmp(doc->sections[i].name, "default") == 0) {
+				root = &doc->sections[i];
+				break;
+			}
+		}
+	}
+	if (!root) {
+		debug(LOG_ERR, "TOML: no root section found");
+		return;
+	}
+
+	const char *v;
+
+	/* Server settings */
+	if ((v = toml_get(root, "serverAddr"))) {
+		SAFE_FREE(c_conf->server_addr);
+		c_conf->server_addr = strdup(v);
+		assert(c_conf->server_addr);
+	}
+	if ((v = toml_get(root, "serverPort")))
+		c_conf->server_port = atoi(v);
+	if ((v = toml_get(root, "user"))) {
+		SAFE_FREE(c_conf->user);
+		c_conf->user = strdup(v);
+	}
+
+	/* Auth */
+	if ((v = toml_get(root, "auth.token"))) {
+		SAFE_FREE(c_conf->auth_token);
+		c_conf->auth_token = strdup(v);
+		assert(c_conf->auth_token);
+	}
+
+	/* Transport */
+	if ((v = toml_get(root, "transport.protocol"))) {
+		SAFE_FREE(c_conf->protocol);
+		c_conf->protocol = strdup(v);
+	}
+	if ((v = toml_get(root, "transport.tcpMux")))
+		c_conf->tcp_mux = is_true(v);
+	if ((v = toml_get(root, "transport.heartbeatInterval")))
+		c_conf->heartbeat_interval = atoi(v);
+	if ((v = toml_get(root, "transport.heartbeatTimeout")))
+		c_conf->heartbeat_timeout = atoi(v);
+
+	/* TLS */
+	if ((v = toml_get(root, "transport.tls.enable")))
+		c_conf->tls_enable = is_true(v);
+	if ((v = toml_get(root, "transport.tls.certFile"))) {
+		SAFE_FREE(c_conf->tls_cert_file);
+		c_conf->tls_cert_file = strdup(v);
+	}
+	if ((v = toml_get(root, "transport.tls.keyFile"))) {
+		SAFE_FREE(c_conf->tls_key_file);
+		c_conf->tls_key_file = strdup(v);
+	}
+	if ((v = toml_get(root, "transport.tls.trustedCaFile"))) {
+		SAFE_FREE(c_conf->tls_trusted_ca_file);
+		c_conf->tls_trusted_ca_file = strdup(v);
+	}
+	if ((v = toml_get(root, "transport.tls.serverName"))) {
+		SAFE_FREE(c_conf->tls_server_name);
+		c_conf->tls_server_name = strdup(v);
+	}
+
+	/* QUIC */
+	if ((v = toml_get(root, "quicBindPort")))
+		c_conf->quic_bind_port = atoi(v);
+}
+
+/**
+ * @brief Load proxy services from a parsed TOML document
+ *
+ * Maps [[proxies]] entries to proxy_service structures.
+ * frp TOML key names are mapped to xfrpc INI-style field names.
+ */
+static void load_toml_proxies(struct toml_doc *doc)
+{
+	int count = toml_count_array_sections(doc, "proxies");
+
+	for (int i = 0; i < count; i++) {
+		struct toml_section *sec = toml_find_array_section(doc, "proxies", i);
+		if (!sec)
+			continue;
+
+		const char *name = toml_get(sec, "name");
+		if (!name) {
+			debug(LOG_ERR, "TOML: proxies[%d] has no name", i);
+			continue;
+		}
+
+		struct proxy_service *ps = new_proxy_service(name);
+		if (!ps) {
+			debug(LOG_ERR, "Failed to create proxy service for %s", name);
+			continue;
+		}
+
+		const char *v;
+
+		/* Basic fields */
+		if ((v = toml_get(sec, "type")))
+			ps_set_string(&ps->proxy_type, v);
+		if ((v = toml_get(sec, "localIP")))
+			ps_set_string(&ps->local_ip, v);
+		if ((v = toml_get(sec, "bindAddr")))
+			ps_set_string(&ps->bind_addr, v);
+		if ((v = toml_get(sec, "localPort")))
+			ps->local_port = atoi(v);
+		if ((v = toml_get(sec, "remotePort")))
+			ps->remote_port = atoi(v);
+		if ((v = toml_get(sec, "remoteDataPort")))
+			ps->remote_data_port = atoi(v);
+
+		/* Transport options */
+		if ((v = toml_get(sec, "transport.useEncryption")))
+			ps->use_encryption = is_true(v);
+		if ((v = toml_get(sec, "transport.useCompression")))
+			ps->use_compression = is_true(v);
+
+		/* HTTP/HTTPS */
+		if ((v = toml_get(sec, "customDomains")))
+			ps_set_string(&ps->custom_domains, v);
+		if ((v = toml_get(sec, "subdomain")))
+			ps_set_string(&ps->subdomain, v);
+		if ((v = toml_get(sec, "locations")))
+			ps_set_string(&ps->locations, v);
+		if ((v = toml_get(sec, "hostHeaderRewrite")))
+			ps_set_string(&ps->host_header_rewrite, v);
+		if ((v = toml_get(sec, "httpUser")))
+			ps_set_string(&ps->http_user, v);
+		if ((v = toml_get(sec, "httpPassword")))
+			ps_set_string(&ps->http_pwd, v);
+
+		/* Load balancing */
+		if ((v = toml_get(sec, "loadBalancer.group")))
+			ps_set_string(&ps->group, v);
+		if ((v = toml_get(sec, "loadBalancer.groupKey")))
+			ps_set_string(&ps->group_key, v);
+
+		/* Plugin */
+		if ((v = toml_get(sec, "plugin.type")))
+			ps_set_string(&ps->plugin, v);
+		if ((v = toml_get(sec, "plugin.httpUser")))
+			ps_set_string(&ps->plugin_user, v);
+		if ((v = toml_get(sec, "plugin.httpPassword")))
+			ps_set_string(&ps->plugin_pwd, v);
+		if ((v = toml_get(sec, "plugin.unixPath")))
+			ps_set_string(&ps->plugin_unix_path, v);
+		if ((v = toml_get(sec, "plugin.localPath")))
+			ps_set_string(&ps->s_root_dir, v);
+
+		/* TCPMux */
+		if ((v = toml_get(sec, "multiplexer")))
+			ps_set_string(&ps->multiplexer, v);
+		if ((v = toml_get(sec, "routeByHTTPUser")))
+			ps_set_string(&ps->route_by_http_user, v);
+
+		/* STCP/XTCP/SUDP */
+		if ((v = toml_get(sec, "secretKey")))
+			ps_set_string(&ps->sk, v);
+		if ((v = toml_get(sec, "allowUsers")))
+			ps_set_string(&ps->allow_users, v);
+
+		/* Health check */
+		if ((v = toml_get(sec, "healthCheck.type")))
+			ps_set_string(&ps->health_check_type, v);
+		if ((v = toml_get(sec, "healthCheck.path")))
+			ps_set_string(&ps->health_check_url, v);
+		if ((v = toml_get(sec, "healthCheck.intervalSeconds")))
+			ps->health_check_interval = atoi(v);
+		if ((v = toml_get(sec, "healthCheck.timeoutSeconds")))
+			ps->health_check_timeout = atoi(v);
+		if ((v = toml_get(sec, "healthCheck.maxFailed")))
+			ps->health_check_max_failed = atoi(v);
+
+		/* Enabled flag (frp uses 'enabled' to disable proxies) */
+		if ((v = toml_get(sec, "enabled")) && !is_true(v)) {
+			debug(LOG_DEBUG, "Proxy [%s] is disabled, skipping", name);
+			free_proxy_service(ps);
+			continue;
+		}
+
+		/* Add to hash table */
+		HASH_ADD_KEYPTR(hh, all_ps, ps->proxy_name, strlen(ps->proxy_name), ps);
+	}
+}
+
+/**
+ * @brief Load visitor configurations from a parsed TOML document
+ *
+ * Maps [[visitors]] entries to visitor_conf structures.
+ * Uses parse_visitor_section() from visitor.c for the actual storage.
+ */
+static void load_toml_visitors(struct toml_doc *doc)
+{
+	int count = toml_count_array_sections(doc, "visitors");
+
+	for (int i = 0; i < count; i++) {
+		struct toml_section *sec = toml_find_array_section(doc, "visitors", i);
+		if (!sec)
+			continue;
+
+		const char *name = toml_get(sec, "name");
+		if (!name) {
+			debug(LOG_ERR, "TOML: visitors[%d] has no name", i);
+			continue;
+		}
+
+		/* Build INI-style section name: "stcp_visitor:name" */
+		const char *vtype = toml_get(sec, "type");
+		if (!vtype) {
+			debug(LOG_ERR, "TOML: visitor [%s] has no type", name);
+			continue;
+		}
+
+		char sect_name[256];
+		snprintf(sect_name, sizeof(sect_name), "%s_visitor:%s", vtype, name);
+
+		const char *v;
+
+		/* Map TOML visitor fields to INI-style key names */
+		if ((v = toml_get(sec, "type")))
+			parse_visitor_section(sect_name, "type", v);
+		if ((v = toml_get(sec, "serverName")))
+			parse_visitor_section(sect_name, "server_name", v);
+		if ((v = toml_get(sec, "secretKey")))
+			parse_visitor_section(sect_name, "secret_key", v);
+		if ((v = toml_get(sec, "bindAddr")))
+			parse_visitor_section(sect_name, "bind_addr", v);
+		if ((v = toml_get(sec, "bindPort")))
+			parse_visitor_section(sect_name, "bind_port", v);
+		if ((v = toml_get(sec, "transport.useEncryption")))
+			parse_visitor_section(sect_name, "use_encryption", v);
+		if ((v = toml_get(sec, "transport.useCompression")))
+			parse_visitor_section(sect_name, "use_compression", v);
+		if ((v = toml_get(sec, "fallbackTo")))
+			parse_visitor_section(sect_name, "fallback_to", v);
+
+		/* Enabled check */
+		if ((v = toml_get(sec, "enabled")) && !is_true(v)) {
+			debug(LOG_DEBUG, "Visitor [%s] is disabled, skipping", name);
+			continue;
+		}
+
+		debug(LOG_DEBUG, "TOML: loaded visitor [%s] type=%s", name, vtype);
+	}
+}
+
+/**
+ * @brief Load and parse a TOML configuration file (frp-compatible format)
+ *
+ * This function parses a TOML config file with frp-compatible structure and
+ * populates the common_conf and proxy_service/visitor_conf structures.
+ *
+ * Supported TOML features:
+ * - Top-level key-value pairs
+ * - Dotted keys (auth.token, transport.tls.enable, etc.)
+ * - [[proxies]] array of tables
+ * - [[visitors]] array of tables
+ * - Inline arrays (customDomains = ["a", "b"])
+ * - String, integer, and boolean values
+ */
+static void load_toml_config(const char *confile)
+{
+	struct toml_doc *doc = calloc(1, sizeof(struct toml_doc));
+	assert(doc);
+
+	debug(LOG_DEBUG, "Loading TOML config from '%s'", confile);
+
+	if (toml_parse_file(confile, doc) < 0) {
+		debug(LOG_ERR, "Failed to parse TOML config file: %s", confile);
+		free(doc);
+		exit(EXIT_FAILURE);
+	}
+
+	/* Load common settings */
+	load_toml_common(doc);
+
+	/* QUIC protocol already provides stream multiplexing */
+	if (c_conf->protocol && strcmp(c_conf->protocol, "quic") == 0) {
+		if (c_conf->tcp_mux) {
+			debug(LOG_INFO, "QUIC protocol: disabling tcp_mux (QUIC provides native mux)");
+			c_conf->tcp_mux = 0;
+		}
+	}
+
+	dump_common_conf();
+	validate_heartbeat_config();
+
+	/* Load proxy services */
+	load_toml_proxies(doc);
+
+	/* Load visitors */
+	load_toml_visitors(doc);
+
+	dump_all_ps();
+
+	toml_doc_free(doc);
+	free(doc);
+}
+
+/**
  * @brief Loads and parses the configuration file for the xfrpc client
  *
  * @param confile Path to the configuration file to be loaded
@@ -941,6 +1286,14 @@ void load_config(const char *confile) {
 	init_common_conf(c_conf);
 
 	debug(LOG_DEBUG, "Reading configuration file '%s'", confile);
+
+	if (is_toml_file(confile)) {
+		/* TOML format (frp-compatible) */
+		load_toml_config(confile);
+		return;
+	}
+
+	/* INI format (legacy xfrpc format) */
 
 	// Parse common section
 	if (ini_parse(confile, common_handler, c_conf) < 0) {

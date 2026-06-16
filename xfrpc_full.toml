@@ -1,0 +1,42 @@
+# xfrpc TOML with HTTP proxy and inline arrays
+serverAddr = "43.159.38.154"
+serverPort = 7070
+
+auth.method = "token"
+auth.token = "test_token_123"
+
+transport.tls.enable = true
+transport.tls.certFile = "/etc/xfrpc-client.crt"
+transport.tls.keyFile = "/etc/xfrpc-client.key"
+transport.tls.trustedCaFile = "/etc/xfrpc-ca.crt"
+
+[[proxies]]
+name = "web01"
+type = "http"
+localIP = "127.0.0.1"
+localPort = 80
+customDomains = ["web01.example.com"]
+
+[[proxies]]
+name = "ssh"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 22
+remotePort = 6001
+transport.useEncryption = true
+transport.useCompression = true
+
+[[proxies]]
+name = "nokia_ssh"
+type = "stcp"
+secretKey = "stcp_nokia_ssh_2026"
+localIP = "127.0.0.1"
+localPort = 22
+
+[[visitors]]
+name = "nokia_ssh_visitor"
+type = "stcp"
+serverName = "nokia_ssh"
+secretKey = "stcp_nokia_ssh_2026"
+bindAddr = "192.168.8.1"
+bindPort = 6000

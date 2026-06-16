@@ -122,6 +122,7 @@ set(CORE_SOURCES
     config.c
     control.c
     ini.c
+    toml_parser.c
     msg.c
     xfrpc.c
     debug.c

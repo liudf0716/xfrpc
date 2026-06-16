@@ -149,7 +149,7 @@ static void usage(const char *appname)
         const char *option;
         const char *description;
     } options[] = {
-        {"-c [filename]", "Specify config file to use"},
+        {"-c [filename]", "Specify config file to use (.ini or .toml)"},
         {"-f",           "Run in foreground (don't daemonize)"},
         {"-d <level>",   "Set debug level"},
         {"-s",           "Enable syslog for debug logging"},

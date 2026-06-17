@@ -130,6 +130,8 @@ struct proxy_service {
 	char    *host_header_rewrite;
 	char    *http_user;
 	char    *http_pwd;
+	char    *request_headers;   /* comma-separated key=value pairs */
+	char    *response_headers;  /* comma-separated key=value pairs */
 
 	/* FTP specific */
 	char    *ftp_cfg_proxy_name;

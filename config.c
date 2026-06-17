@@ -701,6 +701,8 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("use_compression")) ps->use_compression = is_true(value);
 	else if (MATCH_NAME("http_user")) SET_STRING_VALUE(http_user);
 	else if (MATCH_NAME("http_pwd")) SET_STRING_VALUE(http_pwd);
+	else if (MATCH_NAME("request_headers")) SET_STRING_VALUE(request_headers);
+	else if (MATCH_NAME("response_headers")) SET_STRING_VALUE(response_headers);
 	else if (MATCH_NAME("subdomain")) SET_STRING_VALUE(subdomain);
 	else if (MATCH_NAME("custom_domains")) SET_STRING_VALUE(custom_domains);
 	else if (MATCH_NAME("locations")) SET_STRING_VALUE(locations);
@@ -1159,6 +1161,14 @@ static void load_toml_proxies(struct toml_doc *doc)
 			ps_set_string(&ps->http_user, v);
 		if ((v = toml_get(sec, "httpPassword")))
 			ps_set_string(&ps->http_pwd, v);
+
+		/* HTTP Headers (requestHeaders.set.*, responseHeaders.set.*) */
+		{
+			const char *rh_pairs = xfrpc_toml_get_table_pairs(sec, "requestHeaders.set");
+			if (rh_pairs) ps_set_string(&ps->request_headers, rh_pairs);
+			const char *rrh_pairs = xfrpc_toml_get_table_pairs(sec, "responseHeaders.set");
+			if (rrh_pairs) ps_set_string(&ps->response_headers, rrh_pairs);
+		}
 
 		/* Load balancing */
 		if ((v = toml_get(sec, "loadBalancer.group")))

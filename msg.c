@@ -422,6 +422,56 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "http_user", string, SAFE_JSON_STRING(np_req->http_user));
 	JSON_MARSHAL_TYPE(j_np_req, "http_pwd", string, SAFE_JSON_STRING(np_req->http_pwd));
 
+	// Add request headers (headers map)
+	if (np_req->request_headers) {
+		struct json_object *j_headers = json_object_new_object();
+		char *hdr_copy = strdup(np_req->request_headers);
+		if (hdr_copy && j_headers) {
+			char *save_ptr = NULL;
+			char *pair = strtok_r(hdr_copy, ",", &save_ptr);
+			while (pair) {
+				char *eq = strchr(pair, '=');
+				if (eq) {
+					*eq = '\0';
+					json_object_object_add(j_headers, pair, json_object_new_string(eq + 1));
+				}
+				pair = strtok_r(NULL, ",", &save_ptr);
+			}
+			json_object_object_add(j_np_req, "headers", j_headers);
+		} else {
+			json_object_object_add(j_np_req, "headers", NULL);
+			if (j_headers) json_object_put(j_headers);
+		}
+		free(hdr_copy);
+	} else {
+		json_object_object_add(j_np_req, "headers", NULL);
+	}
+
+	// Add response headers (response_headers map)
+	if (np_req->response_headers) {
+		struct json_object *j_resp_headers = json_object_new_object();
+		char *hdr_copy = strdup(np_req->response_headers);
+		if (hdr_copy && j_resp_headers) {
+			char *save_ptr = NULL;
+			char *pair = strtok_r(hdr_copy, ",", &save_ptr);
+			while (pair) {
+				char *eq = strchr(pair, '=');
+				if (eq) {
+					*eq = '\0';
+					json_object_object_add(j_resp_headers, pair, json_object_new_string(eq + 1));
+				}
+				pair = strtok_r(NULL, ",", &save_ptr);
+			}
+			json_object_object_add(j_np_req, "response_headers", j_resp_headers);
+		} else {
+			json_object_object_add(j_np_req, "response_headers", NULL);
+			if (j_resp_headers) json_object_put(j_resp_headers);
+		}
+		free(hdr_copy);
+	} else {
+		json_object_object_add(j_np_req, "response_headers", NULL);
+	}
+
 	// Add TCPMux specific fields
 	if (strcmp(proxy_type, "tcpmux") == 0) {
 		JSON_MARSHAL_TYPE(j_np_req, "multiplexer", string,

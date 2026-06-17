@@ -23,6 +23,14 @@ void *xfrpc_toml_find_array_section(struct toml_doc *doc, const char *prefix, in
 int xfrpc_toml_count_array_sections(struct toml_doc *doc, const char *prefix);
 const char *xfrpc_toml_get(void *sec, const char *key);
 
+/**
+ * @brief Get all key-value pairs from a nested table as comma-separated "key=val" string
+ * @param sec Opaque section handle
+ * @param path Dot-separated path to the table (e.g. "requestHeaders.set")
+ * @return Static buffer with "key1=val1,key2=val2" or NULL if not found
+ */
+const char *xfrpc_toml_get_table_pairs(void *sec, const char *path);
+
 /* Compatibility macros for config.c (not active in toml_parser.c which
  * includes tomlc17.h first, conflicting with these names) */
 #ifndef TOML_PARSER_INTERNAL

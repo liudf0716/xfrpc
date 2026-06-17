@@ -163,3 +163,26 @@ const char *xfrpc_toml_get(void *sec, const char *key)
 		return NULL;
 	}
 }
+
+const char *xfrpc_toml_get_table_pairs(void *sec, const char *path)
+{
+	if (!sec || !path)
+		return NULL;
+
+	toml_datum_t *table = (toml_datum_t *)sec;
+	toml_datum_t val = toml_seek(*table, path);
+	if (val.type != TOML_TABLE || val.u.tab.size == 0)
+		return NULL;
+
+	static __thread char tls_pairs[2048];
+	int pos = 0;
+	for (int i = 0; i < val.u.tab.size && pos < (int)sizeof(tls_pairs) - 4; i++) {
+		if (val.u.tab.value[i].type == TOML_STRING) {
+			if (pos > 0)
+				pos += snprintf(tls_pairs + pos, sizeof(tls_pairs) - pos, ",");
+			pos += snprintf(tls_pairs + pos, sizeof(tls_pairs) - pos, "%s=%s",
+				val.u.tab.key[i], val.u.tab.value[i].u.s);
+		}
+	}
+	return pos > 0 ? tls_pairs : NULL;
+}

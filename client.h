@@ -11,6 +11,10 @@
 #include "common.h"
 #include "tcpmux.h"
 
+/* Forward declarations for crypto stream types */
+struct crypto_ctx;
+struct snappy_ctx;
+
 /* Constants */
 #define SOCKS5_ADDRES_LEN 20
 
@@ -90,6 +94,14 @@ struct proxy_client {
 
 	/* Hash handling */
 	UT_hash_handle      hh;
+
+	/* Encryption/compression state (populated from proxy_service) */
+	int                 use_encryption;
+	int                 use_compression;
+	struct crypto_ctx   *encrypt_ctx;   /* AES-128-CFB writer context */
+	struct crypto_ctx   *decrypt_ctx;   /* AES-128-CFB reader context */
+	struct snappy_ctx   *snappy_c;      /* snappy compressor */
+	struct snappy_ctx   *snappy_d;      /* snappy decompressor */
 };
 
 struct proxy_service {

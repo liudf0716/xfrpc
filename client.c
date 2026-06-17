@@ -26,6 +26,7 @@
 #include "proxy.h"
 #include "utils.h"
 #include "tcpmux.h"
+#include "crypto_stream.h"
 
 static struct proxy_client 	*all_pc = NULL;
 
@@ -361,12 +362,37 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		return;
 	}
 
+	/* Initialize encryption/compression from proxy_service config */
+	struct common_conf *c_conf = get_common_config();
+	struct proxy_service *ps = client->ps;
+	client->use_encryption = ps->use_encryption;
+	client->use_compression = ps->use_compression;
+
+	if (client->use_encryption && c_conf->auth_token) {
+		uint8_t key[16];
+		if (crypto_derive_key(c_conf->auth_token, key) == 0) {
+			client->encrypt_ctx = crypto_ctx_new_writer(key);
+			client->decrypt_ctx = crypto_ctx_new_reader(key);
+			if (!client->encrypt_ctx || !client->decrypt_ctx) {
+				debug(LOG_ERR, "Failed to create crypto contexts");
+			} else {
+				debug(LOG_INFO, "Proxy [%s] encryption enabled (AES-128-CFB)", ps->proxy_name);
+			}
+		}
+	}
+	if (client->use_compression) {
+		client->snappy_c = snappy_ctx_new();
+		client->snappy_d = snappy_ctx_new();
+		if (!client->snappy_c || !client->snappy_d) {
+			debug(LOG_ERR, "Failed to create snappy contexts");
+		} else {
+			debug(LOG_INFO, "Proxy [%s] compression enabled (snappy)", ps->proxy_name);
+		}
+	}
+
 	if (setup_local_connection(client) <= 0) {
 		return;
 	}
-
-	struct common_conf *c_conf = get_common_config();
-	struct proxy_service *ps = client->ps;
 
 	debug(LOG_DEBUG, "proxy server [%s:%d] <---> client [%s:%d]", 
 		  c_conf->server_addr, ps->remote_port,
@@ -461,6 +487,24 @@ free_proxy_client(struct proxy_client *client)
 	if (client->xdpi_buf) {
 		free(client->xdpi_buf);
 		client->xdpi_buf = NULL;
+	}
+
+	/* Free encryption/compression contexts */
+	if (client->encrypt_ctx) {
+		crypto_ctx_free(client->encrypt_ctx);
+		client->encrypt_ctx = NULL;
+	}
+	if (client->decrypt_ctx) {
+		crypto_ctx_free(client->decrypt_ctx);
+		client->decrypt_ctx = NULL;
+	}
+	if (client->snappy_c) {
+		snappy_ctx_free(client->snappy_c);
+		client->snappy_c = NULL;
+	}
+	if (client->snappy_d) {
+		snappy_ctx_free(client->snappy_d);
+		client->snappy_d = NULL;
 	}
 
 	tmux_stream_release(&client->stream);

@@ -2,10 +2,10 @@
 /*
  * Copyright (c) 2026 Dengfeng Liu <liudf0716@gmail.com>
  *
- * Stream encryption (AES-128-CFB) and compression (zlib) for proxy data.
+ * Stream encryption (AES-128-CFB) and compression (Snappy) for proxy data.
  *
  * Encryption: AES-128-CFB (compatible with frp use_encryption)
- * Compression: zlib deflate (xfrpc↔xfrpc only, not compatible with frp snappy)
+ * Compression: Snappy (compatible with frp use_compression)
  */
 
 #ifndef XFRPC_CRYPTO_STREAM_H
@@ -101,21 +101,21 @@ int crypto_reader_iv_received(struct crypto_ctx *ctx);
  */
 void crypto_reader_set_iv_received(struct crypto_ctx *ctx);
 
-/* ---- Zlib compression ---- */
+/* ---- Snappy compression (compatible with frp) ---- */
 
 /**
- * @brief Compress data using zlib deflate
+ * @brief Compress data using snappy
  * @param in Input data
  * @param in_len Input length
- * @param out Output buffer (caller allocates, should be at least compressBound(in_len))
+ * @param out Output buffer (caller allocates, use snappy_max_compressed_length)
  * @param out_len Output length (written by function)
  * @return 0 on success, -1 on error
  */
 int xfrpc_compress(const uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len);
 
 /**
- * @brief Decompress data using zlib inflate
- * @param in Input data (zlib compressed)
+ * @brief Decompress data using snappy
+ * @param in Input data (snappy compressed)
  * @param in_len Input length
  * @param out Output buffer
  * @param out_buf_size Size of output buffer

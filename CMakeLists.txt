@@ -88,6 +88,7 @@ endif()
 include_directories(
     ${JSON-C_INCLUDE_DIR}
     ${ZLIB_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}
 )
 
 set(EXTRA_LIBS)
@@ -125,6 +126,7 @@ set(CORE_SOURCES
     toml_parser.c
     vendor/tomlc17/tomlc17.c
     crypto_stream.c
+    vendor/snappy/snappy.c
     msg.c
     xfrpc.c
     debug.c

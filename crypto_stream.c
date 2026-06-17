@@ -2,14 +2,14 @@
 /*
  * Copyright (c) 2026 Dengfeng Liu <liudf0716@gmail.com>
  *
- * Stream encryption (AES-128-CFB) and compression (zlib) for proxy data.
+ * Stream encryption (AES-128-CFB) and compression (Snappy) for proxy data.
  *
  * Encryption: AES-128-CFB stream cipher (compatible with frp use_encryption)
  *   Key derivation: PBKDF2(token, salt="crypto", iter=64, keylen=16, SHA1)
  *   IV: 16 random bytes, prepended to first write
  *
- * Compression: zlib deflate (xfrpc↔xfrpc only, NOT compatible with frp snappy)
- *   Wire format: [4-byte BE compressed_len][compressed_data]
+ * Compression: Google Snappy (compatible with frp use_compression)
+ *   Uses vendored snappy-c (Linux kernel version)
  */
 
 #include <stdio.h>
@@ -19,7 +19,7 @@
 
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-#include <zlib.h>
+#include "vendor/snappy/snappy.h"
 
 #include "crypto_stream.h"
 #include "debug.h"
@@ -175,19 +175,27 @@ int crypto_decrypt(struct crypto_ctx *ctx, uint8_t *data, size_t len)
 	return 0;
 }
 
-/* ---- Zlib compression ---- */
+/* ---- Snappy compression (compatible with frp) ---- */
 
 int xfrpc_compress(const uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len)
 {
 	if (!in || !out || !out_len || in_len == 0) return -1;
 
-	uLongf comp_len = compressBound(in_len);
-	int ret = compress2(out, &comp_len, in, in_len, Z_DEFAULT_COMPRESSION);
-	if (ret != Z_OK) {
-		debug(LOG_ERR, "zlib compress failed: %d", ret);
+	struct snappy_env env;
+	if (snappy_init_env(&env) != 0) {
+		debug(LOG_ERR, "snappy_init_env failed");
 		return -1;
 	}
-	*out_len = (size_t)comp_len;
+
+	size_t comp_len = snappy_max_compressed_length(in_len);
+	int ret = snappy_compress(&env, (const char *)in, in_len, (char *)out, &comp_len);
+	snappy_free_env(&env);
+
+	if (ret != 0) {
+		debug(LOG_ERR, "snappy compress failed: %d", ret);
+		return -1;
+	}
+	*out_len = comp_len;
 	return 0;
 }
 
@@ -196,12 +204,24 @@ int xfrpc_decompress(const uint8_t *in, size_t in_len,
 {
 	if (!in || !out || !out_len || in_len == 0) return -1;
 
-	uLongf uncomp_len = out_buf_size;
-	int ret = uncompress(out, &uncomp_len, in, in_len);
-	if (ret != Z_OK) {
-		debug(LOG_ERR, "zlib decompress failed: %d", ret);
+	/* Get uncompressed size from snappy framing header */
+	size_t uncomp_len = 0;
+	if (!snappy_uncompressed_length((const char *)in, in_len, &uncomp_len)) {
+		debug(LOG_ERR, "snappy_uncompressed_length failed");
 		return -1;
 	}
-	*out_len = (size_t)uncomp_len;
+
+	if (uncomp_len > out_buf_size) {
+		debug(LOG_ERR, "snappy decompress buffer too small: need %zu, have %zu",
+		      uncomp_len, out_buf_size);
+		return -1;
+	}
+
+	int ret = snappy_uncompress((const char *)in, in_len, (char *)out);
+	if (ret != 0) {
+		debug(LOG_ERR, "snappy decompress failed: %d", ret);
+		return -1;
+	}
+	*out_len = uncomp_len;
 	return 0;
 }

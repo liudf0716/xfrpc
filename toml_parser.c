@@ -22,8 +22,6 @@
 
 struct toml_doc {
 	toml_result_t result;
-	/* Scratch buffer for toml_get() return values */
-	char buf[1024];
 };
 
 /* ---- Parse a TOML file ---- */

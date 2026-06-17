@@ -102,7 +102,7 @@ void crypto_reader_set_iv_received(struct crypto_ctx *ctx);
 /* ---- Snappy compression ---- */
 
 /**
- * @brief Create snappy compression context
+ * @brief Create snappy compression context (returns NULL if HAS_SNAPPY not defined)
  */
 struct snappy_ctx *snappy_ctx_new(void);
 
@@ -113,25 +113,14 @@ void snappy_ctx_free(struct snappy_ctx *ctx);
 
 /**
  * @brief Compress data using snappy
- * @param ctx Snappy context
- * @param in Input data
- * @param in_len Input length
- * @param out Output buffer (caller must ensure足够大, snappy max = in_len + in_len/6 + 32)
- * @param out_len Output length (written by function)
- * @return 0 on success, -1 on error
+ * @return 0 on success, -1 on error (always fails if HAS_SNAPPY not defined)
  */
 int snappy_compress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
                          uint8_t *out, size_t *out_len);
 
 /**
  * @brief Decompress data using snappy
- * @param ctx Snappy context
- * @param in Input data (snappy compressed)
- * @param in_len Input length
- * @param out Output buffer
- * @param out_buf_size Size of output buffer
- * @param out_len Output length (written by function)
- * @return 0 on success, -1 on error
+ * @return 0 on success, -1 on error (always fails if HAS_SNAPPY not defined)
  */
 int snappy_decompress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
                            uint8_t *out, size_t out_buf_size, size_t *out_len);

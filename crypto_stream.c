@@ -241,4 +241,22 @@ int snappy_decompress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_
 	return 0;
 }
 
+#else /* !HAS_SNAPPY */
+
+/* Stub implementations when snappy is not available */
+struct snappy_ctx { int dummy; };
+
+struct snappy_ctx *snappy_ctx_new(void) { return NULL; }
+void snappy_ctx_free(struct snappy_ctx *ctx) { (void)ctx; }
+int snappy_compress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
+                         uint8_t *out, size_t *out_len) {
+	(void)ctx; (void)in; (void)in_len; (void)out; (void)out_len;
+	return -1;
+}
+int snappy_decompress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
+                           uint8_t *out, size_t out_buf_size, size_t *out_len) {
+	(void)ctx; (void)in; (void)in_len; (void)out; (void)out_buf_size; (void)out_len;
+	return -1;
+}
+
 #endif /* HAS_SNAPPY */

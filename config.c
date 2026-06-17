@@ -1077,6 +1077,10 @@ static void load_toml_proxies(struct toml_doc *doc)
 		if ((v = toml_get(sec, "remoteDataPort")))
 			ps->remote_data_port = atoi(v);
 
+		/* Service type (xdpi classification) */
+		if ((v = toml_get(sec, "serviceType")))
+			ps->service_type = convert_service_type(v);
+
 		/* Transport options */
 		if ((v = toml_get(sec, "transport.useEncryption")))
 			ps->use_encryption = is_true(v);

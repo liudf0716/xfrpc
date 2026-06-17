@@ -2,14 +2,14 @@
 /*
  * Copyright (c) 2026 Dengfeng Liu <liudf0716@gmail.com>
  *
- * Stream encryption (AES-128-CFB) and compression (Snappy) for proxy data.
- * Compatible with frp's use_encryption/use_compression protocol.
+ * Stream encryption (AES-128-CFB) and compression (zlib) for proxy data.
  *
- * Encryption: AES-128-CFB stream cipher
+ * Encryption: AES-128-CFB stream cipher (compatible with frp use_encryption)
  *   Key derivation: PBKDF2(token, salt="crypto", iter=64, keylen=16, SHA1)
  *   IV: 16 random bytes, prepended to first write
  *
- * Compression: Google Snappy framing format
+ * Compression: zlib deflate (xfrpc↔xfrpc only, NOT compatible with frp snappy)
+ *   Wire format: [4-byte BE compressed_len][compressed_data]
  */
 
 #include <stdio.h>
@@ -19,9 +19,7 @@
 
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-#ifdef HAS_SNAPPY
-#include <snappy-c.h>
-#endif
+#include <zlib.h>
 
 #include "crypto_stream.h"
 #include "debug.h"
@@ -177,86 +175,33 @@ int crypto_decrypt(struct crypto_ctx *ctx, uint8_t *data, size_t len)
 	return 0;
 }
 
-/* ---- Snappy compression ---- */
+/* ---- Zlib compression ---- */
 
-#ifdef HAS_SNAPPY
-
-struct snappy_ctx {
-	/* snappy-c uses stateless functions, no persistent state needed */
-	int placeholder;
-};
-
-struct snappy_ctx *snappy_ctx_new(void)
+int xfrpc_compress(const uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len)
 {
-	struct snappy_ctx *ctx = calloc(1, sizeof(struct snappy_ctx));
-	return ctx;
-}
-
-void snappy_ctx_free(struct snappy_ctx *ctx)
-{
-	free(ctx);
-}
-
-int snappy_compress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
-                         uint8_t *out, size_t *out_len)
-{
-	(void)ctx;
 	if (!in || !out || !out_len || in_len == 0) return -1;
 
-	size_t max_out = snappy_max_compressed_length(in_len);
-	snappy_status status = snappy_compress((const char *)in, in_len, (char *)out, &max_out);
-	if (status != SNAPPY_OK) {
-		debug(LOG_ERR, "Snappy compress failed: %d", status);
+	uLongf comp_len = compressBound(in_len);
+	int ret = compress2(out, &comp_len, in, in_len, Z_DEFAULT_COMPRESSION);
+	if (ret != Z_OK) {
+		debug(LOG_ERR, "zlib compress failed: %d", ret);
 		return -1;
 	}
-	*out_len = max_out;
+	*out_len = (size_t)comp_len;
 	return 0;
 }
 
-int snappy_decompress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
-                           uint8_t *out, size_t out_buf_size, size_t *out_len)
+int xfrpc_decompress(const uint8_t *in, size_t in_len,
+                     uint8_t *out, size_t out_buf_size, size_t *out_len)
 {
-	(void)ctx;
 	if (!in || !out || !out_len || in_len == 0) return -1;
 
-	size_t uncompressed_len = 0;
-	snappy_status status = snappy_uncompressed_length((const char *)in, in_len, &uncompressed_len);
-	if (status != SNAPPY_OK) {
-		debug(LOG_ERR, "Snappy uncompressed_length failed: %d", status);
+	uLongf uncomp_len = out_buf_size;
+	int ret = uncompress(out, &uncomp_len, in, in_len);
+	if (ret != Z_OK) {
+		debug(LOG_ERR, "zlib decompress failed: %d", ret);
 		return -1;
 	}
-
-	if (uncompressed_len > out_buf_size) {
-		debug(LOG_ERR, "Snappy decompress buffer too small: need %zu, have %zu",
-		      uncompressed_len, out_buf_size);
-		return -1;
-	}
-
-	status = snappy_uncompress((const char *)in, in_len, (char *)out, &uncompressed_len);
-	if (status != SNAPPY_OK) {
-		debug(LOG_ERR, "Snappy decompress failed: %d", status);
-		return -1;
-	}
-	*out_len = uncompressed_len;
+	*out_len = (size_t)uncomp_len;
 	return 0;
 }
-
-#else /* !HAS_SNAPPY */
-
-/* Stub implementations when snappy is not available */
-struct snappy_ctx { int dummy; };
-
-struct snappy_ctx *snappy_ctx_new(void) { return NULL; }
-void snappy_ctx_free(struct snappy_ctx *ctx) { (void)ctx; }
-int snappy_compress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
-                         uint8_t *out, size_t *out_len) {
-	(void)ctx; (void)in; (void)in_len; (void)out; (void)out_len;
-	return -1;
-}
-int snappy_decompress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
-                           uint8_t *out, size_t out_buf_size, size_t *out_len) {
-	(void)ctx; (void)in; (void)in_len; (void)out; (void)out_buf_size; (void)out_len;
-	return -1;
-}
-
-#endif /* HAS_SNAPPY */

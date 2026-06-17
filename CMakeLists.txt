@@ -14,16 +14,6 @@ find_package(LibEvent REQUIRED)
 find_package(JSON-C REQUIRED)
 find_package(ZLIB REQUIRED)
 
-# Snappy compression (for use_compression support)
-find_library(SNAPPY_LIB snappy)
-if(SNAPPY_LIB)
-    message(STATUS "Found snappy: ${SNAPPY_LIB}")
-    set(HAS_SNAPPY ON)
-else()
-    message(STATUS "Snappy not found - use_compression will not work")
-    set(HAS_SNAPPY OFF)
-endif()
-
 # TLS/SSL backend selection
 # tls.c uses real OpenSSL API (bufferevent_openssl requires struct ssl_st *).
 # crypto.c uses wolfSSL for PBKDF2/AES when USE_WOLFSSL is defined.
@@ -98,7 +88,6 @@ endif()
 include_directories(
     ${JSON-C_INCLUDE_DIR}
     ${ZLIB_INCLUDE_DIRS}
-    ${SNAPPY_INCLUDE_DIR}
 )
 
 set(EXTRA_LIBS)
@@ -199,11 +188,6 @@ set(EXTERNAL_LIBS
     ${JSON-C_LIBRARIES}
     ${ZLIB_LIBRARIES}
 )
-
-if(HAS_SNAPPY)
-    list(APPEND EXTERNAL_LIBS ${SNAPPY_LIB})
-    add_definitions(-DHAS_SNAPPY)
-endif()
 
 # Add QUIC libraries if enabled
 if(HAS_QUIC)

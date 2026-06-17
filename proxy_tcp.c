@@ -19,10 +19,7 @@
 #include <event2/buffer.h>
 #include <event2/listener.h>
 #include <event2/event.h>
-
-#ifdef HAS_SNAPPY
-#include <snappy-c.h>
-#endif
+#include <zlib.h>
 
 #include "debug.h"
 #include "uthash.h"
@@ -447,16 +444,14 @@ static void crypto_encode_evbuffer(struct proxy_client *client,
 	uint8_t *data = evbuffer_pullup(src, len);
 	if (!data) return;
 
-	/* Snappy compression: output may be larger than input */
+	/* Compression: output may be larger than input */
 	size_t comp_len = 0;
 	uint8_t *comp_data = NULL;
-#ifdef HAS_SNAPPY
-	if (client->use_compression && client->snappy_c) {
-		size_t max_comp = snappy_max_compressed_length(len);
+	if (client->use_compression) {
+		size_t max_comp = compressBound(len);
 		comp_data = malloc(max_comp);
 		if (comp_data) {
-			if (snappy_compress_data(client->snappy_c, data, len,
-			                         comp_data, &max_comp) == 0) {
+			if (xfrpc_compress(data, len, comp_data, &max_comp) == 0) {
 				comp_len = max_comp;
 			} else {
 				free(comp_data);
@@ -464,7 +459,6 @@ static void crypto_encode_evbuffer(struct proxy_client *client,
 			}
 		}
 	}
-#endif
 
 	/* Use compressed data if available, otherwise raw */
 	uint8_t *work_data = comp_data ? comp_data : data;
@@ -532,26 +526,21 @@ static void crypto_decode_evbuffer(struct proxy_client *client,
 	}
 
 	/* Decompress */
-#ifdef HAS_SNAPPY
-	if (client->use_compression && client->snappy_d) {
-		size_t uncomp_len = 0;
-		if (snappy_uncompressed_length((const char *)work_data, len, &uncomp_len) == SNAPPY_OK &&
-		    uncomp_len > 0) {
-			uint8_t *uncomp_data = malloc(uncomp_len);
-			if (uncomp_data) {
-				size_t out_len = uncomp_len;
-				if (snappy_decompress_data(client->snappy_d, work_data, len,
-				                           uncomp_data, uncomp_len, &out_len) == 0) {
-					evbuffer_add(dst, uncomp_data, out_len);
-					free(uncomp_data);
-					free(work_data);
-					return;
-				}
+	if (client->use_compression) {
+		/* Try decompression with increasing buffer sizes */
+		size_t buf_size = len * 4;
+		uint8_t *uncomp_data = malloc(buf_size);
+		if (uncomp_data) {
+			size_t out_len = buf_size;
+			if (xfrpc_decompress(work_data, len, uncomp_data, buf_size, &out_len) == 0) {
+				evbuffer_add(dst, uncomp_data, out_len);
 				free(uncomp_data);
+				free(work_data);
+				return;
 			}
+			free(uncomp_data);
 		}
 	}
-#endif
 
 	evbuffer_add(dst, work_data, len);
 	free(work_data);

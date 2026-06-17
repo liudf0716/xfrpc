@@ -381,13 +381,7 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		}
 	}
 	if (client->use_compression) {
-		client->snappy_c = snappy_ctx_new();
-		client->snappy_d = snappy_ctx_new();
-		if (!client->snappy_c || !client->snappy_d) {
-			debug(LOG_ERR, "Failed to create snappy contexts");
-		} else {
-			debug(LOG_INFO, "Proxy [%s] compression enabled (snappy)", ps->proxy_name);
-		}
+		debug(LOG_INFO, "Proxy [%s] compression enabled (zlib)", ps->proxy_name);
 	}
 
 	if (setup_local_connection(client) <= 0) {
@@ -489,7 +483,7 @@ free_proxy_client(struct proxy_client *client)
 		client->xdpi_buf = NULL;
 	}
 
-	/* Free encryption/compression contexts */
+	/* Free encryption contexts */
 	if (client->encrypt_ctx) {
 		crypto_ctx_free(client->encrypt_ctx);
 		client->encrypt_ctx = NULL;
@@ -497,14 +491,6 @@ free_proxy_client(struct proxy_client *client)
 	if (client->decrypt_ctx) {
 		crypto_ctx_free(client->decrypt_ctx);
 		client->decrypt_ctx = NULL;
-	}
-	if (client->snappy_c) {
-		snappy_ctx_free(client->snappy_c);
-		client->snappy_c = NULL;
-	}
-	if (client->snappy_d) {
-		snappy_ctx_free(client->snappy_d);
-		client->snappy_d = NULL;
 	}
 
 	tmux_stream_release(&client->stream);

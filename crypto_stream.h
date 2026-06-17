@@ -2,8 +2,10 @@
 /*
  * Copyright (c) 2026 Dengfeng Liu <liudf0716@gmail.com>
  *
- * Stream encryption (AES-128-CFB) and compression (Snappy) for proxy data.
- * Compatible with frp's use_encryption/use_compression protocol.
+ * Stream encryption (AES-128-CFB) and compression (zlib) for proxy data.
+ *
+ * Encryption: AES-128-CFB (compatible with frp use_encryption)
+ * Compression: zlib deflate (xfrpc↔xfrpc only, not compatible with frp snappy)
  */
 
 #ifndef XFRPC_CRYPTO_STREAM_H
@@ -99,30 +101,28 @@ int crypto_reader_iv_received(struct crypto_ctx *ctx);
  */
 void crypto_reader_set_iv_received(struct crypto_ctx *ctx);
 
-/* ---- Snappy compression ---- */
+/* ---- Zlib compression ---- */
 
 /**
- * @brief Create snappy compression context (returns NULL if HAS_SNAPPY not defined)
+ * @brief Compress data using zlib deflate
+ * @param in Input data
+ * @param in_len Input length
+ * @param out Output buffer (caller allocates, should be at least compressBound(in_len))
+ * @param out_len Output length (written by function)
+ * @return 0 on success, -1 on error
  */
-struct snappy_ctx *snappy_ctx_new(void);
+int xfrpc_compress(const uint8_t *in, size_t in_len, uint8_t *out, size_t *out_len);
 
 /**
- * @brief Free snappy context
+ * @brief Decompress data using zlib inflate
+ * @param in Input data (zlib compressed)
+ * @param in_len Input length
+ * @param out Output buffer
+ * @param out_buf_size Size of output buffer
+ * @param out_len Output length (written by function)
+ * @return 0 on success, -1 on error
  */
-void snappy_ctx_free(struct snappy_ctx *ctx);
-
-/**
- * @brief Compress data using snappy
- * @return 0 on success, -1 on error (always fails if HAS_SNAPPY not defined)
- */
-int snappy_compress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
-                         uint8_t *out, size_t *out_len);
-
-/**
- * @brief Decompress data using snappy
- * @return 0 on success, -1 on error (always fails if HAS_SNAPPY not defined)
- */
-int snappy_decompress_data(struct snappy_ctx *ctx, const uint8_t *in, size_t in_len,
-                           uint8_t *out, size_t out_buf_size, size_t *out_len);
+int xfrpc_decompress(const uint8_t *in, size_t in_len,
+                     uint8_t *out, size_t out_buf_size, size_t *out_len);
 
 #endif /* XFRPC_CRYPTO_STREAM_H */

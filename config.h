@@ -38,6 +38,17 @@ struct common_conf {
 	int     server_port;           /* default 7000 */
 	char    *auth_token;
 
+	/* OIDC settings */
+	char    *auth_method;          /* "token" (default) or "oidc" */
+	char    *oidc_client_id;
+	char    *oidc_client_secret;
+	char    *oidc_audience;
+	char    *oidc_scope;
+	char    *oidc_token_endpoint_url;
+	char    *oidc_trusted_ca_file;
+	int     oidc_insecure_skip_verify;
+	char    *oidc_proxy_url;
+
 	/* Connection settings */
 	int     heartbeat_interval;    /* default 10 */
 	int     heartbeat_timeout;     /* default 30 */

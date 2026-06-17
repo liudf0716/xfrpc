@@ -835,6 +835,38 @@ static int common_handler(void *user, const char *section, const char *name, con
 		SAFE_FREE(config->user);
 		config->user = strdup(value);
 	}
+	/* OIDC settings */
+	else if (MATCH("common", "auth_method")) {
+		SAFE_FREE(config->auth_method);
+		config->auth_method = strdup(value);
+	}
+	else if (MATCH("common", "oidc_client_id")) {
+		SAFE_FREE(config->oidc_client_id);
+		config->oidc_client_id = strdup(value);
+	}
+	else if (MATCH("common", "oidc_client_secret")) {
+		SAFE_FREE(config->oidc_client_secret);
+		config->oidc_client_secret = strdup(value);
+	}
+	else if (MATCH("common", "oidc_audience")) {
+		SAFE_FREE(config->oidc_audience);
+		config->oidc_audience = strdup(value);
+	}
+	else if (MATCH("common", "oidc_scope")) {
+		SAFE_FREE(config->oidc_scope);
+		config->oidc_scope = strdup(value);
+	}
+	else if (MATCH("common", "oidc_token_endpoint_url")) {
+		SAFE_FREE(config->oidc_token_endpoint_url);
+		config->oidc_token_endpoint_url = strdup(value);
+	}
+	else if (MATCH("common", "oidc_trusted_ca_file")) {
+		SAFE_FREE(config->oidc_trusted_ca_file);
+		config->oidc_trusted_ca_file = strdup(value);
+	}
+	else if (MATCH("common", "oidc_insecure_skip_verify")) {
+		config->oidc_insecure_skip_verify = !!atoi(value);
+	}
 	
 	return 1;
 }
@@ -986,6 +1018,42 @@ static void load_toml_common(struct toml_doc *doc)
 		SAFE_FREE(c_conf->auth_token);
 		c_conf->auth_token = strdup(v);
 		assert(c_conf->auth_token);
+	}
+
+	/* OIDC Auth */
+	if ((v = toml_get(root, "auth.method"))) {
+		SAFE_FREE(c_conf->auth_method);
+		c_conf->auth_method = strdup(v);
+	}
+	if ((v = toml_get(root, "auth.oidc.clientID"))) {
+		SAFE_FREE(c_conf->oidc_client_id);
+		c_conf->oidc_client_id = strdup(v);
+	}
+	if ((v = toml_get(root, "auth.oidc.clientSecret"))) {
+		SAFE_FREE(c_conf->oidc_client_secret);
+		c_conf->oidc_client_secret = strdup(v);
+	}
+	if ((v = toml_get(root, "auth.oidc.audience"))) {
+		SAFE_FREE(c_conf->oidc_audience);
+		c_conf->oidc_audience = strdup(v);
+	}
+	if ((v = toml_get(root, "auth.oidc.scope"))) {
+		SAFE_FREE(c_conf->oidc_scope);
+		c_conf->oidc_scope = strdup(v);
+	}
+	if ((v = toml_get(root, "auth.oidc.tokenEndpointURL"))) {
+		SAFE_FREE(c_conf->oidc_token_endpoint_url);
+		c_conf->oidc_token_endpoint_url = strdup(v);
+	}
+	if ((v = toml_get(root, "auth.oidc.trustedCaFile"))) {
+		SAFE_FREE(c_conf->oidc_trusted_ca_file);
+		c_conf->oidc_trusted_ca_file = strdup(v);
+	}
+	if ((v = toml_get(root, "auth.oidc.insecureSkipVerify")))
+		c_conf->oidc_insecure_skip_verify = is_true(v);
+	if ((v = toml_get(root, "auth.oidc.proxyURL"))) {
+		/* Not yet supported - log warning */
+		debug(LOG_INFO, "OIDC proxyURL is not yet supported, ignoring");
 	}
 
 	/* Transport */

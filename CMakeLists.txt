@@ -127,6 +127,7 @@ set(CORE_SOURCES
     vendor/tomlc17/tomlc17.c
     crypto_stream.c
     vendor/snappy/snappy.c
+    oidc_auth.c
     msg.c
     xfrpc.c
     debug.c

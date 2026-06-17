@@ -20,6 +20,7 @@
 #include "login.h"
 #include "client.h"
 #include "utils.h"
+#include "oidc_auth.h"
 
 /**
  * @brief Macro to add a typed value to a JSON object
@@ -240,12 +241,37 @@ size_t login_request_marshal(char **msg)
 		return 0;
 	}
 
-	// Generate new auth key
+	// Generate auth key based on auth method
 	struct common_conf *cf = get_common_config();
-	char *auth_key = get_auth_key(cf->auth_token, &lg->timestamp);
-	if (!auth_key) {
-		json_object_put(j_login_req);
-		return 0;
+	char *auth_key = NULL;
+
+	if (cf->auth_method && strcmp(cf->auth_method, "oidc") == 0) {
+		/* OIDC authentication: fetch access token from token endpoint */
+		if (!cf->oidc_token_endpoint_url || !cf->oidc_client_id || !cf->oidc_client_secret) {
+			debug(LOG_ERR, "OIDC auth requires auth.oidc.clientID, clientSecret, and tokenEndpointURL");
+			json_object_put(j_login_req);
+			return 0;
+		}
+		auth_key = oidc_fetch_token(cf->oidc_token_endpoint_url,
+		                            cf->oidc_client_id,
+		                            cf->oidc_client_secret,
+		                            cf->oidc_audience,
+		                            cf->oidc_scope,
+		                            cf->oidc_trusted_ca_file,
+		                            cf->oidc_insecure_skip_verify);
+		if (!auth_key) {
+			debug(LOG_ERR, "Failed to fetch OIDC access token");
+			json_object_put(j_login_req);
+			return 0;
+		}
+		lg->timestamp = time(NULL);
+	} else {
+		/* Token authentication (default): HMAC-based auth key */
+		auth_key = get_auth_key(cf->auth_token, &lg->timestamp);
+		if (!auth_key) {
+			json_object_put(j_login_req);
+			return 0;
+		}
 	}
 
 	// Update privilege key

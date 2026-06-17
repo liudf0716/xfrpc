@@ -123,6 +123,7 @@ set(CORE_SOURCES
     control.c
     ini.c
     toml_parser.c
+    vendor/tomlc17/tomlc17.c
     msg.c
     xfrpc.c
     debug.c

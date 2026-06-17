@@ -2,331 +2,166 @@
 /*
  * Copyright (c) 2023 Dengfeng Liu <liudf0716@gmail.com>
  *
- * Lightweight TOML parser for frp-compatible configuration.
- * Supports: strings, integers, booleans, dotted keys, sections,
- *           array-of-tables ([[...]]), inline arrays, and comments.
+ * TOML parser wrapper using tomlc17 library.
+ * Maps the xfrpc-style flat API (toml_find_array_section/toml_get) onto
+ * the tomlc17 tree-based API (toml_seek/toml_get).
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <assert.h>
+#include <inttypes.h>
 
+#include "vendor/tomlc17/tomlc17.h"
+#define TOML_PARSER_INTERNAL
 #include "toml_parser.h"
 #include "debug.h"
 
-/* ---- helper: trim whitespace in-place ---- */
-static char *trim(char *s)
+/* ---- Internal document structure ---- */
+
+struct toml_doc {
+	toml_result_t result;
+	/* Scratch buffer for toml_get() return values */
+	char buf[1024];
+};
+
+/* ---- Parse a TOML file ---- */
+
+int xfrpc_toml_parse_file(const char *path, struct toml_doc **out_doc)
 {
-	while (isspace((unsigned char)*s)) s++;
-	char *end = s + strlen(s) - 1;
-	while (end > s && isspace((unsigned char)*end)) *end-- = '\0';
-	return s;
+	struct toml_doc *doc = calloc(1, sizeof(struct toml_doc));
+	if (!doc) {
+		debug(LOG_ERR, "TOML: out of memory");
+		return -1;
+	}
+
+	doc->result = toml_parse_file_ex(path);
+	if (!doc->result.ok) {
+		debug(LOG_ERR, "TOML: parse error: %s", doc->result.errmsg);
+		free(doc);
+		return -1;
+	}
+
+	*out_doc = doc;
+	return 0;
 }
 
-/* ---- find or create a section by name ---- */
-static struct toml_section *find_section(struct toml_doc *doc, const char *name)
+/* ---- Free document ---- */
+
+void xfrpc_toml_doc_free(struct toml_doc *doc)
 {
-	for (int i = 0; i < doc->section_count; i++) {
-		if (strcmp(doc->sections[i].name, name) == 0)
-			return &doc->sections[i];
-	}
-	if (doc->section_count >= TOML_MAX_SECTIONS) {
-		debug(LOG_ERR, "TOML: too many sections");
+	if (!doc)
+		return;
+	toml_free(doc->result);
+	free(doc);
+}
+
+/* ---- Get root table from doc ---- */
+
+static toml_datum_t get_root(struct toml_doc *doc)
+{
+	return doc->result.toptab;
+}
+
+/* ---- Find array-of-tables section ---- */
+
+void *xfrpc_toml_find_array_section(struct toml_doc *doc, const char *prefix, int index)
+{
+	if (!doc)
 		return NULL;
-	}
-	struct toml_section *sec = &doc->sections[doc->section_count++];
-	memset(sec, 0, sizeof(*sec));
-	snprintf(sec->name, sizeof(sec->name), "%s", name);
-	return sec;
-}
 
-/* ---- add entry to section ---- */
-static int add_entry(struct toml_section *sec, const char *key, const char *val,
-	int val_type)
-{
-	if (sec->entry_count >= TOML_MAX_ENTRIES) {
-		debug(LOG_ERR, "TOML: too many entries in section [%s]", sec->name);
-		return -1;
-	}
-	struct toml_entry *e = &sec->entries[sec->entry_count++];
-	snprintf(e->key, sizeof(e->key), "%s", key);
-	snprintf(e->val, sizeof(e->val), "%s", val);
-	e->val_type = val_type;
-	return 0;
-}
+	toml_datum_t root = get_root(doc);
 
-/* ---- parse a TOML string value (handle quotes and escapes) ---- */
-static int parse_string_value(const char *raw, char *out, size_t out_size)
-{
-	if (raw[0] != '"') {
-		/* Unquoted value */
-		snprintf(out, out_size, "%s", raw);
-		return 0;
+	/* index == -1 means return the root table itself */
+	if (index < 0) {
+		/* Return a pointer to the root datum (persistent in doc) */
+		static __thread toml_datum_t tls_slot;
+		tls_slot = root;
+		return &tls_slot;
 	}
 
-	/* Quoted string - skip opening quote */
-	const char *p = raw + 1;
-	size_t pos = 0;
-
-	while (*p && pos < out_size - 1) {
-		if (*p == '"' && (p == raw + 1 || *(p - 1) != '\\')) {
-			/* Closing quote */
-			out[pos] = '\0';
-			return 0;
-		}
-		if (*p == '\\' && *(p + 1)) {
-			p++;
-			switch (*p) {
-			case 'n':  out[pos++] = '\n'; break;
-			case 't':  out[pos++] = '\t'; break;
-			case '\\': out[pos++] = '\\'; break;
-			case '"':  out[pos++] = '"';  break;
-			default:   out[pos++] = *p;   break;
-			}
-		} else {
-			out[pos++] = *p;
-		}
-		p++;
-	}
-	out[pos] = '\0';
-	return 0;
-}
-
-/* ---- parse inline array value: ["a", "b"] -> "a,b" ---- */
-static int parse_inline_array(const char *raw, char *out, size_t out_size)
-{
-	if (raw[0] != '[') {
-		snprintf(out, out_size, "%s", raw);
-		return 0;
-	}
-
-	/* Skip brackets */
-	const char *p = raw + 1;
-	size_t pos = 0;
-	int in_string = 0;
-
-	while (*p && *p != ']' && pos < out_size - 1) {
-		if (*p == '"') {
-			in_string = !in_string;
-			p++;
-			continue;
-		}
-		if (!in_string && (*p == ',' || *p == ' ')) {
-			if (*p == ',' && pos > 0 && out[pos - 1] != ',') {
-				out[pos++] = ',';
-			}
-			p++;
-			continue;
-		}
-		if (in_string || (!isspace((unsigned char)*p) && *p != ',')) {
-			out[pos++] = *p;
-		}
-		p++;
-	}
-	out[pos] = '\0';
-
-	/* Trim trailing comma */
-	if (pos > 0 && out[pos - 1] == ',')
-		out[pos - 1] = '\0';
-
-	return 0;
-}
-
-/* ---- parse a single TOML line ---- */
-static int parse_line(char *line, struct toml_doc *doc,
-	struct toml_section **current_sec, int *current_array_idx,
-	char *current_array_prefix, size_t prefix_size)
-{
-	char *trimmed = trim(line);
-
-	/* Skip empty lines and comments */
-	if (*trimmed == '\0' || *trimmed == '#')
-		return 0;
-
-	/* Array of tables: [[name]] */
-	if (trimmed[0] == '[' && trimmed[1] == '[') {
-		char *end = strstr(trimmed + 2, "]]");
-		if (!end) {
-			debug(LOG_ERR, "TOML: invalid array-of-tables: %s", line);
-			return -1;
-		}
-		*end = '\0';
-		char *name = trim(trimmed + 2);
-
-		/* Track array prefix and index */
-		if (strcmp(name, current_array_prefix) != 0) {
-			snprintf(current_array_prefix, prefix_size, "%s", name);
-			*current_array_idx = 0;
-		} else {
-			(*current_array_idx)++;
-		}
-
-		/* Create indexed section name: "proxies[0]", "proxies[1]", etc. */
-		char sec_name[TOML_MAX_KEY];
-		snprintf(sec_name, sizeof(sec_name), "%s[%d]", name,
-			*current_array_idx);
-
-		*current_sec = find_section(doc, sec_name);
-		return 0;
-	}
-
-	/* Regular section: [name] */
-	if (trimmed[0] == '[') {
-		char *end = strchr(trimmed + 1, ']');
-		if (!end) {
-			debug(LOG_ERR, "TOML: invalid section: %s", line);
-			return -1;
-		}
-		*end = '\0';
-		char *name = trim(trimmed + 1);
-		*current_sec = find_section(doc, name);
-		/* Reset array tracking */
-		current_array_prefix[0] = '\0';
-		return 0;
-	}
-
-	/* Key-value pair */
-	char *eq = strchr(trimmed, '=');
-	if (!eq) {
-		debug(LOG_ERR, "TOML: invalid line: %s", line);
-		return -1;
-	}
-
-	*eq = '\0';
-	char *key = trim(trimmed);
-	char *val = trim(eq + 1);
-
-	if (*key == '\0') {
-		debug(LOG_ERR, "TOML: empty key");
-		return -1;
-	}
-
-	/* Determine value type and normalize */
-	char normalized[TOML_MAX_VAL];
-	int val_type;
-
-	if (val[0] == '[') {
-		/* Inline array */
-		parse_inline_array(val, normalized, sizeof(normalized));
-		val_type = TOML_VAL_ARRAY;
-	} else if (val[0] == '"') {
-		/* String */
-		parse_string_value(val, normalized, sizeof(normalized));
-		val_type = TOML_VAL_STRING;
-	} else if (strcmp(val, "true") == 0 || strcmp(val, "false") == 0) {
-		/* Boolean -> integer */
-		snprintf(normalized, sizeof(normalized), "%s",
-			strcmp(val, "true") == 0 ? "1" : "0");
-		val_type = TOML_VAL_BOOL;
+	/* Look up the array by prefix */
+	toml_datum_t arr;
+	if (prefix && *prefix) {
+		arr = toml_get(root, prefix);
 	} else {
-		/* Try integer or keep as string */
-		char *endptr;
-		long intval = strtol(val, &endptr, 10);
-		if (*endptr == '\0' && endptr != val) {
-			snprintf(normalized, sizeof(normalized), "%ld", intval);
-			val_type = TOML_VAL_INT;
-		} else {
-			snprintf(normalized, sizeof(normalized), "%s", val);
-			val_type = TOML_VAL_STRING;
-		}
+		arr = root;
 	}
 
-	/* If no section defined yet, use "default" */
-	if (!*current_sec) {
-		*current_sec = find_section(doc, "default");
-	}
+	if (arr.type != TOML_ARRAY)
+		return NULL;
+	if (index >= arr.u.arr.size)
+		return NULL;
 
-	return add_entry(*current_sec, key, normalized, val_type);
+	/* Return pointer to the element (persistent in doc) */
+	return &arr.u.arr.elem[index];
 }
 
-/* ---- public API ---- */
+/* ---- Count array-of-tables sections ---- */
 
-int toml_parse_file(const char *path, struct toml_doc *doc)
+int xfrpc_toml_count_array_sections(struct toml_doc *doc, const char *prefix)
 {
-	FILE *f = fopen(path, "r");
-	if (!f) {
-		debug(LOG_ERR, "TOML: cannot open %s", path);
-		return -1;
-	}
+	if (!doc || !prefix)
+		return 0;
 
-	memset(doc, 0, sizeof(*doc));
+	toml_datum_t root = get_root(doc);
+	toml_datum_t arr = toml_get(root, prefix);
 
-	struct toml_section *current_sec = NULL;
-	int current_array_idx = 0;
-	char current_array_prefix[TOML_MAX_KEY] = {0};
-	char line[8192];
-	int line_num = 0;
+	if (arr.type != TOML_ARRAY)
+		return 0;
 
-	while (fgets(line, sizeof(line), f)) {
-		line_num++;
-
-		/* Strip trailing newline/carriage return */
-		size_t len = strlen(line);
-		while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
-			line[--len] = '\0';
-
-		/* Skip BOM */
-		if (line_num == 1 && (unsigned char)line[0] == 0xEF &&
-			(unsigned char)line[1] == 0xBB && (unsigned char)line[2] == 0xBF) {
-			memmove(line, line + 3, len - 2);
-		}
-
-		if (parse_line(line, doc, &current_sec, &current_array_idx,
-				current_array_prefix, sizeof(current_array_prefix)) < 0) {
-			debug(LOG_ERR, "TOML: parse error at line %d: %s", line_num, line);
-			fclose(f);
-			return -1;
-		}
-	}
-
-	fclose(f);
-	debug(LOG_DEBUG, "TOML: parsed %d sections from %s", doc->section_count, path);
-	return 0;
+	return arr.u.arr.size;
 }
 
-void toml_doc_free(struct toml_doc *doc)
-{
-	/* No dynamic memory in current implementation */
-	memset(doc, 0, sizeof(*doc));
-}
+/* ---- Helper: convert datum to string in doc's buffer ---- */
 
-struct toml_section *toml_find_array_section(struct toml_doc *doc,
-	const char *prefix, int index)
-{
-	char name[TOML_MAX_KEY];
-	snprintf(name, sizeof(name), "%s[%d]", prefix, index);
 
-	for (int i = 0; i < doc->section_count; i++) {
-		if (strcmp(doc->sections[i].name, name) == 0)
-			return &doc->sections[i];
-	}
-	return NULL;
-}
+/* ---- Get value from section by key ---- */
 
-int toml_count_array_sections(struct toml_doc *doc, const char *prefix)
-{
-	int count = 0;
-	size_t prefix_len = strlen(prefix);
-
-	for (int i = 0; i < doc->section_count; i++) {
-		if (strncmp(doc->sections[i].name, prefix, prefix_len) == 0 &&
-			doc->sections[i].name[prefix_len] == '[') {
-			count++;
-		}
-	}
-	return count;
-}
-
-const char *toml_get(struct toml_section *sec, const char *key)
+const char *xfrpc_toml_get(void *sec, const char *key)
 {
 	if (!sec || !key)
 		return NULL;
 
-	for (int i = 0; i < sec->entry_count; i++) {
-		if (strcmp(sec->entries[i].key, key) == 0)
-			return sec->entries[i].val;
+	toml_datum_t *table = (toml_datum_t *)sec;
+
+	/* Use toml_seek for dotted key paths (e.g. "transport.tls.enable") */
+	toml_datum_t val = toml_seek(*table, key);
+	if (val.type == TOML_UNKNOWN)
+		return NULL;
+
+	/* Find the document that owns this datum to use its scratch buffer.
+	 * We store a doc pointer at a known offset. Since toml_datum_t is
+	 * embedded in the doc's result tree, we can't easily get back to doc.
+	 * Instead, use a thread-local static buffer. */
+	static __thread char tls_buf[1024];
+
+	switch (val.type) {
+	case TOML_STRING:
+		return val.u.s;
+	case TOML_INT64:
+		snprintf(tls_buf, sizeof(tls_buf), "%" PRId64, val.u.int64);
+		return tls_buf;
+	case TOML_BOOLEAN:
+		return val.u.boolean ? "1" : "0";
+	case TOML_FP64:
+		snprintf(tls_buf, sizeof(tls_buf), "%g", val.u.fp64);
+		return tls_buf;
+	case TOML_ARRAY: {
+		int pos = 0;
+		for (int i = 0; i < val.u.arr.size && pos < (int)sizeof(tls_buf) - 4; i++) {
+			toml_datum_t elem = val.u.arr.elem[i];
+			if (i > 0)
+				pos += snprintf(tls_buf + pos, sizeof(tls_buf) - pos, ", ");
+			if (elem.type == TOML_STRING)
+				pos += snprintf(tls_buf + pos, sizeof(tls_buf) - pos, "%s", elem.u.s);
+			else if (elem.type == TOML_INT64)
+				pos += snprintf(tls_buf + pos, sizeof(tls_buf) - pos, "%" PRId64, elem.u.int64);
+		}
+		return tls_buf;
 	}
-	return NULL;
+	default:
+		return NULL;
+	}
 }

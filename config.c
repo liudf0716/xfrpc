@@ -960,16 +960,7 @@ static void ps_set_string(char **field, const char *value)
  */
 static void load_toml_common(struct toml_doc *doc)
 {
-	struct toml_section *root = toml_find_array_section(doc, "", -1);
-	/* Root section is stored as "default" by the parser */
-	if (!root) {
-		for (int i = 0; i < doc->section_count; i++) {
-			if (strcmp(doc->sections[i].name, "default") == 0) {
-				root = &doc->sections[i];
-				break;
-			}
-		}
-	}
+	void *root = toml_find_array_section(doc, "", -1);
 	if (!root) {
 		debug(LOG_ERR, "TOML: no root section found");
 		return;
@@ -1045,7 +1036,7 @@ static void load_toml_proxies(struct toml_doc *doc)
 	int count = toml_count_array_sections(doc, "proxies");
 
 	for (int i = 0; i < count; i++) {
-		struct toml_section *sec = toml_find_array_section(doc, "proxies", i);
+		void *sec = toml_find_array_section(doc, "proxies", i);
 		if (!sec)
 			continue;
 
@@ -1166,7 +1157,7 @@ static void load_toml_visitors(struct toml_doc *doc)
 	int count = toml_count_array_sections(doc, "visitors");
 
 	for (int i = 0; i < count; i++) {
-		struct toml_section *sec = toml_find_array_section(doc, "visitors", i);
+		void *sec = toml_find_array_section(doc, "visitors", i);
 		if (!sec)
 			continue;
 
@@ -1232,14 +1223,12 @@ static void load_toml_visitors(struct toml_doc *doc)
  */
 static void load_toml_config(const char *confile)
 {
-	struct toml_doc *doc = calloc(1, sizeof(struct toml_doc));
-	assert(doc);
+	struct toml_doc *doc = NULL;
 
 	debug(LOG_DEBUG, "Loading TOML config from '%s'", confile);
 
-	if (toml_parse_file(confile, doc) < 0) {
+	if (toml_parse_file(confile, &doc) < 0) {
 		debug(LOG_ERR, "Failed to parse TOML config file: %s", confile);
-		free(doc);
 		exit(EXIT_FAILURE);
 	}
 
@@ -1266,7 +1255,6 @@ static void load_toml_config(const char *confile)
 	dump_all_ps();
 
 	toml_doc_free(doc);
-	free(doc);
 }
 
 /**

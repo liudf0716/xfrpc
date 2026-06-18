@@ -1142,6 +1142,16 @@ static void load_toml_proxies(struct toml_doc *doc)
 		if ((v = toml_get(sec, "serviceType")))
 			ps->service_type = convert_service_type(v);
 
+		/* Time-based proxy management (xfrpc unique) */
+		if ((v = toml_get(sec, "startTime"))) {
+			int hour = atoi(v);
+			if (hour >= 0 && hour <= 23) ps->start_time = hour;
+		}
+		if ((v = toml_get(sec, "endTime"))) {
+			int hour = atoi(v);
+			if (hour >= 0 && hour <= 23) ps->end_time = hour;
+		}
+
 		/* Transport options */
 		if ((v = toml_get(sec, "transport.useEncryption")))
 			ps->use_encryption = is_true(v);

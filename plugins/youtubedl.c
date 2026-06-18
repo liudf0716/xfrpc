@@ -85,7 +85,7 @@ parse_yt_dlp_command(char *json_data, struct yt_dlp_param *param)
         json_object_put(jobj);
         return -1;
     }
-    strcpy(param->action, json_object_get_string(jaction));
+    snprintf(param->action, sizeof(param->action), "%s", json_object_get_string(jaction));
     if (strcmp(param->action, "stop") == 0) {
         json_object_put(jobj);
         return 0;
@@ -98,7 +98,7 @@ parse_yt_dlp_command(char *json_data, struct yt_dlp_param *param)
         json_object_put(jobj);
         return -1;
     }
-    strcpy(param->profile, json_object_get_string(jprofile));
+    snprintf(param->profile, sizeof(param->profile), "%s", json_object_get_string(jprofile));
 
     // free json object
     json_object_put(jobj);

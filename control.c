@@ -782,39 +782,6 @@ static void heartbeat_handler(evutil_socket_t fd, short event, void *arg) {
 }
 
 /**
- * Handles configuration for FTP proxy service by updating the remote data port
- * of the main FTP proxy service.
- *
- * @param ps The proxy service containing FTP configuration
- * @param npr The new proxy response containing remote port information
- *
- * @return 1 on successful configuration, 0 if main service not found or invalid port
- *
- * This function:
- * 1. Looks up the main FTP proxy service using the configuration proxy name
- * 2. Validates the remote port from the new proxy response
- * 3. Updates the main service's remote data port if validation succeeds
- */
-static int handle_ftp_configuration(struct proxy_service *ps, struct new_proxy_response *npr) 
-{
-	struct proxy_service *main_ps = get_proxy_service(ps->ftp_cfg_proxy_name);
-	if (!main_ps) {
-		debug(LOG_ERR, "Main FTP proxy service '%s' not found", ps->ftp_cfg_proxy_name);
-		return 0;
-	}
-
-	debug(LOG_DEBUG, "Found main FTP proxy service '%s'", main_ps->proxy_name);
-
-	if (npr->remote_port <= 0) {
-		debug(LOG_ERR, "Invalid FTP remote data port: %d", npr->remote_port);
-		return 0;
-	}
-
-	main_ps->remote_data_port = npr->remote_port;
-	return 1;
-}
-
-/**
  * @brief Processes the raw response for a proxy service
  *
  * @param npr Pointer to the new proxy response structure
@@ -852,13 +819,6 @@ static int proxy_service_resp_raw(struct new_proxy_response *npr)
 	if (!ps->proxy_type) {
 		debug(LOG_ERR, "Proxy type is NULL for service '%s'", npr->proxy_name);
 		return 1;
-	}
-
-	// Handle FTP configuration if present
-	if (ps->ftp_cfg_proxy_name) {
-		if (!handle_ftp_configuration(ps, npr)) {
-			return 1;
-		}
 	}
 
 	return 0;

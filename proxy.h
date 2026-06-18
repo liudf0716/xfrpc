@@ -20,18 +20,10 @@
 
 #define IP_LEN 16
 
-// FTP passive mode related structures
-struct ftp_pasv {
-	int     code;
-	char    ftp_server_ip[IP_LEN];
-	int     ftp_server_port;
-};
-
 // Generic proxy structure
 struct proxy {
 	struct bufferevent  *bev;
 	char               *proxy_name;
-	int                remote_data_port;    // Used in FTP proxy
 };
 
 // Proxy object management functions
@@ -41,13 +33,6 @@ void free_proxy_obj(struct proxy *p);
 // TCP proxy callbacks
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
-
-// FTP proxy callbacks and helpers
-void ftp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
-void ftp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
-void set_ftp_data_proxy_tunnel(const char *ftp_proxy_name, 
-							  struct ftp_pasv *local_fp, 
-							  struct ftp_pasv *remote_fp);
 
 // UDP proxy callbacks
 void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);

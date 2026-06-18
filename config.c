@@ -35,7 +35,6 @@ static const char *valid_types[] = {
 	"socks5",
 	"http",
 	"https",
-	"iod",
 	"tcpmux",
 	"stcp",
 	"xtcp",
@@ -48,9 +47,6 @@ static const char *valid_types[] = {
  */
 static struct common_conf    *c_conf;    /* Common configuration settings */
 static struct proxy_service *all_ps;     /* Hash table of all proxy services */
-
-/* Forward declaration */
-static void new_ftp_data_proxy_service(struct proxy_service *ftp_ps);
 
 /**
  * @brief Gets the common configuration settings
@@ -176,12 +172,10 @@ static void dump_proxy_service(const int index, struct proxy_service *ps)
 	if (!ps)
 		return;
 	
-	// Set default type or handle FTP
+	// Set default type
 	if (!ps->proxy_type) {
 		ps->proxy_type = strdup("tcp");
 		assert(ps->proxy_type);
-	} else if (strcmp(ps->proxy_type, "ftp") == 0) {
-		new_ftp_data_proxy_service(ps);
 	}
 
 	// Validate configuration
@@ -308,35 +302,6 @@ static struct proxy_service *new_proxy_service(const char *name)
 }
 
 // create a new proxy service with suffix "_ftp_data_proxy"
-static void 
-new_ftp_data_proxy_service(struct proxy_service *ftp_ps)
-{
-	struct proxy_service *ps = NULL;
-	char *ftp_data_proxy_name = get_ftp_data_proxy_name((const char *)ftp_ps->proxy_name);
-
-	HASH_FIND_STR(all_ps, ftp_data_proxy_name, ps);
-	if (!ps) {
-		ps = new_proxy_service(ftp_data_proxy_name);
-		if (! ps) {
-			debug(LOG_ERR, 
-				"cannot create ftp data proxy service, it should not happenned!");
-			exit(EXIT_FAILURE);
-		}
-		
-		ps->ftp_cfg_proxy_name = strdup(ftp_ps->proxy_name);
-		assert(ps->ftp_cfg_proxy_name);
-
-		ps->proxy_type = strdup("tcp");
-		ps->remote_port = ftp_ps->remote_data_port;
-		ps->local_ip = ftp_ps->local_ip;
-		ps->local_port = 0; //will be init in working tunnel connectting
-
-		HASH_ADD_KEYPTR(hh, all_ps, ps->proxy_name, strlen(ps->proxy_name), ps);
-	}
-
-	free(ftp_data_proxy_name);
-}
-
 /**
  * @brief Validates proxy service configuration parameters
  *
@@ -379,12 +344,6 @@ int validate_proxy(struct proxy_service *ps)
 		if (ps->remote_port == 0) {
 			debug(LOG_ERR, "Proxy [%s] error: remote_port not found", 
 				  ps->proxy_name);
-			return 0;
-		}
-	}
-	else if (strcmp(ps->proxy_type, "iod") == 0) {
-		if (ps->remote_port == 0 || ps->local_port == 0) {
-			debug(LOG_ERR, "Proxy [%s] error: remote_port and local_port must be set for IOD proxy", ps->proxy_name);
 			return 0;
 		}
 	}
@@ -696,7 +655,6 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("bind_addr")) SET_STRING_VALUE(bind_addr);
 	else if (MATCH_NAME("local_port")) ps->local_port = atoi(value);
 	else if (MATCH_NAME("remote_port")) ps->remote_port = atoi(value);
-	else if (MATCH_NAME("remote_data_port")) ps->remote_data_port = atoi(value);
 	else if (MATCH_NAME("use_encryption")) ps->use_encryption = is_true(value);
 	else if (MATCH_NAME("use_compression")) ps->use_compression = is_true(value);
 	else if (MATCH_NAME("http_user")) SET_STRING_VALUE(http_user);
@@ -913,31 +871,6 @@ static void init_common_conf(struct common_conf *config) {
 }
 
 /**
- * @brief Creates a FTP data proxy name by appending a suffix to the control proxy name
- *
- * @param ftp_proxy_name The base FTP proxy name to extend
- * @return char* A newly allocated string containing the FTP data proxy name
- * 
- * @note The returned string must be freed by the caller
- * @note Function will assert if memory allocation fails
- */
-char *get_ftp_data_proxy_name(const char *ftp_proxy_name) {
-	if (!ftp_proxy_name) {
-		return NULL;
-	}
-
-	const char *suffix = FTP_RMT_CTL_PROXY_SUFFIX;
-	size_t total_len = strlen(ftp_proxy_name) + strlen(suffix) + 1;
-	
-	char *data_proxy_name = (char *)calloc(1, total_len);
-	assert(data_proxy_name);
-
-	snprintf(data_proxy_name, total_len, "%s%s", ftp_proxy_name, suffix);
-	
-	return data_proxy_name;
-}
-
-/**
  * @brief Validates heartbeat configuration parameters
  *
  * Ensures heartbeat interval is positive and timeout is greater than interval.
@@ -1135,8 +1068,6 @@ static void load_toml_proxies(struct toml_doc *doc)
 			ps->local_port = atoi(v);
 		if ((v = toml_get(sec, "remotePort")))
 			ps->remote_port = atoi(v);
-		if ((v = toml_get(sec, "remoteDataPort")))
-			ps->remote_data_port = atoi(v);
 
 		/* Service type (xdpi classification) */
 		if ((v = toml_get(sec, "serviceType")))
@@ -1450,7 +1381,6 @@ void free_proxy_service(struct proxy_service *ps)
 	}
 
 	SAFE_FREE(ps->proxy_name);
-	SAFE_FREE(ps->ftp_cfg_proxy_name);
 	SAFE_FREE(ps->proxy_type);
 	SAFE_FREE(ps->local_ip);
 	SAFE_FREE(ps->custom_domains);

@@ -26,9 +26,6 @@
 #define XFRPC_PLUGIN_YOUTUBEDL_PORT          20002
 #define XFRPC_PLUGIN_YOUTUBEDL_REMOTE_PORT   20003
 
-// FTP related definitions
-#define FTP_RMT_CTL_PROXY_SUFFIX  "_ftp_remote_ctl_proxy"
-
 /**
  * Common configuration structure for the client
  */
@@ -85,9 +82,6 @@ struct proxy_service *get_all_proxy_services(void);
 void free_proxy_service(struct proxy_service *ps);
 void free_all_proxy_services(void);
 int validate_proxy(struct proxy_service *ps);
-
-/* FTP specific functions */
-char *get_ftp_data_proxy_name(const char *ftp_proxy_name);
 
 /* Visitor section parser (called from INI handler) */
 int parse_visitor_section(const char *section_name, const char *key, const char *value);

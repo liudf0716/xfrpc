@@ -39,7 +39,6 @@ new_proxy_obj(struct bufferevent *bev)
 	}
 	
 	proxy->bev = bev;
-	proxy->remote_data_port = -1;
 	proxy->proxy_name = NULL;
 	
 	return proxy;

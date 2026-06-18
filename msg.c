@@ -377,11 +377,6 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 		}
 	}
 
-	// Handle FTP specific configuration
-	if (is_ftp_proxy(np_req)) {
-		JSON_MARSHAL_TYPE(j_np_req, "remote_data_port", int, np_req->remote_data_port);
-	}
-
 	// Handle domains and ports
 	if (np_req->custom_domains) {
 		fill_custom_domains(j_np_req, np_req->custom_domains);

@@ -144,7 +144,6 @@ set(CORE_SOURCES
 set(PROXY_SOURCES
     proxy_tcp.c
     proxy_udp.c
-    proxy_ftp.c
     proxy.c
     tcpmux.c
     visitor.c

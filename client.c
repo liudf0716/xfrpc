@@ -190,13 +190,6 @@ static int is_proxy_type(const struct proxy_service *ps, const char *type, int e
 }
 
 /**
- * @brief Check if proxy service is FTP type
- */
-int is_ftp_proxy(const struct proxy_service *ps) {
-	return is_proxy_type(ps, "ftp", ps->remote_data_port > 0);
-}
-
-/**
  * @brief Check if proxy service is SOCKS5 type
  */
 int is_socks5_proxy(const struct proxy_service *ps) {
@@ -250,10 +243,7 @@ static void setup_proxy_callbacks(struct proxy_client *client,
 {
 	struct proxy_service *ps = client->ps;
 	
-	if (is_ftp_proxy(ps)) {
-		*proxy_c2s_recv = ftp_proxy_c2s_cb;
-		*proxy_s2c_recv = ftp_proxy_s2c_cb;
-	} else if (is_udp_proxy(ps)) {
+	if (is_udp_proxy(ps)) {
 		*proxy_c2s_recv = udp_proxy_c2s_cb;
 		*proxy_s2c_recv = udp_proxy_s2c_cb;
 	} else if (is_socks5_proxy(ps)) {

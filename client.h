@@ -133,8 +133,6 @@ struct proxy_service {
 	char    *request_headers;   /* comma-separated key=value pairs */
 	char    *response_headers;  /* comma-separated key=value pairs */
 
-	/* FTP specific */
-	char    *ftp_cfg_proxy_name;
 	char    *s_root_dir;
 
 	/* Load balancing */
@@ -173,7 +171,6 @@ void start_xfrp_tunnel(struct proxy_client *client);
 void del_proxy_client_by_stream_id(uint32_t sid);
 struct proxy_client *get_proxy_client(uint32_t sid);
 int send_client_data_tail(struct proxy_client *client);
-int is_ftp_proxy(const struct proxy_service *ps);
 int is_socks5_proxy(const struct proxy_service *ps);
 int is_udp_proxy(const struct proxy_service *ps);
 int is_tcpmux_proxy(const struct proxy_service *ps);

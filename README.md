@@ -396,7 +396,7 @@ QQ群 ： [331230369](https://jq.qq.com/?_wv=1027&k=47QGEhL)
 
 ## Please support us and star our project
 
-[![Star History Chart](https://api.star-history.com/svg?repos=liudf0716/xfrpc&type=Date)](https://star-history.com/#liudf0716/xfrpc&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=liudf0716/xfrpc&type=Date)](https://star-history.dera.page/#liudf0716/xfrpc&Date)
 
 ## 打赏
 

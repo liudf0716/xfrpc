@@ -164,15 +164,14 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id, enum tcp_mux_stat
         return;
     }
 
+    tmux_stream_release(stream);
+
     stream->id = id;
     stream->state = state;
     stream->recv_window = MAX_STREAM_WINDOW_SIZE;  // 8MB
     stream->send_window = 256 * 1024;  // 256KB initial (matches yamux initialStreamWindow)
     stream->v2_magic_sent = 0;
     stream->v2_magic_seen = 0;
-    stream->v2_rx = NULL;
-    stream->v2_rx_len = 0;
-    stream->v2_rx_cap = 0;
 
     add_stream(stream);
     debug(LOG_DEBUG, "Initialized stream %u with state %d", id, state);
@@ -562,6 +561,8 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
                  void (*handle_fn)(uint8_t *, int, void *), void *param) {
     if (!stream || !handle_fn) {
         debug(LOG_ERR, "Invalid parameters in process_data");
+        if (bev && length > 0)
+            evbuffer_drain(bufferevent_get_input(bev), length);
         return 0;
     }
 
@@ -569,17 +570,23 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
 
     if (!process_flags(flags, stream)) {
         debug(LOG_ERR, "Failed to process flags for stream %d", stream_id);
+        if (bev && length > 0)
+            evbuffer_drain(bufferevent_get_input(bev), length);
         return 0;
     }
 
     if (!get_stream_by_id(stream_id)) {
         debug(LOG_DEBUG, "Stream %d no longer exists", stream_id);
+        if (bev && length > 0)
+            evbuffer_drain(bufferevent_get_input(bev), length);
         return length;
     }
 
     if (length > stream->recv_window) {
         debug(LOG_ERR, "Receive window exceeded (available: %u, requested: %u)",
               stream->recv_window, length);
+        if (bev && length > 0)
+            evbuffer_drain(bufferevent_get_input(bev), length);
         return 0;
     }
 
@@ -593,6 +600,8 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         uint8_t *data = calloc(length + 1, sizeof(uint8_t));
         if (!data) {
             debug(LOG_ERR, "Memory allocation failed for data buffer");
+            if (bev && length > 0)
+                evbuffer_drain(bufferevent_get_input(bev), length);
             return 0;
         }
 
@@ -600,6 +609,8 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         if (nr != length) {
             debug(LOG_ERR, "Stream %u: short read %zu/%u in default path",
                   stream_id, nr, length);
+            if (nr < length)
+                evbuffer_drain(bufferevent_get_input(bev), length - nr);
             free(data);
             return 0;
         }
@@ -626,22 +637,50 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         debug(LOG_DEBUG, "Stream %u: leaving socks5 path processed=%u",
               stream_id, length);
     } else if (is_udp_proxy(pc->ps)) {
-        /* UDP workConn carries TypeUDPPacket frames, not raw datagrams */
-        uint8_t *data = calloc(length + 1, sizeof(uint8_t));
-        if (!data) {
-            debug(LOG_ERR, "Memory allocation failed for UDP mux payload");
-            return 0;
-        }
-        size_t nr = bufferevent_read(bev, data, length);
-        if (nr != length) {
-            debug(LOG_ERR, "Stream %u: short read %zu/%u on UDP path",
-                  stream_id, nr, length);
+        if (pc->use_encryption || pc->use_compression) {
+            struct evbuffer *src = bufferevent_get_input(bev);
+            struct evbuffer *frame = evbuffer_new();
+            struct evbuffer *plain = evbuffer_new();
+            if (!frame || !plain) {
+                if (frame) evbuffer_free(frame);
+                if (plain) evbuffer_free(plain);
+                evbuffer_drain(src, length);
+                debug(LOG_ERR, "Stream %u: failed to allocate crypto buffers for UDP", stream_id);
+                return 0;
+            }
+            evbuffer_remove_buffer(src, frame, length);
+            proxy_crypto_decode_evbuffer(pc, frame, plain);
+            size_t plen = evbuffer_get_length(plain);
+            if (plen > 0) {
+                uint8_t *pdata = evbuffer_pullup(plain, plen);
+                if (pdata) {
+                    handle_fn(pdata, (int)plen, pc);
+                }
+            }
+            evbuffer_free(frame);
+            evbuffer_free(plain);
+            bytes_processed = length;
+        } else {
+            /* UDP workConn carries TypeUDPPacket frames, not raw datagrams */
+            uint8_t *data = calloc(length + 1, sizeof(uint8_t));
+            if (!data) {
+                debug(LOG_ERR, "Memory allocation failed for UDP mux payload");
+                evbuffer_drain(bufferevent_get_input(bev), length);
+                return 0;
+            }
+            size_t nr = bufferevent_read(bev, data, length);
+            if (nr != length) {
+                debug(LOG_ERR, "Stream %u: short read %zu/%u on UDP path",
+                      stream_id, nr, length);
+                if (nr < length)
+                    evbuffer_drain(bufferevent_get_input(bev), length - nr);
+                free(data);
+                return 0;
+            }
+            handle_fn(data, length, pc);
             free(data);
-            return 0;
+            bytes_processed = length;
         }
-        handle_fn(data, length, pc);
-        free(data);
-        bytes_processed = length;
     } else if (pc->use_encryption || pc->use_compression) {
         /* Mux fast-path must decrypt/decompress before handing bytes to local */
         struct evbuffer *src = bufferevent_get_input(bev);
@@ -650,6 +689,7 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         if (!frame || !plain) {
             if (frame) evbuffer_free(frame);
             if (plain) evbuffer_free(plain);
+            evbuffer_drain(src, length);
             debug(LOG_ERR, "Stream %u: failed to allocate crypto buffers", stream_id);
             return 0;
         }

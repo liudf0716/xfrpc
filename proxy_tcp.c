@@ -434,7 +434,7 @@ void handle_xdpi(struct proxy_client *client, struct bufferevent *bev, uint32_t 
  * @param src Source evbuffer (raw data)
  * @param dst Destination evbuffer (encrypted/compressed data)
  */
-static void crypto_encode_evbuffer(struct proxy_client *client,
+void proxy_crypto_encode_evbuffer(struct proxy_client *client,
                                    struct evbuffer *src, struct evbuffer *dst)
 {
 	size_t len = evbuffer_get_length(src);
@@ -573,7 +573,7 @@ void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 		if (client->enc_pending && evbuffer_get_length(client->enc_pending) > 0)
 			evbuffer_add_buffer(processed, client->enc_pending);
 
-		crypto_encode_evbuffer(client, src, processed);
+		proxy_crypto_encode_evbuffer(client, src, processed);
 
 		if (!c_conf->tcp_mux) {
 			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);

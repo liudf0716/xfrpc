@@ -772,6 +772,10 @@ static int common_handler(void *user, const char *section, const char *name, con
 	else if (MATCH("common", "wire_protocol")) {
 		SAFE_FREE(config->wire_protocol);
 		config->wire_protocol = strdup(value);
+		if (strcmp(value, "v1") != 0 && strcmp(value, "v2") != 0) {
+			debug(LOG_ERR, "INI: common.wire_protocol must be v1 or v2 (got %s)", value);
+			exit(1);
+		}
 	}
 	else if (MATCH("common", "quic_bind_port")) {
 		config->quic_bind_port = atoi(value);

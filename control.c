@@ -62,14 +62,13 @@ static void keep_control_alive(void);
 static void client_start_event_cb(struct bufferevent *bev, short what, void *ctx);
 static void reload_check_timer_cb(evutil_socket_t fd, short what, void *ctx);
 static void start_proxy_services(void);
-static int prepare_message(const enum msg_type type, const char *msg,
-			   const size_t msg_len, struct msg_hdr **msg_out,
-			   size_t *total_len);
 static int prepare_login_message(char **msg_out, int *len_out);
 static void handle_control_work(const uint8_t *buf, int len, void *ctx);
 static int handle_login_response(const uint8_t *buf, int len);
 static void health_check_result_cb(struct proxy_service *ps, int healthy, void *ctx);
 static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx);
+static void handle_connection_failure(struct common_conf *c_conf, int *retry_times);
+static void trigger_reconnect(void);
 
 /**
  * Check if xfrpc client is connected to server
@@ -1011,20 +1010,20 @@ int data_len = (int)msg_hton(msg->length);
     struct proxy_service *ps = get_proxy_service(sr->proxy_name);
     if (!ps) {
         debug(LOG_ERR, "Proxy service [%s] not found for TypeStartWorkConn", sr->proxy_name);
-        SAFE_FREE(sr);
+        start_work_conn_resp_free(sr);
         return;
     }
 
     // Check if service is available at current time
     if (!is_service_available(ps)) {
         debug(LOG_INFO, "Proxy service [%s] is not available at current time", sr->proxy_name);
-        SAFE_FREE(sr);
+        start_work_conn_resp_free(sr);
         return;
     }
 
     if (!ctx) {
         debug(LOG_ERR, "NULL context in TypeStartWorkConn");
-        SAFE_FREE(sr);
+        start_work_conn_resp_free(sr);
         return;
     }
     struct proxy_client *client = (struct proxy_client *)ctx;
@@ -1038,7 +1037,7 @@ int data_len = (int)msg_hton(msg->length);
         uint8_t *tail = malloc(remaining_len);
         if (!tail) {
             debug(LOG_ERR, "Failed to allocate data tail buffer");
-            SAFE_FREE(sr);
+            start_work_conn_resp_free(sr);
             return;
         }
         memcpy(tail, msg->data + msg_hton(msg->length), remaining_len);
@@ -1052,13 +1051,13 @@ int data_len = (int)msg_hton(msg->length);
         debug(LOG_INFO, "[START_WORK_CONN] XTCP proxy '%s' detected, starting NAT hole-punch",
               sr->proxy_name);
         xtcp_client_run(client->base, client);
-        SAFE_FREE(sr);
+        start_work_conn_resp_free(sr);
         return;
     }
 
     start_xfrp_tunnel(client);
     set_client_work_start(client, 1);
-    SAFE_FREE(sr);
+    start_work_conn_resp_free(sr);
 }
 
 /**
@@ -1150,11 +1149,18 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 
 	/* The length field is server-controlled: never let it drive a
 	 * memcpy() past the received buffer. */
-	if (flen < (int)sizeof(struct msg_hdr) ||
-	    (int)msg_hton(msg->length) > flen - (int)sizeof(struct msg_hdr)) {
-		debug(LOG_ERR, "Invalid message length %d (buffer %d), dropping",
-		      (int)msg_hton(msg->length), flen);
-		if (!ctx)
+	if (flen < (int)sizeof(struct msg_hdr)) {
+		debug(LOG_ERR, "Buffer too short for message header (%d bytes)", flen);
+		if (!ctx && !wire_protocol_is_v2())
+			free(frps_cmd);
+		return;
+	}
+
+	uint64_t msg_len = msg_hton(msg->length);
+	if (msg_len > (uint64_t)(flen - (int)sizeof(struct msg_hdr))) {
+		debug(LOG_ERR, "Invalid message length %llu (buffer %d), dropping",
+		      (unsigned long long)msg_len, flen);
+		if (!ctx && !wire_protocol_is_v2())
 			free(frps_cmd);
 		return;
 	}
@@ -1208,7 +1214,7 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx)
 		break;
 	}
 
-	if (!ctx)
+	if (!ctx && !wire_protocol_is_v2())
 		free(frps_cmd);
 }
 
@@ -1378,6 +1384,15 @@ static void v2_dispatch_v1_buf(uint8_t *v1, size_t v1_len, void *ctx)
 	}
 }
 
+static void trigger_reconnect(void)
+{
+	static int retry_times = 0;
+	struct common_conf *c_conf = get_common_config();
+	if (c_conf) {
+		handle_connection_failure(c_conf, &retry_times);
+	}
+}
+
 static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 {
 	while (st->v2_rx_len >= 8) {
@@ -1389,30 +1404,62 @@ static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 			return;
 		if (n < 0) {
 			st->v2_rx_len = 0;
+			if (!ctx) {
+				debug(LOG_ERR, "v2 invalid frame header, triggering reconnect");
+				trigger_reconnect();
+			}
 			return;
 		}
 		if (!v2_got_hello && !ctx) {
 			if (type != WIRE_V2_FRAME_SERVER_HELLO) {
-				debug(LOG_ERR, "v2 expected ServerHello, got type %u", type);
+				debug(LOG_ERR, "v2 expected ServerHello, got type %u, reconnecting", type);
 				memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
 				st->v2_rx_len -= (size_t)n;
+				trigger_reconnect();
 				return;
 			}
 			if (v2_init_aead_from_hello(pl, plen) != 0) {
+				debug(LOG_ERR, "v2 failed to process ServerHello, reconnecting");
 				memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
 				st->v2_rx_len -= (size_t)n;
+				trigger_reconnect();
 				return;
 			}
 		} else if (type == WIRE_V2_FRAME_MESSAGE) {
 			uint8_t *v1 = NULL;
 			size_t v1_len = 0;
-			if (wire_v2_payload_to_v1(pl, plen, &v1, &v1_len) == 0)
+			int is_start_work = 0;
+			if (wire_v2_payload_to_v1(pl, plen, &v1, &v1_len) == 0) {
+				if (v1 && v1_len >= sizeof(struct msg_hdr)) {
+					struct msg_hdr *mh = (struct msg_hdr *)v1;
+					if (mh->type == TypeStartWorkConn)
+						is_start_work = 1;
+				}
 				v2_dispatch_v1_buf(v1, v1_len, ctx);
+			}
+			memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
+			st->v2_rx_len -= (size_t)n;
+
+			if (is_start_work && ctx) {
+				struct proxy_client *client = (struct proxy_client *)ctx;
+				if (st->v2_rx_len > 0) {
+					uint8_t *tail = malloc(st->v2_rx_len);
+					if (tail) {
+						memcpy(tail, st->v2_rx, st->v2_rx_len);
+						client->data_tail = tail;
+						client->data_tail_size = (int)st->v2_rx_len;
+						debug(LOG_DEBUG, "v2 StartWorkConn: preserved %zu bytes data tail",
+						      st->v2_rx_len);
+					}
+					st->v2_rx_len = 0;
+				}
+				return;
+			}
 		} else {
 			debug(LOG_ERR, "v2 unexpected frame type %u", type);
+			memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
+			st->v2_rx_len -= (size_t)n;
 		}
-		memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
-		st->v2_rx_len -= (size_t)n;
 
 		if (!ctx && is_login && v2_got_hello && !v2_aead_ready) {
 			v2_aead_ready = 1;
@@ -1448,16 +1495,28 @@ static void v2_handle_bytes(uint8_t *buf, int len, void *ctx)
 
 	const uint8_t *p = buf;
 	int left = len;
-	if (!st->v2_magic_seen && left >= WIRE_V2_MAGIC_LEN &&
-	    memcmp(p, WIRE_V2_MAGIC, WIRE_V2_MAGIC_LEN) == 0) {
-		p += WIRE_V2_MAGIC_LEN;
-		left -= WIRE_V2_MAGIC_LEN;
+
+	if (!st->v2_magic_seen) {
+		if (v2_buf_append(&st->v2_rx, &st->v2_rx_len, &st->v2_rx_cap, p, (size_t)left) != 0)
+			return;
+		if (st->v2_rx_len < WIRE_V2_MAGIC_LEN)
+			return;
+		if (memcmp(st->v2_rx, WIRE_V2_MAGIC, WIRE_V2_MAGIC_LEN) == 0) {
+			memmove(st->v2_rx, st->v2_rx + WIRE_V2_MAGIC_LEN,
+				st->v2_rx_len - WIRE_V2_MAGIC_LEN);
+			st->v2_rx_len -= WIRE_V2_MAGIC_LEN;
+		}
 		st->v2_magic_seen = 1;
+		v2_consume_plain_frames(st, ctx);
+		return;
 	}
 
 	if (v2_aead_ready && !ctx) {
-		if (aead_reader_feed(&v2_ar, p, (size_t)left) != 0)
+		if (aead_reader_feed(&v2_ar, p, (size_t)left) != 0) {
+			debug(LOG_ERR, "v2 AEAD decryption failed, triggering reconnect");
+			trigger_reconnect();
 			return;
+		}
 		if (v2_ar.pt_len) {
 			if (v2_buf_append(&st->v2_rx, &st->v2_rx_len, &st->v2_rx_cap,
 					  v2_ar.pt_buf, v2_ar.pt_len) != 0)
@@ -1473,7 +1532,7 @@ static void v2_handle_bytes(uint8_t *buf, int len, void *ctx)
 	v2_consume_plain_frames(st, ctx);
 }
 
-static void handle_frps_msg(uint8_t *buf, int len, void *ctx) 
+void handle_frps_msg(uint8_t *buf, int len, void *ctx) 
 {
 	if (!buf || len <= 0) {
 		debug(LOG_ERR, "Invalid message buffer or length");
@@ -2180,6 +2239,11 @@ static void v2_session_reset(void)
 	v2_aead_ready = 0;
 	aead_writer_free(&v2_aw);
 	aead_reader_free(&v2_ar);
+	if (main_ctl) {
+		tmux_stream_release(&main_ctl->stream);
+		main_ctl->stream.v2_magic_sent = 0;
+		main_ctl->stream.v2_magic_seen = 0;
+	}
 }
 
 static int v2_send_login_handshake(void)
@@ -2270,7 +2334,7 @@ void login(void) {
  * @param type The type of message to be prepared
  * @return int Returns 0 on success, negative value on failure
  */
-static int prepare_message(const enum msg_type type,
+int prepare_message(const enum msg_type type,
 						 const char *msg,
 						 const size_t msg_len,
 						 struct msg_hdr **msg_out,
@@ -2553,44 +2617,20 @@ void send_enc_msg_frp_server(struct bufferevent *bev,
 			evbuffer_free(tmp);
 		}
 	} else {
-		/* Write IV (first message only) + encrypted data as a single
-		 * atomic write to the socketpair.  The frps golib Reader only
-		 * reads the IV once — sending it with every message causes the
-		 * frps to treat the extra IV bytes as ciphertext, producing
-		 * garbage that crashes its readLoop. */
+		/* Write IV (first message only) + encrypted data atomically via bufferevent.
+		 * The frps golib Reader only reads the IV once — sending it with every message
+		 * causes frps to treat the extra IV bytes as ciphertext. */
 		struct evbuffer *tmp = evbuffer_new();
-		struct frp_coder *enc = get_main_encoder();
-		if (!enc->iv_sent) {
-			evbuffer_add(tmp, enc->iv, 16);
-			enc->iv_sent = 1;
-		}
-		evbuffer_add(tmp, enc_msg, enc_len);
-		evutil_socket_t fd = bufferevent_getfd(bout);
-		if (fd >= 0) {
-			/* Drain fully: a partial write here would desynchronize
-			 * the server-side CFB keystream permanently. */
-			size_t expect = evbuffer_get_length(tmp);
-			int tries = 100;
-			while (evbuffer_get_length(tmp) > 0 && tries-- > 0) {
-				int w = evbuffer_write(tmp, fd);
-				if (w < 0) {
-					if (errno == EAGAIN || errno == EWOULDBLOCK) {
-						struct timespec ts = {0, 10 * 1000 * 1000};
-						nanosleep(&ts, NULL);
-						continue;
-					}
-					debug(LOG_ERR, "Failed to write encrypted message: %s",
-					      strerror(errno));
-					break;
-				}
-				if (w == 0)
-					break;
+		if (tmp) {
+			struct frp_coder *enc = get_main_encoder();
+			if (!enc->iv_sent) {
+				evbuffer_add(tmp, enc->iv, 16);
+				enc->iv_sent = 1;
 			}
-			if (evbuffer_get_length(tmp) > 0)
-				debug(LOG_ERR, "Encrypted message truncated: wrote %zu of %zu bytes",
-				      expect - evbuffer_get_length(tmp), expect);
+			evbuffer_add(tmp, enc_msg, enc_len);
+			bufferevent_write_buffer(bout, tmp);
+			evbuffer_free(tmp);
 		}
-		evbuffer_free(tmp);
 	}
 
 	free(enc_msg);

@@ -121,6 +121,7 @@ struct work_conn *new_work_conn(void);
 void udp_packet_free(struct udp_packet *udp);
 void control_response_free(struct control_response *res);
 void new_proxy_resp_free(struct new_proxy_response *npr);
+void start_work_conn_resp_free(struct start_work_conn_resp *sr);
 
 /* ---- NatHole message structures ---- */
 

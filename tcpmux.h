@@ -86,6 +86,11 @@ void init_tmux_stream(struct tmux_stream *stream, uint32_t id,
                       enum tcp_mux_state state);
 
 /**
+ * @brief Releases per-stream temporary resources.
+ */
+void tmux_stream_release(struct tmux_stream *stream);
+
+/**
  * @brief Validates a TCP MUX protocol.
  */
 int validate_tcp_mux_protocol(struct tcp_mux_header *tmux_hdr);

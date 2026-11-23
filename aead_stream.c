@@ -173,54 +173,63 @@ void aead_writer_free(struct aead_writer *w)
 int aead_writer_seal(struct aead_writer *w, const uint8_t *pt, size_t pt_len,
 		     uint8_t **out, size_t *out_len)
 {
-	if (!w || !pt || !out || !out_len || pt_len == 0 || pt_len > AEAD_MAX_PAYLOAD)
+	if (!w || !pt || !out || !out_len || pt_len == 0)
 		return -1;
 
+	size_t num_chunks = (pt_len + AEAD_MAX_PAYLOAD - 1) / AEAD_MAX_PAYLOAD;
 	size_t prefix = w->header_sent ? 0 : AEAD_GCM_NONCE_SIZE;
-	uint8_t header[4];
-	uint32_t ct_len_field = (uint32_t)(pt_len + AEAD_GCM_TAG_SIZE);
-	header[0] = (uint8_t)(ct_len_field >> 24);
-	header[1] = (uint8_t)(ct_len_field >> 16);
-	header[2] = (uint8_t)(ct_len_field >> 8);
-	header[3] = (uint8_t)ct_len_field;
+	size_t total = prefix + num_chunks * (4 + AEAD_GCM_TAG_SIZE) + pt_len;
 
-	uint8_t aad[AEAD_GCM_NONCE_SIZE + 4];
-	memcpy(aad, w->stream_nonce, AEAD_GCM_NONCE_SIZE);
-	memcpy(aad + AEAD_GCM_NONCE_SIZE, header, 4);
-
-	uint8_t *ct = malloc(pt_len + AEAD_GCM_TAG_SIZE);
-	if (!ct)
-		return -1;
-	size_t clen = 0;
-	if (gcm_seal(w->key, w->nonce, aad, sizeof(aad), pt, pt_len, ct, &clen) != 0) {
-		free(ct);
-		return -1;
-	}
-
-	size_t total = prefix + 4 + clen;
 	uint8_t *buf = malloc(total);
-	if (!buf) {
-		free(ct);
+	if (!buf)
 		return -1;
-	}
-	size_t off = 0;
+
+	size_t out_off = 0;
 	if (!w->header_sent) {
 		memcpy(buf, w->nonce, AEAD_GCM_NONCE_SIZE);
-		off = AEAD_GCM_NONCE_SIZE;
+		out_off = AEAD_GCM_NONCE_SIZE;
 		w->header_sent = 1;
 	}
-	memcpy(buf + off, header, 4);
-	off += 4;
-	memcpy(buf + off, ct, clen);
-	free(ct);
 
-	if (!increment_nonce(w->nonce, AEAD_GCM_NONCE_SIZE)) {
-		free(buf);
-		return -1;
+	size_t remaining = pt_len;
+	const uint8_t *cur_pt = pt;
+
+	while (remaining > 0) {
+		size_t chunk_len = remaining > AEAD_MAX_PAYLOAD ? AEAD_MAX_PAYLOAD : remaining;
+		uint8_t header[4];
+		uint32_t ct_len_field = (uint32_t)(chunk_len + AEAD_GCM_TAG_SIZE);
+		header[0] = (uint8_t)(ct_len_field >> 24);
+		header[1] = (uint8_t)(ct_len_field >> 16);
+		header[2] = (uint8_t)(ct_len_field >> 8);
+		header[3] = (uint8_t)ct_len_field;
+
+		uint8_t aad[AEAD_GCM_NONCE_SIZE + 4];
+		memcpy(aad, w->stream_nonce, AEAD_GCM_NONCE_SIZE);
+		memcpy(aad + AEAD_GCM_NONCE_SIZE, header, 4);
+
+		memcpy(buf + out_off, header, 4);
+		out_off += 4;
+
+		size_t clen = 0;
+		if (gcm_seal(w->key, w->nonce, aad, sizeof(aad), cur_pt, chunk_len,
+			     buf + out_off, &clen) != 0) {
+			free(buf);
+			return -1;
+		}
+		out_off += clen;
+
+		if (!increment_nonce(w->nonce, AEAD_GCM_NONCE_SIZE)) {
+			free(buf);
+			return -1;
+		}
+		w->frame_count++;
+
+		cur_pt += chunk_len;
+		remaining -= chunk_len;
 	}
-	w->frame_count++;
+
 	*out = buf;
-	*out_len = total;
+	*out_len = out_off;
 	return 0;
 }
 

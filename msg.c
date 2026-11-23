@@ -842,6 +842,22 @@ void new_proxy_resp_free(struct new_proxy_response *npr)
 }
 
 /**
+ * @brief Frees memory allocated for a start_work_conn_resp structure
+ *
+ * Releases nested heap strings (proxy_name) and the structure itself. Safe with NULL.
+ *
+ * @param sr Pointer to the start_work_conn_resp structure to be freed
+ */
+void start_work_conn_resp_free(struct start_work_conn_resp *sr)
+{
+	if (!sr)
+		return;
+
+	SAFE_FREE(sr->proxy_name);
+	SAFE_FREE(sr);
+}
+
+/**
  * @brief Frees memory allocated for a control response structure
  *
  * This function safely deallocates memory for:

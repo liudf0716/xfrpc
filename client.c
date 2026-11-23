@@ -339,14 +339,14 @@ static int setup_local_connection(struct proxy_client *client)
 			memset(&addr, 0, sizeof(addr));
 			addr.sin_family = AF_INET;
 			addr.sin_port = htons((uint16_t)ps->local_port);
-			if (inet_pton(AF_INET, ps->local_ip, &addr.sin_addr) == 1) {
+			if (resolve_local_addr(ps->local_ip, &addr) == 0) {
 				evutil_socket_t fd = bufferevent_getfd(client->local_proxy_bev);
 				if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 					debug(LOG_ERR, "UDP connect to %s:%d failed: %s",
 					      ps->local_ip, ps->local_port, strerror(errno));
 				}
 			} else {
-				debug(LOG_ERR, "Invalid UDP local IP: %s", ps->local_ip);
+				debug(LOG_ERR, "Invalid UDP local IP/host: %s", ps->local_ip);
 			}
 		}
 	} else if (is_uds_proxy(ps)) {
@@ -384,16 +384,24 @@ void start_xfrp_tunnel(struct proxy_client *client)
 	client->use_encryption = ps->use_encryption;
 	client->use_compression = ps->use_compression;
 
-	if (client->use_encryption && c_conf->auth_token) {
+	if (client->use_encryption) {
+		const char *token = c_conf->auth_token ? c_conf->auth_token : "";
 		uint8_t key[16];
-		if (crypto_derive_key(c_conf->auth_token, key) == 0) {
+		if (crypto_derive_key(token, key) == 0) {
 			client->encrypt_ctx = crypto_ctx_new_writer(key);
 			client->decrypt_ctx = crypto_ctx_new_reader(key);
 			if (!client->encrypt_ctx || !client->decrypt_ctx) {
-				debug(LOG_ERR, "Failed to create crypto contexts");
+				debug(LOG_ERR, "Failed to create crypto contexts for proxy [%s], disabling encryption",
+				      ps->proxy_name);
+				client->use_encryption = 0;
+				if (client->encrypt_ctx) { crypto_ctx_free(client->encrypt_ctx); client->encrypt_ctx = NULL; }
+				if (client->decrypt_ctx) { crypto_ctx_free(client->decrypt_ctx); client->decrypt_ctx = NULL; }
 			} else {
 				debug(LOG_INFO, "Proxy [%s] encryption enabled (AES-128-CFB)", ps->proxy_name);
 			}
+		} else {
+			debug(LOG_ERR, "Failed to derive crypto key for proxy [%s], disabling encryption", ps->proxy_name);
+			client->use_encryption = 0;
 		}
 	}
 	if (client->use_compression) {
@@ -529,6 +537,7 @@ free_proxy_client(struct proxy_client *client)
 	SAFE_FREE(client->udp_lzone);
 	SAFE_FREE(client->udp_raddr);
 	SAFE_FREE(client->udp_rzone);
+	clear_udp_sessions(client);
 
 	/* Free encryption contexts */
 	if (client->encrypt_ctx) {

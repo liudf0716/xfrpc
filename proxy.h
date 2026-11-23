@@ -33,6 +33,8 @@ void free_proxy_obj(struct proxy *p);
 // TCP proxy callbacks
 void tcp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
+void proxy_crypto_encode_evbuffer(struct proxy_client *client,
+				  struct evbuffer *src, struct evbuffer *dst);
 void proxy_crypto_decode_evbuffer(struct proxy_client *client,
 				  struct evbuffer *src, struct evbuffer *dst);
 
@@ -40,6 +42,7 @@ void proxy_crypto_decode_evbuffer(struct proxy_client *client,
 void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
 void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client);
+int resolve_local_addr(const char *ip, struct sockaddr_in *addr);
 
 // SOCKS5 protocol handler (reads directly from bev, no ring buffer)
 void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_t len);

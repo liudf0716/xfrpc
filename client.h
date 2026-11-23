@@ -54,6 +54,20 @@ enum xdpi_state {
 	XDPI_BLOCKED,   /* Protocol verification failed, connection blocked */
 };
 
+struct udp_session {
+	char                key[64];        /* "raddr:rport" */
+	char               *raddr;
+	int                 rport;
+	char               *rzone;
+	char               *laddr;
+	int                 lport;
+	char               *lzone;
+	struct bufferevent *bev;
+	struct proxy_client*client;
+	time_t              last_active;
+	UT_hash_handle      hh;
+};
+
 struct proxy_client {
 	/* Event handling */
 	struct event_base    *base;
@@ -112,6 +126,7 @@ struct proxy_client {
 	char                *udp_raddr;
 	int                  udp_rport;
 	char                *udp_rzone;
+	struct udp_session  *udp_sessions;  /* UDP sessions indexed by raddr:rport */
 };
 
 struct proxy_service {
@@ -191,6 +206,7 @@ int is_uds_proxy(const struct proxy_service *ps);
 int has_service_type(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);
+void clear_udp_sessions(struct proxy_client *client);
 void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx);
 int xdpi_engine(struct proxy_client *client, const unsigned char *data, size_t len);
 

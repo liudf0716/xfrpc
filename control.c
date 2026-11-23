@@ -67,8 +67,10 @@ static void handle_control_work(const uint8_t *buf, int len, void *ctx);
 static int handle_login_response(const uint8_t *buf, int len);
 static void health_check_result_cb(struct proxy_service *ps, int healthy, void *ctx);
 static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx);
-static void handle_connection_failure(struct common_conf *c_conf, int *retry_times);
+static void handle_connection_failure(struct common_conf *c_conf);
 static void trigger_reconnect(void);
+static void v2_session_reset(void);
+static int g_retry_times = 0;
 
 /**
  * Check if xfrpc client is connected to server
@@ -1034,16 +1036,25 @@ int data_len = (int)msg_hton(msg->length);
           sr->proxy_name, ps->local_ip, ps->local_port, remaining_len);
 
     if (remaining_len > 0) {
-        uint8_t *tail = malloc(remaining_len);
-        if (!tail) {
-            debug(LOG_ERR, "Failed to allocate data tail buffer");
-            start_work_conn_resp_free(sr);
-            return;
+        if (is_udp_proxy(client->ps)) {
+            if (!client->udp_rx_buf)
+                client->udp_rx_buf = evbuffer_new();
+            if (client->udp_rx_buf) {
+                evbuffer_add(client->udp_rx_buf, msg->data + msg_hton(msg->length), remaining_len);
+            }
+        } else {
+            SAFE_FREE(client->data_tail);
+            uint8_t *tail = malloc(remaining_len);
+            if (!tail) {
+                debug(LOG_ERR, "Failed to allocate data tail buffer");
+                start_work_conn_resp_free(sr);
+                return;
+            }
+            memcpy(tail, msg->data + msg_hton(msg->length), remaining_len);
+            client->data_tail = tail;
+            client->data_tail_size = remaining_len;
+            debug(LOG_DEBUG, "Data tail copied (%d bytes)", remaining_len);
         }
-        memcpy(tail, msg->data + msg_hton(msg->length), remaining_len);
-        client->data_tail = tail;
-        client->data_tail_size = remaining_len;
-        debug(LOG_DEBUG, "Data tail copied (%d bytes)", remaining_len);
     }
 
     /* Route XTCP proxies to dedicated NAT hole-punch handler */
@@ -1057,6 +1068,10 @@ int data_len = (int)msg_hton(msg->length);
 
     start_xfrp_tunnel(client);
     set_client_work_start(client, 1);
+    if (is_udp_proxy(client->ps) && client->udp_rx_buf &&
+        evbuffer_get_length(client->udp_rx_buf) > 0) {
+        process_udp_rx_buf(client);
+    }
     start_work_conn_resp_free(sr);
 }
 
@@ -1070,7 +1085,7 @@ int data_len = (int)msg_hton(msg->length);
  * It performs the necessary handling and routing of UDP packets based on
  * the message contents and context provided.
  */
-static void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
+void handle_type_udp_packet(struct msg_hdr *msg, void *ctx)
 {
 	int data_len = (int)msg_hton(msg->length);
 	char *json_str = malloc(data_len + 1);
@@ -1386,10 +1401,14 @@ static void v2_dispatch_v1_buf(uint8_t *v1, size_t v1_len, void *ctx)
 
 static void trigger_reconnect(void)
 {
-	static int retry_times = 0;
 	struct common_conf *c_conf = get_common_config();
+	if (main_ctl && main_ctl->connect_bev) {
+		/* Disable event buffer to prevent callback re-entry on broken session */
+		bufferevent_disable(main_ctl->connect_bev, EV_READ | EV_WRITE);
+	}
+	v2_session_reset();
 	if (c_conf) {
-		handle_connection_failure(c_conf, &retry_times);
+		handle_connection_failure(c_conf);
 	}
 }
 
@@ -1443,15 +1462,29 @@ static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 			if (is_start_work && ctx) {
 				struct proxy_client *client = (struct proxy_client *)ctx;
 				if (st->v2_rx_len > 0) {
-					uint8_t *tail = malloc(st->v2_rx_len);
-					if (tail) {
-						memcpy(tail, st->v2_rx, st->v2_rx_len);
-						client->data_tail = tail;
-						client->data_tail_size = (int)st->v2_rx_len;
-						debug(LOG_DEBUG, "v2 StartWorkConn: preserved %zu bytes data tail",
-						      st->v2_rx_len);
+					if (is_udp_proxy(client->ps)) {
+						if (!client->udp_rx_buf)
+							client->udp_rx_buf = evbuffer_new();
+						if (client->udp_rx_buf) {
+							evbuffer_add(client->udp_rx_buf, st->v2_rx, st->v2_rx_len);
+							st->v2_rx_len = 0;
+							process_udp_rx_buf(client);
+						}
+					} else {
+						SAFE_FREE(client->data_tail);
+						uint8_t *tail = malloc(st->v2_rx_len);
+						if (tail) {
+							memcpy(tail, st->v2_rx, st->v2_rx_len);
+							client->data_tail = tail;
+							client->data_tail_size = (int)st->v2_rx_len;
+							debug(LOG_DEBUG, "v2 StartWorkConn: preserved %zu bytes data tail",
+							      st->v2_rx_len);
+							st->v2_rx_len = 0;
+						} else {
+							debug(LOG_ERR, "Failed to allocate memory for v2 data tail (%zu bytes)",
+							      st->v2_rx_len);
+						}
 					}
-					st->v2_rx_len = 0;
 				}
 				return;
 			}
@@ -1831,6 +1864,10 @@ static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx)
 {
 	(void)fd; (void)what; (void)ctx;
 	debug(LOG_INFO, "Reconnecting after delay...");
+	if (main_ctl && main_ctl->reconnect_timer) {
+		event_free(main_ctl->reconnect_timer);
+		main_ctl->reconnect_timer = NULL;
+	}
 	reset_session_id();
 	clear_main_control();
 	/* Break the current event loop instead of calling run_control()
@@ -1848,18 +1885,21 @@ static void reconnect_timer_cb(evutil_socket_t fd, short what, void *ctx)
  * retry mechanisms and connection state management.
  *
  * @param c_conf Pointer to the common configuration structure
- * @param retry_times Pointer to the number of retry attempts made
- *
- * @note This function modifies the retry_times parameter to track retry attempts
  */
-static void handle_connection_failure(struct common_conf *c_conf, int *retry_times) {
+static void handle_connection_failure(struct common_conf *c_conf) {
+	if (!main_ctl) return;
+	if (main_ctl->reconnect_timer) {
+		debug(LOG_DEBUG, "Reconnect timer already pending, skipping redundant failure trigger");
+		return;
+	}
+
 	debug(LOG_ERR, "Connection to server [%s:%d] failed: %s", 
 		  c_conf->server_addr, 
 		  c_conf->server_port,
 		  strerror(errno));
 
-	(*retry_times)++;
-	if (*retry_times >= MAX_RETRY_TIMES) {
+	g_retry_times++;
+	if (g_retry_times >= MAX_RETRY_TIMES) {
 		debug(LOG_INFO, "Maximum retry attempts (%d) reached", MAX_RETRY_TIMES);
 	}
 
@@ -1891,6 +1931,7 @@ static void handle_connection_failure(struct common_conf *c_conf, int *retry_tim
  * @note This function is called internally by the event handling system
  */
 static void handle_connection_success(struct bufferevent *bev) {
+	g_retry_times = 0;
 	debug(LOG_INFO, "Successfully connected to xfrp server");
 	struct common_conf *c_conf = get_common_config();
 	debug(LOG_DEBUG, "handle_connection_success: tcp_mux=%d", c_conf->tcp_mux);
@@ -1924,7 +1965,6 @@ static void handle_connection_success(struct bufferevent *bev) {
  */
 static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 {
-	static int retry_times = 0;
 	struct common_conf *c_conf = get_common_config();
 	debug(LOG_DEBUG, "connect_event_cb: what=0x%x", what);
 	
@@ -1945,10 +1985,10 @@ static void connect_event_cb(struct bufferevent *bev, short what, void *ctx)
 			debug(LOG_DEBUG, "SSL error: %s", buf);
 		}
 		debug(LOG_ERR, "connect_event_cb disconnect event: what=0x%x", what);
-		handle_connection_failure(c_conf, &retry_times);
+		handle_connection_failure(c_conf);
 	} 
 	else if (what & BEV_EVENT_CONNECTED) {
-		retry_times = 0;
+		g_retry_times = 0;
 		handle_connection_success(bev);
 	}
 }
@@ -2117,8 +2157,7 @@ static void quic_connect_done_cb(struct bufferevent *bev, void *arg)
 		/* Schedule a reconnect */
 		struct common_conf *c_conf = get_common_config();
 		if (c_conf) {
-			static int retry = 0;
-			handle_connection_failure(c_conf, &retry);
+			handle_connection_failure(c_conf);
 		}
 		return;
 	}

@@ -82,7 +82,7 @@ static int handle_post_connection_data(struct proxy_client *client) {
 	}
 
 	/* Non-SOCKS5, non-XDPI: send any initial data from control message */
-	if (client->data_tail_size > 0) {
+	if (!is_udp_proxy(client->ps) && client->data_tail_size > 0) {
 		debug(LOG_DEBUG, "Sending pending client data (%zu bytes)", client->data_tail_size);
 		return send_client_data_tail(client);
 	}
@@ -334,16 +334,19 @@ static int setup_local_connection(struct proxy_client *client)
 	
 	if (is_udp_proxy(ps)) {
 		client->local_proxy_bev = connect_udp_server(client->base);
-		if (client->local_proxy_bev && ps->local_ip && ps->local_port > 0) {
-			struct sockaddr_in addr;
-			memset(&addr, 0, sizeof(addr));
-			addr.sin_family = AF_INET;
-			addr.sin_port = htons((uint16_t)ps->local_port);
-			if (resolve_local_addr(ps->local_ip, &addr) == 0) {
-				evutil_socket_t fd = bufferevent_getfd(client->local_proxy_bev);
-				if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-					debug(LOG_ERR, "UDP connect to %s:%d failed: %s",
-					      ps->local_ip, ps->local_port, strerror(errno));
+		client->udp_local_addr_valid = 0;
+		if (ps->local_ip && ps->local_port > 0) {
+			memset(&client->udp_local_addr, 0, sizeof(client->udp_local_addr));
+			client->udp_local_addr.sin_family = AF_INET;
+			client->udp_local_addr.sin_port = htons((uint16_t)ps->local_port);
+			if (resolve_local_addr(ps->local_ip, &client->udp_local_addr) == 0) {
+				client->udp_local_addr_valid = 1;
+				if (client->local_proxy_bev) {
+					evutil_socket_t fd = bufferevent_getfd(client->local_proxy_bev);
+					if (connect(fd, (struct sockaddr *)&client->udp_local_addr, sizeof(client->udp_local_addr)) < 0) {
+						debug(LOG_ERR, "UDP connect to %s:%d failed: %s",
+						      ps->local_ip, ps->local_port, strerror(errno));
+					}
 				}
 			} else {
 				debug(LOG_ERR, "Invalid UDP local IP/host: %s", ps->local_ip);
@@ -442,6 +445,11 @@ int send_client_data_tail(struct proxy_client *client)
 		return -1;
 	}
 
+	if (is_udp_proxy(client->ps)) {
+		debug(LOG_WARNING, "Attempted to send data tail on UDP proxy client");
+		return 0;
+	}
+
 	if (!client->data_tail || client->data_tail_size == 0) {
 		debug(LOG_DEBUG, "No data tail to send");
 		return 0;
@@ -538,6 +546,10 @@ free_proxy_client(struct proxy_client *client)
 	SAFE_FREE(client->udp_raddr);
 	SAFE_FREE(client->udp_rzone);
 	clear_udp_sessions(client);
+	if (client->udp_rx_buf) {
+		evbuffer_free(client->udp_rx_buf);
+		client->udp_rx_buf = NULL;
+	}
 
 	/* Free encryption contexts */
 	if (client->encrypt_ctx) {

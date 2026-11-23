@@ -55,6 +55,7 @@ void send_enc_msg_frp_server(struct bufferevent *bev, const enum msg_type type,
                              struct tmux_stream *stream);
 
 void handle_frps_msg(uint8_t *buf, int len, void *ctx);
+void handle_type_udp_packet(struct msg_hdr *msg, void *ctx);
 int prepare_message(const enum msg_type type, const char *msg,
                     const size_t msg_len, struct msg_hdr **msg_out,
                     size_t *total_len);

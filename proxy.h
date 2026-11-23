@@ -41,6 +41,7 @@ void proxy_crypto_decode_evbuffer(struct proxy_client *client,
 // UDP proxy callbacks
 void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx);
 void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx);
+void process_udp_rx_buf(struct proxy_client *client);
 void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client);
 int resolve_local_addr(const char *ip, struct sockaddr_in *addr);
 

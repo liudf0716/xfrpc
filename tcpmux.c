@@ -637,6 +637,14 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         debug(LOG_DEBUG, "Stream %u: leaving socks5 path processed=%u",
               stream_id, length);
     } else if (is_udp_proxy(pc->ps)) {
+        if (!pc->udp_rx_buf) {
+            pc->udp_rx_buf = evbuffer_new();
+            if (!pc->udp_rx_buf) {
+                debug(LOG_ERR, "Stream %u: failed to allocate udp_rx_buf", stream_id);
+                evbuffer_drain(bufferevent_get_input(bev), length);
+                return 0;
+            }
+        }
         if (pc->use_encryption || pc->use_compression) {
             struct evbuffer *src = bufferevent_get_input(bev);
             struct evbuffer *frame = evbuffer_new();
@@ -650,35 +658,17 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
             }
             evbuffer_remove_buffer(src, frame, length);
             proxy_crypto_decode_evbuffer(pc, frame, plain);
-            size_t plen = evbuffer_get_length(plain);
-            if (plen > 0) {
-                uint8_t *pdata = evbuffer_pullup(plain, plen);
-                if (pdata) {
-                    handle_fn(pdata, (int)plen, pc);
-                }
+            if (evbuffer_get_length(plain) > 0) {
+                evbuffer_add_buffer(pc->udp_rx_buf, plain);
+                process_udp_rx_buf(pc);
             }
             evbuffer_free(frame);
             evbuffer_free(plain);
             bytes_processed = length;
         } else {
-            /* UDP workConn carries TypeUDPPacket frames, not raw datagrams */
-            uint8_t *data = calloc(length + 1, sizeof(uint8_t));
-            if (!data) {
-                debug(LOG_ERR, "Memory allocation failed for UDP mux payload");
-                evbuffer_drain(bufferevent_get_input(bev), length);
-                return 0;
-            }
-            size_t nr = bufferevent_read(bev, data, length);
-            if (nr != length) {
-                debug(LOG_ERR, "Stream %u: short read %zu/%u on UDP path",
-                      stream_id, nr, length);
-                if (nr < length)
-                    evbuffer_drain(bufferevent_get_input(bev), length - nr);
-                free(data);
-                return 0;
-            }
-            handle_fn(data, length, pc);
-            free(data);
+            struct evbuffer *src = bufferevent_get_input(bev);
+            evbuffer_remove_buffer(src, pc->udp_rx_buf, length);
+            process_udp_rx_buf(pc);
             bytes_processed = length;
         }
     } else if (pc->use_encryption || pc->use_compression) {

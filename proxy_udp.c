@@ -22,6 +22,7 @@
 #include "config.h"
 #include "tcpmux.h"
 #include "control.h"
+#include "wire_v2.h"
 
 // Base64 encoding table
 static const char BASE64_CHARS[] =
@@ -354,6 +355,17 @@ static void udp_session_c2s_cb(struct bufferevent *bev, void *ctx)
     evbuffer_free(base64_output);
 }
 
+static void udp_session_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+    (void)bev;
+    struct udp_session *sess = (struct udp_session *)ctx;
+    if (!sess || !sess->client) return;
+    if (what & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
+        debug(LOG_DEBUG, "UDP session %s closed/error (what=0x%x), removing", sess->key, what);
+        free_udp_session(sess->client, sess);
+    }
+}
+
 /**
  * @brief Handles incoming UDP packets for proxying
  * 
@@ -420,35 +432,44 @@ void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client) 
                 }
             }
 
-            sess = calloc(1, sizeof(struct udp_session));
-            if (sess) {
-                strncpy(sess->key, key, sizeof(sess->key) - 1);
-                sess->raddr = strdup(r_ip);
-                sess->rport = r_port;
-                sess->rzone = (udp_pkt->raddr && udp_pkt->raddr->zone) ? strdup(udp_pkt->raddr->zone) : NULL;
-                if (udp_pkt->laddr && udp_pkt->laddr->addr) {
-                    sess->laddr = strdup(udp_pkt->laddr->addr);
-                    sess->lport = udp_pkt->laddr->port;
-                    sess->lzone = udp_pkt->laddr->zone ? strdup(udp_pkt->laddr->zone) : NULL;
-                }
-                sess->client = client;
-                sess->last_active = time(NULL);
-
-                sess->bev = connect_udp_server(client->base);
-                if (sess->bev && client->ps->local_ip && client->ps->local_port > 0) {
-                    struct sockaddr_in addr;
-                    memset(&addr, 0, sizeof(addr));
-                    addr.sin_family = AF_INET;
-                    addr.sin_port = htons((uint16_t)client->ps->local_port);
-                    if (resolve_local_addr(client->ps->local_ip, &addr) == 0) {
-                        evutil_socket_t fd = bufferevent_getfd(sess->bev);
-                        connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+            /* Create session only if local address is resolved and socket connected successfully */
+            if (client->udp_local_addr_valid) {
+                struct bufferevent *bev = connect_udp_server(client->base);
+                if (bev) {
+                    evutil_socket_t fd = bufferevent_getfd(bev);
+                    if (fd >= 0 && connect(fd, (struct sockaddr *)&client->udp_local_addr,
+                                           sizeof(client->udp_local_addr)) == 0) {
+                        char *raddr_copy = strdup(r_ip);
+                        if (raddr_copy) {
+                            sess = calloc(1, sizeof(struct udp_session));
+                            if (sess) {
+                                strncpy(sess->key, key, sizeof(sess->key) - 1);
+                                sess->raddr = raddr_copy;
+                                sess->rport = r_port;
+                                sess->rzone = (udp_pkt->raddr && udp_pkt->raddr->zone) ? strdup(udp_pkt->raddr->zone) : NULL;
+                                if (udp_pkt->laddr && udp_pkt->laddr->addr) {
+                                    sess->laddr = strdup(udp_pkt->laddr->addr);
+                                    sess->lport = udp_pkt->laddr->port;
+                                    sess->lzone = udp_pkt->laddr->zone ? strdup(udp_pkt->laddr->zone) : NULL;
+                                }
+                                sess->client = client;
+                                sess->last_active = time(NULL);
+                                sess->bev = bev;
+                                bufferevent_setcb(sess->bev, udp_session_c2s_cb, NULL, udp_session_event_cb, sess);
+                                bufferevent_enable(sess->bev, EV_READ | EV_WRITE);
+                                HASH_ADD_STR(client->udp_sessions, key, sess);
+                            } else {
+                                free(raddr_copy);
+                                bufferevent_free(bev);
+                            }
+                        } else {
+                            bufferevent_free(bev);
+                        }
+                    } else {
+                        debug(LOG_ERR, "connect() to local UDP server failed: %s", strerror(errno));
+                        bufferevent_free(bev);
                     }
-                    bufferevent_setcb(sess->bev, udp_session_c2s_cb, NULL, NULL, sess);
-                    bufferevent_enable(sess->bev, EV_READ | EV_WRITE);
                 }
-
-                HASH_ADD_STR(client->udp_sessions, key, sess);
             }
         }
 
@@ -552,6 +573,83 @@ cleanup:
     evbuffer_free(base64_output);
 }
 
+void process_udp_rx_buf(struct proxy_client *client)
+{
+    if (!client || !client->udp_rx_buf)
+        return;
+
+    while (1) {
+        size_t len = evbuffer_get_length(client->udp_rx_buf);
+        if (len == 0)
+            break;
+
+        if (wire_protocol_is_v2()) {
+            if (len < 8)
+                break;
+            uint8_t *raw = evbuffer_pullup(client->udp_rx_buf, len);
+            if (!raw)
+                break;
+            uint16_t type = 0;
+            const uint8_t *pl = NULL;
+            uint32_t plen = 0;
+            int n = wire_v2_parse_frame(raw, len, &type, &pl, &plen);
+            if (n == 0) {
+                /* Incomplete frame, wait for more data */
+                break;
+            }
+            if (n < 0) {
+                debug(LOG_ERR, "v2 invalid frame in UDP stream, draining");
+                evbuffer_drain(client->udp_rx_buf, len);
+                break;
+            }
+            if (type == WIRE_V2_FRAME_MESSAGE) {
+                uint8_t *v1 = NULL;
+                size_t v1_len = 0;
+                if (wire_v2_payload_to_v1(pl, plen, &v1, &v1_len) == 0 && v1) {
+                    if (v1_len >= sizeof(struct msg_hdr)) {
+                        struct msg_hdr *mh = (struct msg_hdr *)v1;
+                        if (mh->type == TypeUDPPacket) {
+                            handle_type_udp_packet(mh, client);
+                        }
+                    }
+                    free(v1);
+                }
+            }
+            evbuffer_drain(client->udp_rx_buf, (size_t)n);
+        } else {
+            if (len < sizeof(struct msg_hdr))
+                break;
+            struct msg_hdr hdr;
+            evbuffer_copyout(client->udp_rx_buf, &hdr, sizeof(hdr));
+            uint64_t msg_len = msg_hton(hdr.length);
+            if (msg_len > 10 * 1024 * 1024) {
+                debug(LOG_ERR, "UDP message payload too large (%llu), dropping buffer",
+                      (unsigned long long)msg_len);
+                evbuffer_drain(client->udp_rx_buf, len);
+                break;
+            }
+            if (len < sizeof(struct msg_hdr) + msg_len) {
+                /* Incomplete message, wait for more data */
+                break;
+            }
+            size_t total = sizeof(struct msg_hdr) + (size_t)msg_len;
+            uint8_t *msg_buf = malloc(total);
+            if (!msg_buf) {
+                debug(LOG_ERR, "Failed to allocate memory for UDP message (%zu bytes)", total);
+                break;
+            }
+            evbuffer_remove(client->udp_rx_buf, msg_buf, total);
+            struct msg_hdr *msg = (struct msg_hdr *)msg_buf;
+            if (msg->type == TypeUDPPacket) {
+                handle_type_udp_packet(msg, client);
+            } else {
+                debug(LOG_WARNING, "Unexpected message type 0x%02x in UDP stream", (unsigned char)msg->type);
+            }
+            free(msg_buf);
+        }
+    }
+}
+
 /**
  * @brief Callback function for handling data from server to client in UDP proxy (non-mux)
  */
@@ -568,6 +666,14 @@ void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
     if (len == 0)
         return;
 
+    if (!client->udp_rx_buf) {
+        client->udp_rx_buf = evbuffer_new();
+        if (!client->udp_rx_buf) {
+            debug(LOG_ERR, "Failed to allocate udp_rx_buf");
+            return;
+        }
+    }
+
     if (client->use_encryption || client->use_compression) {
         struct evbuffer *plain = evbuffer_new();
         if (!plain) {
@@ -575,20 +681,14 @@ void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
             return;
         }
         proxy_crypto_decode_evbuffer(client, src, plain);
-        size_t plen = evbuffer_get_length(plain);
-        if (plen > 0) {
-            uint8_t *pdata = evbuffer_pullup(plain, plen);
-            if (pdata) {
-                handle_frps_msg(pdata, (int)plen, client);
-            }
+        if (evbuffer_get_length(plain) > 0) {
+            evbuffer_add_buffer(client->udp_rx_buf, plain);
+            process_udp_rx_buf(client);
         }
         evbuffer_free(plain);
         return;
     }
 
-    uint8_t *data = evbuffer_pullup(src, len);
-    if (data) {
-        handle_frps_msg(data, (int)len, client);
-    }
-    evbuffer_drain(src, len);
+    evbuffer_add_buffer(client->udp_rx_buf, src);
+    process_udp_rx_buf(client);
 }

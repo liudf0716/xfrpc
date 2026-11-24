@@ -18,6 +18,7 @@
 #include "proxy.h"
 #include "tcpmux.h"
 #include "crypto_stream.h"
+#include "plugins/https2http.h"
 
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -637,17 +638,6 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         bytes_processed = length;
         debug(LOG_DEBUG, "Stream %u: leaving socks5 path processed=%u",
               stream_id, length);
-    } else if (is_https2http_proxy(pc->ps)) {
-        debug(LOG_DEBUG, "Stream %u: entering https2http bridge path length=%u bridge_bev=%p",
-              stream_id, length, pc->bridge_bev);
-        if (pc->bridge_bev) {
-            struct evbuffer *src = bufferevent_get_input(bev);
-            struct evbuffer *dst = bufferevent_get_output(pc->bridge_bev);
-            bytes_processed = evbuffer_zc_transfer(src, dst, length);
-        } else {
-            evbuffer_drain(bufferevent_get_input(bev), length);
-            bytes_processed = length;
-        }
     } else if (is_udp_proxy(pc->ps)) {
         if (!pc->udp_rx_buf) {
             pc->udp_rx_buf = evbuffer_new();
@@ -711,7 +701,7 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
             bytes_processed = length;
         }
     } else if (pc->use_encryption || pc->use_compression) {
-        /* Mux fast-path must decrypt/decompress before handing bytes to local */
+        /* Mux fast-path must decrypt/decompress before handing bytes to local or bridge */
         struct evbuffer *src = bufferevent_get_input(bev);
         struct evbuffer *frame = evbuffer_new();
         struct evbuffer *plain = evbuffer_new();
@@ -724,11 +714,26 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         }
         evbuffer_remove_buffer(src, frame, length);
         proxy_crypto_decode_evbuffer(pc, frame, plain);
-        struct evbuffer *dst = bufferevent_get_output(pc->local_proxy_bev);
-        evbuffer_add_buffer(dst, plain);
+        struct bufferevent *target_bev = (is_https2http_proxy(pc->ps) && pc->bridge_bev) ?
+                                         pc->bridge_bev : pc->local_proxy_bev;
+        if (target_bev) {
+            struct evbuffer *dst = bufferevent_get_output(target_bev);
+            evbuffer_add_buffer(dst, plain);
+        }
         evbuffer_free(frame);
         evbuffer_free(plain);
         bytes_processed = length;
+    } else if (is_https2http_proxy(pc->ps)) {
+        debug(LOG_DEBUG, "Stream %u: entering https2http bridge path length=%u bridge_bev=%p",
+              stream_id, length, pc->bridge_bev);
+        if (pc->bridge_bev) {
+            struct evbuffer *src = bufferevent_get_input(bev);
+            struct evbuffer *dst = bufferevent_get_output(pc->bridge_bev);
+            bytes_processed = evbuffer_zc_transfer(src, dst, length);
+        } else {
+            evbuffer_drain(bufferevent_get_input(bev), length);
+            bytes_processed = length;
+        }
     } else {
         /* Ordinary local forwarding: zero-copy from control bev to local proxy bev */
         debug(LOG_DEBUG, "Stream %u: entering local proxy path length=%u local_proxy_bev=%p",
@@ -838,11 +843,23 @@ static int incr_send_window(struct bufferevent *bev,
         return 1;
     }
 
-    if (old_window == 0 && stream->send_window > 0 && pc->local_proxy_bev) {
-        debug(LOG_DEBUG,
-              "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p",
-              stream_id, pc->local_proxy_bev);
-        bufferevent_enable(pc->local_proxy_bev, EV_READ);
+    if (old_window == 0 && stream->send_window > 0) {
+        if (pc->bridge_bev) {
+            debug(LOG_DEBUG,
+                  "Stream %u: re-enabling EV_READ after WINDOW_UPDATE bridge_bev=%p",
+                  stream_id, pc->bridge_bev);
+            bufferevent_enable(pc->bridge_bev, EV_READ);
+            if (evbuffer_get_length(bufferevent_get_input(pc->bridge_bev)) > 0 ||
+                (pc->enc_pending && evbuffer_get_length(pc->enc_pending) > 0)) {
+                https2http_bridge_read_cb(pc->bridge_bev, pc);
+            }
+        }
+        if (pc->local_proxy_bev) {
+            debug(LOG_DEBUG,
+                  "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p",
+                  stream_id, pc->local_proxy_bev);
+            bufferevent_enable(pc->local_proxy_bev, EV_READ);
+        }
     }
 
     return 1;

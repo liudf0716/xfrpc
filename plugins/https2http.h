@@ -13,6 +13,11 @@
 #include <openssl/ssl.h>
 
 struct proxy_client;
+struct proxy_service;
+
+/* Initialize and free per-service SSL context at config/startup time */
+int https2http_init_service(struct proxy_service *ps);
+void https2http_free_service(struct proxy_service *ps);
 
 /* Initialize and setup https2http bridge for client */
 int https2http_setup(struct proxy_client *client);

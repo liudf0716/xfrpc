@@ -690,13 +690,16 @@ void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 		return;
 	}
 
+	struct bufferevent *target_bev = (is_https2http_proxy(client->ps) && client->bridge_bev) ?
+	                                 client->bridge_bev : client->local_proxy_bev;
+
 	/* Apply decryption/decompression if enabled */
 	if (client->use_encryption || client->use_compression) {
 		struct evbuffer *processed = evbuffer_new();
 		if (!processed) return;
 		proxy_crypto_decode_evbuffer(client, src, processed);
 
-		struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+		struct evbuffer *dst = bufferevent_get_output(target_bev);
 		evbuffer_add_buffer(dst, processed);
 		evbuffer_free(processed);
 		return;
@@ -704,12 +707,7 @@ void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 
 	/* No encryption/decompression - original path */
 	if (!c_conf->tcp_mux) {
-		if (is_https2http_proxy(client->ps) && client->bridge_bev) {
-			struct evbuffer *dst = bufferevent_get_output(client->bridge_bev);
-			evbuffer_add_buffer(dst, src);
-			return;
-		}
-		struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+		struct evbuffer *dst = bufferevent_get_output(target_bev);
 		evbuffer_add_buffer(dst, src);
 		return;
 	}

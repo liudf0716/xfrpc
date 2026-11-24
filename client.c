@@ -107,10 +107,24 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 	debug(LOG_INFO, "Proxy close connection %s - stream_id %d: %s",
 		  error_msg, client->stream_id, strerror(errno));
 
-	/* Flush remaining data from the local proxy bufferevent into MUX stream.
-	 * Loop to handle partial sends — tmux_stream_write drains
-	 * what it writes directly from src when send_window allows. */
-	if (bev && client->ctl_bev) {
+	if (is_https2http_proxy(client->ps)) {
+		/* For https2http, leftover local HTTP bytes must be fed through TLS, not raw to MUX */
+		if (bev && client->ssl_bev) {
+			struct evbuffer *src = bufferevent_get_input(bev);
+			if (evbuffer_get_length(src) > 0) {
+				struct evbuffer *dst = bufferevent_get_output(client->ssl_bev);
+				evbuffer_add_buffer(dst, src);
+			}
+			bufferevent_flush(client->ssl_bev, EV_WRITE, BEV_FINISHED);
+		}
+		if (client->bridge_bev && evbuffer_get_length(bufferevent_get_input(client->bridge_bev)) > 0) {
+			https2http_bridge_read_cb(client->bridge_bev, client);
+		}
+		https2http_client_cleanup(client);
+	} else if (bev && client->ctl_bev) {
+		/* Flush remaining data from the local proxy bufferevent into MUX stream.
+		 * Loop to handle partial sends — tmux_stream_write drains
+		 * what it writes directly from src when send_window allows. */
 		struct evbuffer *src = bufferevent_get_input(bev);
 		struct common_conf *c_conf = get_common_config();
 		if (!c_conf->tcp_mux) {
@@ -519,8 +533,11 @@ int send_client_data_tail(struct proxy_client *client)
 		return 0;
 	}
 
-	if (!client->local_proxy_bev) {
-		debug(LOG_ERR, "Invalid local proxy bufferevent");
+	struct bufferevent *target_bev = (is_https2http_proxy(client->ps) && client->bridge_bev) ?
+	                                 client->bridge_bev : client->local_proxy_bev;
+
+	if (!target_bev) {
+		debug(LOG_ERR, "Invalid target bufferevent for data tail");
 		return -1;
 	}
 
@@ -539,11 +556,11 @@ int send_client_data_tail(struct proxy_client *client)
 		evbuffer_add(src, client->data_tail, client->data_tail_size);
 		proxy_crypto_decode_evbuffer(client, src, plain);
 		bytes_written = (int)evbuffer_get_length(plain);
-		evbuffer_add_buffer(bufferevent_get_output(client->local_proxy_bev), plain);
+		evbuffer_add_buffer(bufferevent_get_output(target_bev), plain);
 		evbuffer_free(src);
 		evbuffer_free(plain);
 	} else {
-		bytes_written = bufferevent_write(client->local_proxy_bev,
+		bytes_written = bufferevent_write(target_bev,
 						client->data_tail,
 						client->data_tail_size);
 	}
@@ -720,6 +737,7 @@ struct proxy_client *new_proxy_client()
 		return NULL;
 	}
 
+	client->bridge_fd = -1;
 	client->stream_id = get_next_session_id();
 	
 	init_tmux_stream(&client->stream, client->stream_id, INIT);

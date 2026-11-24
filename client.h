@@ -184,6 +184,7 @@ struct proxy_service {
 	char    *plugin_crt_path;
 	char    *plugin_key_path;
 	char    *plugin_host_header_rewrite;
+	struct ssl_ctx_st *ssl_ctx;  /* Per-service SSL context for https2http */
 
 	/* TCPMux specific */
 	char    *multiplexer;        /* Multiplexer type (e.g. "httpconnect") */

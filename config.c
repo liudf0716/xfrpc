@@ -25,6 +25,7 @@
 #include "msg.h"
 #include "utils.h"
 #include "version.h"
+#include "plugins/https2http.h"
 
 /**
  * @brief Array of valid proxy service types supported by the application
@@ -317,6 +318,72 @@ static struct proxy_service *new_proxy_service(const char *name)
  *
  * Error messages are logged for any validation failures.
  */
+static int parse_local_addr(const char *addr, char **out_ip, int *out_port)
+{
+	if (!addr || !*addr) return -1;
+
+	char *ip = NULL;
+	int port = 0;
+
+	if (addr[0] == '[') {
+		/* Bracketed IPv6 address, e.g. [::1]:80 */
+		const char *end_bracket = strchr(addr, ']');
+		if (!end_bracket) return -1;
+		ip = strndup(addr + 1, end_bracket - (addr + 1));
+		if (*(end_bracket + 1) == ':') {
+			const char *port_str = end_bracket + 2;
+			for (const char *p = port_str; *p; p++) {
+				if (!isdigit((unsigned char)*p)) {
+					SAFE_FREE(ip);
+					return -1;
+				}
+			}
+			port = atoi(port_str);
+		}
+	} else {
+		/* IPv4, hostname, or bare port */
+		const char *colon = strrchr(addr, ':');
+		if (colon) {
+			if (colon > addr) {
+				ip = strndup(addr, colon - addr);
+			}
+			const char *port_str = colon + 1;
+			for (const char *p = port_str; *p; p++) {
+				if (!isdigit((unsigned char)*p)) {
+					SAFE_FREE(ip);
+					return -1;
+				}
+			}
+			port = atoi(port_str);
+		} else {
+			for (const char *p = addr; *p; p++) {
+				if (!isdigit((unsigned char)*p)) {
+					return -1;
+				}
+			}
+			port = atoi(addr);
+		}
+	}
+
+	if (port <= 0 || port > 65535) {
+		SAFE_FREE(ip);
+		return -1;
+	}
+
+	if (ip && out_ip) {
+		SAFE_FREE(*out_ip);
+		*out_ip = ip;
+	} else {
+		SAFE_FREE(ip);
+	}
+
+	if (out_port) {
+		*out_port = port;
+	}
+
+	return 0;
+}
+
 int validate_proxy(struct proxy_service *ps)
 {
 	// Validate basic requirements
@@ -333,6 +400,19 @@ int validate_proxy(struct proxy_service *ps)
 	if (is_https2http_proxy(ps)) {
 		if (ps->local_port == 0) {
 			debug(LOG_ERR, "Proxy [%s] error: Plugin https2http requires local_port (or plugin_local_addr)", ps->proxy_name);
+			return 0;
+		}
+		const char *hr = ps->plugin_host_header_rewrite ? ps->plugin_host_header_rewrite : ps->host_header_rewrite;
+		if (hr) {
+			for (const char *p = hr; *p; p++) {
+				if (*p == '\r' || *p == '\n' || *p <= ' ' || (unsigned char)*p >= 127) {
+					debug(LOG_ERR, "Proxy [%s] error: Invalid character in hostHeaderRewrite [%s]", ps->proxy_name, hr);
+					return 0;
+				}
+			}
+		}
+		if (https2http_init_service(ps) < 0) {
+			debug(LOG_ERR, "Proxy [%s] error: Failed to initialize https2http SSL context", ps->proxy_name);
 			return 0;
 		}
 	}
@@ -693,14 +773,8 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("plugin_key_path")) SET_STRING_VALUE(plugin_key_path);
 	else if (MATCH_NAME("plugin_host_header_rewrite")) SET_STRING_VALUE(plugin_host_header_rewrite);
 	else if (MATCH_NAME("plugin_local_addr")) {
-		/* parse "ip:port" or "port" */
-		char *colon = strchr(value, ':');
-		if (colon) {
-			SAFE_FREE(ps->local_ip);
-			ps->local_ip = strndup(value, colon - value);
-			ps->local_port = atoi(colon + 1);
-		} else {
-			ps->local_port = atoi(value);
+		if (parse_local_addr(value, &ps->local_ip, &ps->local_port) < 0) {
+			debug(LOG_ERR, "Proxy [%s] error: Invalid plugin_local_addr [%s]", ps->proxy_name, value);
 		}
 	}
 	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
@@ -1182,13 +1256,8 @@ static void load_toml_proxies(struct toml_doc *doc)
 		if ((v = toml_get(sec, "plugin.hostHeaderRewrite")))
 			ps_set_string(&ps->plugin_host_header_rewrite, v);
 		if ((v = toml_get(sec, "plugin.localAddr"))) {
-			const char *colon = strchr(v, ':');
-			if (colon) {
-				SAFE_FREE(ps->local_ip);
-				ps->local_ip = strndup(v, colon - v);
-				ps->local_port = atoi(colon + 1);
-			} else {
-				ps->local_port = atoi(v);
+			if (parse_local_addr(v, &ps->local_ip, &ps->local_port) < 0) {
+				debug(LOG_ERR, "Proxy [%s] error: Invalid plugin.localAddr [%s]", name, v);
 			}
 		}
 		if ((v = toml_get(sec, "plugin.localPath")))
@@ -1471,6 +1540,9 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->allow_users);
 	SAFE_FREE(ps->health_check_type);
 	SAFE_FREE(ps->health_check_url);
+	if (ps->ssl_ctx) {
+		https2http_free_service(ps);
+	}
 	SAFE_FREE(ps);
 }
 

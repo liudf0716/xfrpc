@@ -30,8 +30,6 @@
 #include "../tcpmux.h"
 #include "../proxy.h"
 
-static SSL_CTX *g_https2http_ctx = NULL;
-
 static int generate_self_signed_cert(SSL_CTX *ctx)
 {
 	EVP_PKEY *pkey = NULL;
@@ -54,22 +52,26 @@ static int generate_self_signed_cert(SSL_CTX *ctx)
 	X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (const unsigned char *)"xfrpc-https2http", -1, -1, 0);
 	X509_set_issuer_name(x509, name);
 
-	X509_sign(x509, pkey, EVP_sha256());
+	if (X509_sign(x509, pkey, EVP_sha256()) <= 0) {
+		X509_free(x509);
+		EVP_PKEY_free(pkey);
+		return -1;
+	}
 
 	int ret1 = SSL_CTX_use_certificate(ctx, x509);
 	int ret2 = SSL_CTX_use_PrivateKey(ctx, pkey);
+	int ret3 = SSL_CTX_check_private_key(ctx);
 
 	X509_free(x509);
 	EVP_PKEY_free(pkey);
 
-	return (ret1 > 0 && ret2 > 0) ? 0 : -1;
+	return (ret1 > 0 && ret2 > 0 && ret3 == 1) ? 0 : -1;
 }
 
-static SSL_CTX *get_or_init_ssl_ctx(struct proxy_service *ps)
+int https2http_init_service(struct proxy_service *ps)
 {
-	if (g_https2http_ctx) {
-		return g_https2http_ctx;
-	}
+	if (!ps || !is_https2http_proxy(ps)) return 0;
+	if (ps->ssl_ctx) return 0;
 
 	SSL_library_init();
 	SSL_load_error_strings();
@@ -77,35 +79,50 @@ static SSL_CTX *get_or_init_ssl_ctx(struct proxy_service *ps)
 
 	SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
 	if (!ctx) {
-		debug(LOG_ERR, "https2http: Failed to create SSL_CTX");
-		return NULL;
+		debug(LOG_ERR, "https2http: [%s] Failed to create SSL_CTX", ps->proxy_name);
+		return -1;
 	}
 
+	int loaded = 0;
 	if (ps->plugin_crt_path && ps->plugin_key_path) {
-		if (SSL_CTX_use_certificate_file(ctx, ps->plugin_crt_path, SSL_FILETYPE_PEM) <= 0 ||
-		    SSL_CTX_use_PrivateKey_file(ctx, ps->plugin_key_path, SSL_FILETYPE_PEM) <= 0) {
-			debug(LOG_ERR, "https2http: Failed to load cert [%s] or key [%s], generating self-signed cert",
-			      ps->plugin_crt_path, ps->plugin_key_path);
-			if (generate_self_signed_cert(ctx) < 0) {
-				debug(LOG_ERR, "https2http: Failed to generate fallback self-signed cert");
-				SSL_CTX_free(ctx);
-				return NULL;
-			}
+		if (SSL_CTX_use_certificate_file(ctx, ps->plugin_crt_path, SSL_FILETYPE_PEM) > 0 &&
+		    SSL_CTX_use_PrivateKey_file(ctx, ps->plugin_key_path, SSL_FILETYPE_PEM) > 0 &&
+		    SSL_CTX_check_private_key(ctx) == 1) {
+			debug(LOG_INFO, "https2http: [%s] Successfully loaded cert [%s] and key [%s]",
+			      ps->proxy_name, ps->plugin_crt_path, ps->plugin_key_path);
+			loaded = 1;
 		} else {
-			debug(LOG_INFO, "https2http: Successfully loaded cert [%s] and key [%s]",
-			      ps->plugin_crt_path, ps->plugin_key_path);
-		}
-	} else {
-		debug(LOG_INFO, "https2http: No cert/key provided, generating self-signed certificate");
-		if (generate_self_signed_cert(ctx) < 0) {
-			debug(LOG_ERR, "https2http: Failed to generate self-signed cert");
+			char err_buf[256];
+			ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf));
+			debug(LOG_ERR, "https2http: [%s] Failed to load/verify cert [%s] or key [%s]: %s",
+			      ps->proxy_name, ps->plugin_crt_path, ps->plugin_key_path, err_buf);
+			ERR_clear_error();
 			SSL_CTX_free(ctx);
-			return NULL;
+			ctx = SSL_CTX_new(TLS_server_method());
+			if (!ctx) return -1;
 		}
 	}
 
-	g_https2http_ctx = ctx;
-	return g_https2http_ctx;
+	if (!loaded) {
+		debug(LOG_INFO, "https2http: [%s] Generating self-signed RSA certificate", ps->proxy_name);
+		if (generate_self_signed_cert(ctx) < 0) {
+			debug(LOG_ERR, "https2http: [%s] Failed to generate self-signed cert", ps->proxy_name);
+			SSL_CTX_free(ctx);
+			return -1;
+		}
+	}
+
+	ps->ssl_ctx = ctx;
+	return 0;
+}
+
+void https2http_free_service(struct proxy_service *ps)
+{
+	if (!ps) return;
+	if (ps->ssl_ctx) {
+		SSL_CTX_free(ps->ssl_ctx);
+		ps->ssl_ctx = NULL;
+	}
 }
 
 void https2http_client_cleanup(struct proxy_client *client)
@@ -134,7 +151,8 @@ static char *rewrite_http_host(const char *req, size_t req_len, const char *new_
 	}
 	size_t hdr_len = (hdr_end - req) + 4;
 
-	char *buf = malloc(req_len + strlen(new_host) + 128);
+	size_t max_buf_len = req_len + strlen(new_host) + 128;
+	char *buf = malloc(max_buf_len);
 	if (!buf) return NULL;
 
 	char *out = buf;
@@ -146,8 +164,11 @@ static char *rewrite_http_host(const char *req, size_t req_len, const char *new_
 		if (!line_end || line_end > hdr_end) break;
 
 		if (strncasecmp(p, "Host:", 5) == 0) {
-			out += sprintf(out, "Host: %s\r\n", new_host);
-			host_replaced = 1;
+			if (!host_replaced) {
+				out += sprintf(out, "Host: %s\r\n", new_host);
+				host_replaced = 1;
+			}
+			/* Skip duplicate Host headers to avoid header smuggling & heap growth */
 		} else {
 			size_t line_len = (line_end - p) + 2;
 			memcpy(out, p, line_len);
@@ -186,22 +207,32 @@ void https2http_ssl_read_cb(struct bufferevent *bev, void *ctx)
 	                       client->ps->plugin_host_header_rewrite : client->ps->host_header_rewrite;
 
 	if (!client->header_rewritten && new_host && *new_host) {
-		char *raw = malloc(len + 1);
-		if (!raw) return;
-		evbuffer_copyout(src, raw, len);
-		raw[len] = '\0';
-
-		size_t rewritten_len = 0;
-		char *rewritten = rewrite_http_host(raw, len, new_host, &rewritten_len);
-		free(raw);
-
-		if (rewritten) {
-			evbuffer_drain(src, len);
-			bufferevent_write(client->local_proxy_bev, rewritten, rewritten_len);
-			free(rewritten);
+		struct evbuffer_ptr pos = evbuffer_search(src, "\r\n\r\n", 4, NULL);
+		if (pos.pos < 0) {
+			/* Wait until complete HTTP headers arrive, unless buffer exceeds 64KB */
+			if (len < 65536) {
+				return;
+			}
 			client->header_rewritten = 1;
-			debug(LOG_DEBUG, "https2http: HTTP Host rewritten to [%s]", new_host);
-			return;
+		} else {
+			char *raw = malloc(len + 1);
+			if (!raw) return;
+			evbuffer_copyout(src, raw, len);
+			raw[len] = '\0';
+
+			size_t rewritten_len = 0;
+			char *rewritten = rewrite_http_host(raw, len, new_host, &rewritten_len);
+			free(raw);
+
+			if (rewritten) {
+				evbuffer_drain(src, len);
+				bufferevent_write(client->local_proxy_bev, rewritten, rewritten_len);
+				free(rewritten);
+				client->header_rewritten = 1;
+				debug(LOG_DEBUG, "https2http: HTTP Host rewritten to [%s]", new_host);
+				return;
+			}
+			client->header_rewritten = 1;
 		}
 	}
 
@@ -242,10 +273,69 @@ void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
 	if (!client || !client->ctl_bev) return;
 
 	struct evbuffer *src = bufferevent_get_input(bev);
-	size_t len = evbuffer_get_length(src);
-	if (len == 0) return;
-
 	struct common_conf *c_conf = get_common_config();
+
+	/* Apply encryption/compression if enabled */
+	if (client->use_encryption || client->use_compression) {
+		/* Flush any previously-encrypted data stashed due to window exhaustion */
+		if (client->enc_pending && evbuffer_get_length(client->enc_pending) > 0) {
+			if (!c_conf->tcp_mux) {
+				struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+				evbuffer_add_buffer(dst, client->enc_pending);
+			} else {
+				while (evbuffer_get_length(client->enc_pending) > 0) {
+					int written = tmux_stream_write(client->ctl_bev, client->enc_pending, &client->stream);
+					if (written < 0) {
+						del_proxy_client_by_stream_id(client->stream.id);
+						return;
+					}
+					if (written == 0) {
+						bufferevent_disable(bev, EV_READ);
+						return;
+					}
+				}
+			}
+		}
+
+		if (evbuffer_get_length(src) == 0)
+			return;
+
+		struct evbuffer *processed = evbuffer_new();
+		if (!processed) return;
+		proxy_crypto_encode_evbuffer(client, src, processed);
+
+		if (!c_conf->tcp_mux) {
+			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+			evbuffer_add_buffer(dst, processed);
+			evbuffer_free(processed);
+			return;
+		}
+
+		while (evbuffer_get_length(processed) > 0) {
+			int written = tmux_stream_write(client->ctl_bev, processed, &client->stream);
+			if (written < 0) {
+				debug(LOG_INFO, "Stream %u: tmux_stream_write error %d",
+				      client->stream.id, written);
+				evbuffer_free(processed);
+				del_proxy_client_by_stream_id(client->stream.id);
+				return;
+			}
+			if (written == 0) {
+				if (!client->enc_pending)
+					client->enc_pending = evbuffer_new();
+				if (client->enc_pending) {
+					evbuffer_add_buffer(client->enc_pending, processed);
+				}
+				evbuffer_free(processed);
+				bufferevent_disable(bev, EV_READ);
+				return;
+			}
+		}
+		evbuffer_free(processed);
+		return;
+	}
+
+	/* Plain path (no frp crypto/compression) */
 	if (!c_conf->tcp_mux) {
 		struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
 		evbuffer_add_buffer(dst, src);
@@ -254,8 +344,17 @@ void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
 
 	while (evbuffer_get_length(src) > 0) {
 		int written = tmux_stream_write(client->ctl_bev, src, &client->stream);
-		if (written <= 0) {
-			break;
+		if (written < 0) {
+			debug(LOG_INFO, "Stream %u: tmux_stream_write error %d, cleaning up",
+			      client->stream.id, written);
+			del_proxy_client_by_stream_id(client->stream.id);
+			return;
+		}
+		if (written == 0) {
+			bufferevent_disable(bev, EV_READ);
+			debug(LOG_DEBUG, "Stream %u: send_window exhausted, disabling EV_READ on bridge_bev",
+			      client->stream.id);
+			return;
 		}
 	}
 }
@@ -264,8 +363,12 @@ int https2http_setup(struct proxy_client *client)
 {
 	if (!client || !client->ps || !client->base) return -1;
 
-	SSL_CTX *ctx = get_or_init_ssl_ctx(client->ps);
-	if (!ctx) return -1;
+	if (!client->ps->ssl_ctx) {
+		if (https2http_init_service(client->ps) < 0 || !client->ps->ssl_ctx) {
+			debug(LOG_ERR, "https2http: Failed to get SSL_CTX for service %s", client->ps->proxy_name);
+			return -1;
+		}
+	}
 
 	int sp[2];
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sp) < 0) {
@@ -273,7 +376,7 @@ int https2http_setup(struct proxy_client *client)
 		return -1;
 	}
 
-	SSL *ssl = SSL_new(ctx);
+	SSL *ssl = SSL_new(client->ps->ssl_ctx);
 	if (!ssl) {
 		close(sp[0]);
 		close(sp[1]);
@@ -296,12 +399,21 @@ int https2http_setup(struct proxy_client *client)
 	bufferevent_setcb(client->ssl_bev, https2http_ssl_read_cb, NULL, https2http_ssl_event_cb, client);
 	bufferevent_enable(client->ssl_bev, EV_READ | EV_WRITE);
 
-	client->bridge_fd = sp[1];
 	client->bridge_bev = bufferevent_socket_new(client->base, sp[1], BEV_OPT_CLOSE_ON_FREE);
-	if (client->bridge_bev) {
-		bufferevent_setcb(client->bridge_bev, https2http_bridge_read_cb, NULL, NULL, client);
-		bufferevent_enable(client->bridge_bev, EV_READ | EV_WRITE);
+	if (!client->bridge_bev) {
+		debug(LOG_ERR, "https2http: Failed to create bridge bufferevent");
+		close(sp[1]);
+		client->bridge_fd = -1;
+		bufferevent_free(client->ssl_bev);
+		client->ssl_bev = NULL;
+		return -1;
 	}
+
+	/* Ownership of sp[1] is now transferred to bridge_bev */
+	client->bridge_fd = -1;
+
+	bufferevent_setcb(client->bridge_bev, https2http_bridge_read_cb, NULL, NULL, client);
+	bufferevent_enable(client->bridge_bev, EV_READ | EV_WRITE);
 
 	client->header_rewritten = 0;
 	debug(LOG_DEBUG, "https2http: Successfully setup TLS termination bridge for stream %u", client->stream_id);

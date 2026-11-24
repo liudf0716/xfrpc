@@ -417,7 +417,7 @@ static int setup_local_connection(struct proxy_client *client)
 void start_xfrp_tunnel(struct proxy_client *client)
 {
 	if (!client || !client->ctl_bev || !client->base || !client->ps ||
-		    (!client->ps->local_port && !is_uds_proxy(client->ps))) {
+		    (!client->ps->local_port && !is_uds_proxy(client->ps) && !is_socks5_proxy(client->ps))) {
 		debug(LOG_ERR, "Invalid client configuration");
 		return;
 	}

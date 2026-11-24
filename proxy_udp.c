@@ -23,6 +23,8 @@
 #include "tcpmux.h"
 #include "control.h"
 #include "wire_v2.h"
+#include "crypto_stream.h"
+#include "vendor/snappy/snappy.h"
 
 // Base64 encoding table
 static const char BASE64_CHARS[] =
@@ -197,19 +199,28 @@ int resolve_local_addr(const char *ip, struct sockaddr_in *addr) {
     if (inet_pton(AF_INET, ip, &addr->sin_addr) > 0) {
         return 0;
     }
-
-    struct hostent *host = gethostbyname(ip);
-    if (!host) {
-        debug(LOG_ERR, "Failed to resolve hostname: %s", ip);
-        return -1;
+    if (strcasecmp(ip, "localhost") == 0) {
+        addr->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        return 0;
     }
-
-    memcpy(&addr->sin_addr, host->h_addr, host->h_length);
-    return 0;
+    return -1;
 }
 
 #define MAX_UDP_SESSIONS 128
 #define UDP_SESSION_TIMEOUT 120
+
+static void udp_clean_timer_cb(evutil_socket_t fd, short what, void *ctx);
+
+void init_udp_clean_timer(struct proxy_client *client)
+{
+    if (!client || !client->base || client->udp_clean_timer)
+        return;
+    client->udp_clean_timer = event_new(client->base, -1, EV_PERSIST, udp_clean_timer_cb, client);
+    if (client->udp_clean_timer) {
+        struct timeval tv = {10, 0};
+        evtimer_add(client->udp_clean_timer, &tv);
+    }
+}
 
 static void free_udp_session(struct proxy_client *client, struct udp_session *sess)
 {
@@ -238,6 +249,23 @@ void clear_udp_sessions(struct proxy_client *client)
         free_udp_session(client, cur);
     }
     client->udp_sessions = NULL;
+}
+
+static void udp_clean_timer_cb(evutil_socket_t fd, short what, void *ctx)
+{
+    (void)fd; (void)what;
+    struct proxy_client *client = (struct proxy_client *)ctx;
+    if (!client || !client->udp_sessions) return;
+
+    time_t now = time(NULL);
+    struct udp_session *s, *tmp;
+    HASH_ITER(hh, client->udp_sessions, s, tmp) {
+        if (now - s->last_active > UDP_SESSION_TIMEOUT) {
+            debug(LOG_DEBUG, "UDP session %s timed out (%ld s idle), cleaning up",
+                  s->key, (long)(now - s->last_active));
+            free_udp_session(client, s);
+        }
+    }
 }
 
 static void send_udp_packet_to_server(struct proxy_client *client, const char *json_buf, size_t json_len)
@@ -446,18 +474,32 @@ void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client) 
                                 strncpy(sess->key, key, sizeof(sess->key) - 1);
                                 sess->raddr = raddr_copy;
                                 sess->rport = r_port;
-                                sess->rzone = (udp_pkt->raddr && udp_pkt->raddr->zone) ? strdup(udp_pkt->raddr->zone) : NULL;
+                                int strdup_failed = 0;
+                                if (udp_pkt->raddr && udp_pkt->raddr->zone) {
+                                    sess->rzone = strdup(udp_pkt->raddr->zone);
+                                    if (!sess->rzone) strdup_failed = 1;
+                                }
                                 if (udp_pkt->laddr && udp_pkt->laddr->addr) {
                                     sess->laddr = strdup(udp_pkt->laddr->addr);
+                                    if (!sess->laddr) strdup_failed = 1;
                                     sess->lport = udp_pkt->laddr->port;
-                                    sess->lzone = udp_pkt->laddr->zone ? strdup(udp_pkt->laddr->zone) : NULL;
+                                    if (udp_pkt->laddr->zone) {
+                                        sess->lzone = strdup(udp_pkt->laddr->zone);
+                                        if (!sess->lzone) strdup_failed = 1;
+                                    }
                                 }
-                                sess->client = client;
-                                sess->last_active = time(NULL);
-                                sess->bev = bev;
-                                bufferevent_setcb(sess->bev, udp_session_c2s_cb, NULL, udp_session_event_cb, sess);
-                                bufferevent_enable(sess->bev, EV_READ | EV_WRITE);
-                                HASH_ADD_STR(client->udp_sessions, key, sess);
+                                if (strdup_failed) {
+                                    free_udp_session(NULL, sess);
+                                    bufferevent_free(bev);
+                                    sess = NULL;
+                                } else {
+                                    sess->client = client;
+                                    sess->last_active = time(NULL);
+                                    sess->bev = bev;
+                                    bufferevent_setcb(sess->bev, udp_session_c2s_cb, NULL, udp_session_event_cb, sess);
+                                    bufferevent_enable(sess->bev, EV_READ | EV_WRITE);
+                                    HASH_ADD_STR(client->udp_sessions, key, sess);
+                                }
                             } else {
                                 free(raddr_copy);
                                 bufferevent_free(bev);
@@ -650,6 +692,125 @@ void process_udp_rx_buf(struct proxy_client *client)
     }
 }
 
+void process_udp_decomp_buf(struct proxy_client *client)
+{
+    if (!client || !client->decomp_buf || !client->udp_rx_buf)
+        return;
+
+    while (1) {
+        size_t cur_len = evbuffer_get_length(client->decomp_buf);
+        if (cur_len == 0)
+            break;
+
+        /* 1. Check for Snappy Framing Format stream identifier (10 bytes: 0xff 0x06 0x00 0x00 's' 'N' 'a' 'P' 'p' 'Y') */
+        if (cur_len >= 10) {
+            uint8_t magic[10];
+            evbuffer_copyout(client->decomp_buf, magic, 10);
+            if (magic[0] == 0xff && magic[1] == 0x06 && magic[2] == 0x00 && magic[3] == 0x00 &&
+                memcmp(magic + 4, "sNaPpY", 6) == 0) {
+                evbuffer_drain(client->decomp_buf, 10);
+                continue;
+            }
+        }
+
+        /* 2. Check for Snappy Framing Format chunk: 1-byte type + 3-byte LE length */
+        if (cur_len >= 4) {
+            uint8_t hdr[4];
+            evbuffer_copyout(client->decomp_buf, hdr, 4);
+            uint8_t type = hdr[0];
+            uint32_t chunk_len = (uint32_t)hdr[1] | ((uint32_t)hdr[2] << 8) | ((uint32_t)hdr[3] << 16);
+            if ((type == 0x00 || type == 0x01 || type == 0xfe || (type >= 0x80 && type <= 0xfd)) &&
+                chunk_len <= 65536 + 4) {
+                if (cur_len < 4 + (size_t)chunk_len) {
+                    /* Incomplete Snappy frame chunk, wait for more data */
+                    break;
+                }
+                uint8_t *chunk = malloc(4 + chunk_len);
+                if (!chunk) break;
+                evbuffer_remove(client->decomp_buf, chunk, 4 + chunk_len);
+                if (type == 0x00 && chunk_len > 4) {
+                    /* Compressed data chunk: 4 bytes CRC + raw snappy */
+                    const uint8_t *cdata = chunk + 8;
+                    size_t clen = chunk_len - 4;
+                    size_t uncomp_len = 0;
+                    if (snappy_uncompressed_length((const char *)cdata, clen, &uncomp_len) && uncomp_len > 0) {
+                        uint8_t *uncomp = malloc(uncomp_len);
+                        if (uncomp) {
+                            if (snappy_uncompress((const char *)cdata, clen, (char *)uncomp) == 0) {
+                                evbuffer_add(client->udp_rx_buf, uncomp, uncomp_len);
+                            } else {
+                                debug(LOG_ERR, "Snappy frame chunk decompression failed");
+                            }
+                            free(uncomp);
+                        }
+                    }
+                } else if (type == 0x01 && chunk_len > 4) {
+                    /* Uncompressed data chunk: 4 bytes CRC + raw data */
+                    evbuffer_add(client->udp_rx_buf, chunk + 8, chunk_len - 4);
+                }
+                free(chunk);
+                continue;
+            }
+        }
+
+        /* 3. Check for 4-byte BE length-prefixed snappy block */
+        if (cur_len >= 4) {
+            uint32_t net_len = 0;
+            evbuffer_copyout(client->decomp_buf, &net_len, 4);
+            uint32_t comp_len = ntohl(net_len);
+            if (comp_len > 0 && comp_len <= 10 * 1024 * 1024) {
+                if (cur_len < 4 + (size_t)comp_len) {
+                    /* Incomplete block, wait for more data */
+                    break;
+                }
+                evbuffer_drain(client->decomp_buf, 4);
+                uint8_t *cdata = malloc(comp_len);
+                if (!cdata) break;
+                evbuffer_remove(client->decomp_buf, cdata, comp_len);
+                size_t uncomp_len = 0;
+                if (snappy_uncompressed_length((const char *)cdata, comp_len, &uncomp_len) && uncomp_len > 0) {
+                    uint8_t *uncomp = malloc(uncomp_len);
+                    if (uncomp) {
+                        if (snappy_uncompress((const char *)cdata, comp_len, (char *)uncomp) == 0) {
+                            evbuffer_add(client->udp_rx_buf, uncomp, uncomp_len);
+                        } else {
+                            debug(LOG_ERR, "Length-prefixed snappy decompression failed (%u bytes)", comp_len);
+                        }
+                        free(uncomp);
+                    }
+                }
+                free(cdata);
+                continue;
+            }
+        }
+
+        /* 4. Fallback for raw single snappy block: try decompressing full cur_len */
+        size_t uncomp_len = 0;
+        uint8_t *raw = evbuffer_pullup(client->decomp_buf, cur_len);
+        if (raw && snappy_uncompressed_length((const char *)raw, cur_len, &uncomp_len) && uncomp_len > 0) {
+            uint8_t *uncomp = malloc(uncomp_len);
+            if (uncomp) {
+                if (snappy_uncompress((const char *)raw, cur_len, (char *)uncomp) == 0) {
+                    evbuffer_add(client->udp_rx_buf, uncomp, uncomp_len);
+                    evbuffer_drain(client->decomp_buf, cur_len);
+                    free(uncomp);
+                    continue;
+                }
+                free(uncomp);
+            }
+        }
+
+        /* Incomplete block or unparseable head: wait for more bytes, or drain if too large */
+        if (cur_len > 64 * 1024) {
+            debug(LOG_ERR, "Decompression buffer overflow without valid frame (%zu bytes), draining", cur_len);
+            evbuffer_drain(client->decomp_buf, cur_len);
+        }
+        break;
+    }
+
+    process_udp_rx_buf(client);
+}
+
 /**
  * @brief Callback function for handling data from server to client in UDP proxy (non-mux)
  */
@@ -674,18 +835,46 @@ void udp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
         }
     }
 
-    if (client->use_encryption || client->use_compression) {
-        struct evbuffer *plain = evbuffer_new();
-        if (!plain) {
-            debug(LOG_ERR, "Failed to allocate buffer for decrypted UDP packet");
-            return;
+    if (client->use_encryption) {
+        if (client->decrypt_ctx && !crypto_reader_iv_received(client->decrypt_ctx)) {
+            if (len < 16)
+                return;
+            uint8_t iv[16];
+            evbuffer_remove(src, iv, 16);
+            crypto_set_iv(client->decrypt_ctx, iv);
+            crypto_reader_set_iv_received(client->decrypt_ctx);
+            len -= 16;
+            if (len == 0)
+                return;
         }
-        proxy_crypto_decode_evbuffer(client, src, plain);
-        if (evbuffer_get_length(plain) > 0) {
-            evbuffer_add_buffer(client->udp_rx_buf, plain);
+
+        uint8_t *data = malloc(len);
+        if (!data) return;
+        evbuffer_remove(src, data, len);
+        crypto_decrypt(client->decrypt_ctx, data, len);
+
+        if (client->use_compression) {
+            if (!client->decomp_buf)
+                client->decomp_buf = evbuffer_new();
+            if (client->decomp_buf) {
+                evbuffer_add(client->decomp_buf, data, len);
+                process_udp_decomp_buf(client);
+            }
+        } else {
+            evbuffer_add(client->udp_rx_buf, data, len);
             process_udp_rx_buf(client);
         }
-        evbuffer_free(plain);
+        free(data);
+        return;
+    }
+
+    if (client->use_compression) {
+        if (!client->decomp_buf)
+            client->decomp_buf = evbuffer_new();
+        if (client->decomp_buf) {
+            evbuffer_add_buffer(client->decomp_buf, src);
+            process_udp_decomp_buf(client);
+        }
         return;
     }
 

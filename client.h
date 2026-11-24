@@ -128,6 +128,8 @@ struct proxy_client {
 	char                *udp_rzone;
 	struct udp_session  *udp_sessions;  /* UDP sessions indexed by raddr:rport */
 	struct evbuffer     *udp_rx_buf;    /* Framing buffer for incoming TypeUDPPacket stream */
+	struct evbuffer     *decomp_buf;    /* Staging buffer for decompression */
+	struct event        *udp_clean_timer;/* Periodic timer for sweeping idle UDP sessions */
 	struct sockaddr_in   udp_local_addr; /* Pre-resolved local service address */
 	int                  udp_local_addr_valid;
 };

@@ -17,6 +17,7 @@
 #include "debug.h"
 #include "proxy.h"
 #include "tcpmux.h"
+#include "crypto_stream.h"
 
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -645,28 +646,55 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
                 return 0;
             }
         }
-        if (pc->use_encryption || pc->use_compression) {
-            struct evbuffer *src = bufferevent_get_input(bev);
-            struct evbuffer *frame = evbuffer_new();
-            struct evbuffer *plain = evbuffer_new();
-            if (!frame || !plain) {
-                if (frame) evbuffer_free(frame);
-                if (plain) evbuffer_free(plain);
-                evbuffer_drain(src, length);
-                debug(LOG_ERR, "Stream %u: failed to allocate crypto buffers for UDP", stream_id);
-                return 0;
+        struct evbuffer *src = bufferevent_get_input(bev);
+        if (pc->use_encryption) {
+            if (pc->decrypt_ctx && !crypto_reader_iv_received(pc->decrypt_ctx)) {
+                if (length < 16) {
+                    return 0;
+                }
+                uint8_t iv[16];
+                evbuffer_remove(src, iv, 16);
+                crypto_set_iv(pc->decrypt_ctx, iv);
+                crypto_reader_set_iv_received(pc->decrypt_ctx);
+                length -= 16;
+                bytes_processed += 16;
+                if (length == 0) {
+                    return bytes_processed;
+                }
             }
-            evbuffer_remove_buffer(src, frame, length);
-            proxy_crypto_decode_evbuffer(pc, frame, plain);
-            if (evbuffer_get_length(plain) > 0) {
-                evbuffer_add_buffer(pc->udp_rx_buf, plain);
+
+            uint8_t *data = malloc(length);
+            if (!data) {
+                evbuffer_drain(src, length);
+                return bytes_processed;
+            }
+            evbuffer_remove(src, data, length);
+            crypto_decrypt(pc->decrypt_ctx, data, length);
+
+            if (pc->use_compression) {
+                if (!pc->decomp_buf)
+                    pc->decomp_buf = evbuffer_new();
+                if (pc->decomp_buf) {
+                    evbuffer_add(pc->decomp_buf, data, length);
+                    process_udp_decomp_buf(pc);
+                }
+            } else {
+                evbuffer_add(pc->udp_rx_buf, data, length);
                 process_udp_rx_buf(pc);
             }
-            evbuffer_free(frame);
-            evbuffer_free(plain);
+            free(data);
+            bytes_processed += length;
+        } else if (pc->use_compression) {
+            if (!pc->decomp_buf)
+                pc->decomp_buf = evbuffer_new();
+            if (pc->decomp_buf) {
+                evbuffer_remove_buffer(src, pc->decomp_buf, length);
+                process_udp_decomp_buf(pc);
+            } else {
+                evbuffer_drain(src, length);
+            }
             bytes_processed = length;
         } else {
-            struct evbuffer *src = bufferevent_get_input(bev);
             evbuffer_remove_buffer(src, pc->udp_rx_buf, length);
             process_udp_rx_buf(pc);
             bytes_processed = length;

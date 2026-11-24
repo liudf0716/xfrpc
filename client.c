@@ -15,6 +15,7 @@
 #include <sys/un.h>
 #include <syslog.h>
 #include <zlib.h>
+#include <event2/dns.h>
 
 
 #include "debug.h"
@@ -325,6 +326,37 @@ static struct bufferevent *connect_unix_server(struct event_base *base, const ch
 	return bev;
 }
 
+static void udp_local_dns_cb(int errcode, struct addrinfo *addr, void *ptr)
+{
+	struct proxy_client *client = ptr;
+	if (!client) {
+		if (addr) evutil_freeaddrinfo(addr);
+		return;
+	}
+	if (errcode != 0 || !addr) {
+		debug(LOG_ERR, "Async DNS resolution failed for %s: %s",
+		      (client->ps && client->ps->local_ip) ? client->ps->local_ip : "unknown",
+		      evutil_gai_strerror(errcode));
+		return;
+	}
+	for (struct addrinfo *ai = addr; ai; ai = ai->ai_next) {
+		if (ai->ai_family == AF_INET && ai->ai_addr) {
+			struct sockaddr_in *sin = (struct sockaddr_in *)ai->ai_addr;
+			client->udp_local_addr.sin_addr = sin->sin_addr;
+			client->udp_local_addr_valid = 1;
+			if (client->local_proxy_bev) {
+				evutil_socket_t fd = bufferevent_getfd(client->local_proxy_bev);
+				if (connect(fd, (struct sockaddr *)&client->udp_local_addr, sizeof(client->udp_local_addr)) < 0) {
+					debug(LOG_ERR, "UDP connect to %s:%d failed: %s",
+					      client->ps->local_ip, client->ps->local_port, strerror(errno));
+				}
+			}
+			break;
+		}
+	}
+	evutil_freeaddrinfo(addr);
+}
+
 /**
  * @brief Sets up a local connection for the proxy client
  */
@@ -349,7 +381,16 @@ static int setup_local_connection(struct proxy_client *client)
 					}
 				}
 			} else {
-				debug(LOG_ERR, "Invalid UDP local IP/host: %s", ps->local_ip);
+				struct control *ctl = get_main_control();
+				if (ctl && ctl->dnsbase) {
+					struct addrinfo hints;
+					memset(&hints, 0, sizeof(hints));
+					hints.ai_family = AF_INET;
+					hints.ai_socktype = SOCK_DGRAM;
+					evdns_getaddrinfo(ctl->dnsbase, ps->local_ip, NULL, &hints, udp_local_dns_cb, client);
+				} else {
+					debug(LOG_ERR, "Failed to resolve UDP local IP/host: %s", ps->local_ip);
+				}
 			}
 		}
 	} else if (is_uds_proxy(ps)) {
@@ -433,6 +474,10 @@ void start_xfrp_tunnel(struct proxy_client *client)
 	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, NULL,
 					 xfrp_proxy_event_cb, client);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
+
+	if (is_udp_proxy(client->ps)) {
+		init_udp_clean_timer(client);
+	}
 }
 
 /**
@@ -549,6 +594,15 @@ free_proxy_client(struct proxy_client *client)
 	if (client->udp_rx_buf) {
 		evbuffer_free(client->udp_rx_buf);
 		client->udp_rx_buf = NULL;
+	}
+	if (client->decomp_buf) {
+		evbuffer_free(client->decomp_buf);
+		client->decomp_buf = NULL;
+	}
+	if (client->udp_clean_timer) {
+		evtimer_del(client->udp_clean_timer);
+		event_free(client->udp_clean_timer);
+		client->udp_clean_timer = NULL;
 	}
 
 	/* Free encryption contexts */

@@ -64,6 +64,9 @@ static void start_xfrpc_local_service(void)
 		} else if (strcmp(ps->plugin, "unix_domain_socket") == 0) {
 			/* UDS connections are handled dynamically on demand */
 			continue;
+		} else if (strcmp(ps->plugin, "https2http") == 0) {
+			/* https2http terminates TLS per work connection on demand */
+			continue;
 		} else {
 			debug(LOG_ERR, "start_xfrpc_local_service: unknown plugin %s", ps->plugin);
 		}

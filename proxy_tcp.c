@@ -704,6 +704,11 @@ void tcp_proxy_s2c_cb(struct bufferevent *bev, void *ctx)
 
 	/* No encryption/decompression - original path */
 	if (!c_conf->tcp_mux) {
+		if (is_https2http_proxy(client->ps) && client->bridge_bev) {
+			struct evbuffer *dst = bufferevent_get_output(client->bridge_bev);
+			evbuffer_add_buffer(dst, src);
+			return;
+		}
 		struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
 		evbuffer_add_buffer(dst, src);
 		return;

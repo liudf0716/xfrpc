@@ -637,6 +637,17 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         bytes_processed = length;
         debug(LOG_DEBUG, "Stream %u: leaving socks5 path processed=%u",
               stream_id, length);
+    } else if (is_https2http_proxy(pc->ps)) {
+        debug(LOG_DEBUG, "Stream %u: entering https2http bridge path length=%u bridge_bev=%p",
+              stream_id, length, pc->bridge_bev);
+        if (pc->bridge_bev) {
+            struct evbuffer *src = bufferevent_get_input(bev);
+            struct evbuffer *dst = bufferevent_get_output(pc->bridge_bev);
+            bytes_processed = evbuffer_zc_transfer(src, dst, length);
+        } else {
+            evbuffer_drain(bufferevent_get_input(bev), length);
+            bytes_processed = length;
+        }
     } else if (is_udp_proxy(pc->ps)) {
         if (!pc->udp_rx_buf) {
             pc->udp_rx_buf = evbuffer_new();

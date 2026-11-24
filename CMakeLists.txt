@@ -177,6 +177,7 @@ set(PLUGIN_SOURCES
     plugins/instaloader.c
     plugins/httpd.c
     plugins/youtubedl.c
+    plugins/https2http.c
 )
 
 # Combine all sources

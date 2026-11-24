@@ -110,6 +110,12 @@ struct proxy_client {
 	size_t              xdpi_buf_len;
 	size_t              xdpi_buf_cap;
 
+	/* https2http plugin support */
+	struct bufferevent *ssl_bev;        /* SSL server filter/socket bufferevent */
+	struct bufferevent *bridge_bev;     /* Mux bridge bufferevent */
+	int                 bridge_fd;      /* Bridge socket fd */
+	int                 header_rewritten; /* Flag if HTTP Host header rewrite completed */
+
 	/* Hash handling */
 	UT_hash_handle      hh;
 
@@ -175,6 +181,9 @@ struct proxy_service {
 	char    *plugin;
 	char    *plugin_user;
 	char    *plugin_pwd;
+	char    *plugin_crt_path;
+	char    *plugin_key_path;
+	char    *plugin_host_header_rewrite;
 
 	/* TCPMux specific */
 	char    *multiplexer;        /* Multiplexer type (e.g. "httpconnect") */
@@ -208,6 +217,7 @@ int is_udp_proxy(const struct proxy_service *ps);
 int is_tcpmux_proxy(const struct proxy_service *ps);
 int is_stcp_proxy(const struct proxy_service *ps);
 int is_uds_proxy(const struct proxy_service *ps);
+int is_https2http_proxy(const struct proxy_service *ps);
 int has_service_type(const struct proxy_service *ps);
 struct proxy_client *new_proxy_client(void);
 void clear_all_proxy_client(void);

@@ -330,6 +330,12 @@ int validate_proxy(struct proxy_service *ps)
 		debug(LOG_ERR, "Proxy [%s] error: Plugin unix_domain_socket requires plugin_unix_path", ps->proxy_name);
 		return 0;
 	}
+	if (is_https2http_proxy(ps)) {
+		if (ps->local_port == 0) {
+			debug(LOG_ERR, "Proxy [%s] error: Plugin https2http requires local_port (or plugin_local_addr)", ps->proxy_name);
+			return 0;
+		}
+	}
 	int needs_local_endpoint = !is_uds && (strcmp(ps->proxy_type, "tcp") == 0 ||
 							  strcmp(ps->proxy_type, "udp") == 0 ||
 							  strcmp(ps->proxy_type, "http") == 0 ||
@@ -505,6 +511,7 @@ static struct plugin_defaults {
 	{"youtubedl", XFRPC_PLUGIN_YOUTUBEDL_PORT, XFRPC_PLUGIN_YOUTUBEDL_REMOTE_PORT, "127.0.0.1"},
 	{"httpd", XFRPC_PLUGIN_HTTPD_PORT, XFRPC_PLUGIN_HTTPD_REMOTE_PORT, "127.0.0.1"},
 	{"unix_domain_socket", 0, 0, "127.0.0.1"},
+	{"https2http", 80, 0, "127.0.0.1"},
 	{NULL, 0, 0, NULL}
 };
 
@@ -557,6 +564,11 @@ static void process_plugin_conf(struct proxy_service *ps)
 			} else if (strcmp(plugins[i].name, "httpd") == 0) {
 				if (ps->s_root_dir == NULL)
 					ps->s_root_dir = strdup("/var/www/html");
+			} else if (strcmp(plugins[i].name, "https2http") == 0) {
+				/* plugin_host_header_rewrite can default to host_header_rewrite if unset */
+				if (!ps->plugin_host_header_rewrite && ps->host_header_rewrite) {
+					ps->plugin_host_header_rewrite = strdup(ps->host_header_rewrite);
+				}
 			}
 			return;
 		}
@@ -677,6 +689,20 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 	else if (MATCH_NAME("plugin_user")) SET_STRING_VALUE(plugin_user);
 	else if (MATCH_NAME("plugin_pwd")) SET_STRING_VALUE(plugin_pwd);
 	else if (MATCH_NAME("plugin_unix_path")) SET_STRING_VALUE(plugin_unix_path);
+	else if (MATCH_NAME("plugin_crt_path")) SET_STRING_VALUE(plugin_crt_path);
+	else if (MATCH_NAME("plugin_key_path")) SET_STRING_VALUE(plugin_key_path);
+	else if (MATCH_NAME("plugin_host_header_rewrite")) SET_STRING_VALUE(plugin_host_header_rewrite);
+	else if (MATCH_NAME("plugin_local_addr")) {
+		/* parse "ip:port" or "port" */
+		char *colon = strchr(value, ':');
+		if (colon) {
+			SAFE_FREE(ps->local_ip);
+			ps->local_ip = strndup(value, colon - value);
+			ps->local_port = atoi(colon + 1);
+		} else {
+			ps->local_port = atoi(value);
+		}
+	}
 	else if (MATCH_NAME("root_dir")) SET_STRING_VALUE(s_root_dir);
 	else if (MATCH_NAME("multiplexer")) SET_STRING_VALUE(multiplexer);
 	else if (MATCH_NAME("route_by_http_user")) SET_STRING_VALUE(route_by_http_user);
@@ -1149,6 +1175,22 @@ static void load_toml_proxies(struct toml_doc *doc)
 			ps_set_string(&ps->plugin_pwd, v);
 		if ((v = toml_get(sec, "plugin.unixPath")))
 			ps_set_string(&ps->plugin_unix_path, v);
+		if ((v = toml_get(sec, "plugin.crtPath")))
+			ps_set_string(&ps->plugin_crt_path, v);
+		if ((v = toml_get(sec, "plugin.keyPath")))
+			ps_set_string(&ps->plugin_key_path, v);
+		if ((v = toml_get(sec, "plugin.hostHeaderRewrite")))
+			ps_set_string(&ps->plugin_host_header_rewrite, v);
+		if ((v = toml_get(sec, "plugin.localAddr"))) {
+			const char *colon = strchr(v, ':');
+			if (colon) {
+				SAFE_FREE(ps->local_ip);
+				ps->local_ip = strndup(v, colon - v);
+				ps->local_port = atoi(colon + 1);
+			} else {
+				ps->local_port = atoi(v);
+			}
+		}
 		if ((v = toml_get(sec, "plugin.localPath")))
 			ps_set_string(&ps->s_root_dir, v);
 
@@ -1418,6 +1460,9 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->plugin_user);
 	SAFE_FREE(ps->plugin_pwd);
 	SAFE_FREE(ps->plugin_unix_path);
+	SAFE_FREE(ps->plugin_crt_path);
+	SAFE_FREE(ps->plugin_key_path);
+	SAFE_FREE(ps->plugin_host_header_rewrite);
 	SAFE_FREE(ps->s_root_dir);
 	SAFE_FREE(ps->bind_addr);
 	SAFE_FREE(ps->multiplexer);

@@ -28,6 +28,7 @@
 #include "proxy.h"
 #include "utils.h"
 #include "tcpmux.h"
+#include "plugins/https2http.h"
 #include "crypto_stream.h"
 
 static struct proxy_client 	*all_pc = NULL;
@@ -247,6 +248,13 @@ int is_uds_proxy(const struct proxy_service *ps) {
 }
 
 /**
+ * Check if proxy service uses https2http plugin
+ */
+int is_https2http_proxy(const struct proxy_service *ps) {
+	return (ps && ps->plugin && strcmp(ps->plugin, "https2http") == 0);
+}
+
+/**
  * Sets up callback functions for a proxy client
  */
 static void setup_proxy_callbacks(struct proxy_client *client, 
@@ -264,6 +272,9 @@ static void setup_proxy_callbacks(struct proxy_client *client,
 	} else if (has_service_type(ps)) {
 		*proxy_c2s_recv = tcp_proxy_c2s_cb;
 		*proxy_s2c_recv = xdpi_proxy_s2c_cb;
+	} else if (is_https2http_proxy(ps)) {
+		*proxy_c2s_recv = https2http_local_read_cb;
+		*proxy_s2c_recv = tcp_proxy_s2c_cb;
 	} else {
 		*proxy_c2s_recv = tcp_proxy_c2s_cb;
 		*proxy_s2c_recv = tcp_proxy_s2c_cb;
@@ -475,6 +486,14 @@ void start_xfrp_tunnel(struct proxy_client *client)
 					 xfrp_proxy_event_cb, client);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
 
+	if (is_https2http_proxy(client->ps)) {
+		if (https2http_setup(client) < 0) {
+			debug(LOG_ERR, "Failed to initialize https2http for stream %u", client->stream_id);
+			del_proxy_client_by_stream_id(client->stream_id);
+			return;
+		}
+	}
+
 	if (is_udp_proxy(client->ps)) {
 		init_udp_clean_timer(client);
 	}
@@ -548,6 +567,10 @@ free_proxy_client(struct proxy_client *client)
 	}
 
 	debug(LOG_DEBUG, "Freeing proxy client with stream ID: %d", client->stream_id);
+
+	if (is_https2http_proxy(client->ps)) {
+		https2http_client_cleanup(client);
+	}
 
 	/* Clean up visitor session if this is a visitor client.
 	 * NULL out visitor_ctx to prevent dangling pointer.

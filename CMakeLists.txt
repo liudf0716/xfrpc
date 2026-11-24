@@ -6,6 +6,15 @@ project(xfrp C)
 # Build options
 option(DEBUG "Enable debug mode" OFF)
 option(ENABLE_SANITIZER "Enable sanitizer(Debug+Gcc/Clang/AppleClang)" ON)
+option(BUILD_STATIC "Build statically linked binary" OFF)
+
+if(BUILD_STATIC)
+    message(STATUS "Static binary build: ON (-static)")
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+    set(BUILD_SHARED_LIBS OFF)
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
@@ -187,8 +196,8 @@ set(SYSTEM_LIBS
 
 set(EXTERNAL_LIBS
     ${SSL_LIBRARIES}
-    event
-    event_openssl
+    ${LIBEVENT_OPENSSL_LIB}
+    ${LIBEVENT_LIB}
     ${JSON-C_LIBRARIES}
     ${ZLIB_LIBRARIES}
 )

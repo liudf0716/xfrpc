@@ -75,6 +75,7 @@ make
 |---|---|---|
 | `-DUSE_WOLFSSL=ON` | ON | Use wolfSSL as TLS backend (falls back to OpenSSL if not found) |
 | `-DENABLE_QUIC=ON` | OFF | Enable QUIC transport via ngtcp2 (requires ngtcp2 + nghttp3) |
+| `-DBUILD_STATIC=ON` | OFF | Build a fully static binary with `-static` and `.a` libraries |
 | `-DDEBUG=ON` | OFF | Enable debug build with address sanitizer |
 
 **Build with QUIC support:**
@@ -105,6 +106,24 @@ cmake .. -DUSE_WOLFSSL=ON
 # Use OpenSSL
 cmake .. -DUSE_WOLFSSL=OFF
 ```
+
+### Build Static Binary on Debian/Ubuntu/Linux
+
+To compile a standalone, statically linked `xfrpc` binary that can run on other machines without missing shared library errors (e.g. `libevent-2.1.so.7: cannot open shared object file`):
+
+1. Install static development libraries:
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake libevent-dev libjson-c-dev zlib1g-dev libssl-dev
+```
+
+2. Build with `-DBUILD_STATIC=ON`:
+```bash
+cmake -B build -DBUILD_STATIC=ON
+cmake --build build -j
+```
+
+The resulting `build/xfrpc` is a fully static executable (`statically linked`, no `.so` dependencies).
 
 ### Build static binary in Alpine container
 

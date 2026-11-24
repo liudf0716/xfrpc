@@ -250,19 +250,45 @@ void https2http_local_read_cb(struct bufferevent *bev, void *ctx)
 	if (!client || !client->ssl_bev) return;
 
 	struct evbuffer *src = bufferevent_get_input(bev);
-	struct evbuffer *dst = bufferevent_get_output(client->ssl_bev);
-	evbuffer_add_buffer(dst, src);
+	bufferevent_write_buffer(client->ssl_bev, src);
 
 	/* Watermark backpressure: if ssl_bev output buffer exceeds 64KB, stop reading from local HTTP */
-	if (evbuffer_get_length(dst) >= 65536) {
+	if (evbuffer_get_length(bufferevent_get_output(client->ssl_bev)) >= 65536) {
 		bufferevent_disable(bev, EV_READ);
+	}
+}
+
+void https2http_trigger_shutdown(struct proxy_client *client)
+{
+	if (!client || !client->ssl_bev) return;
+
+	struct evbuffer *ssl_out = bufferevent_get_output(client->ssl_bev);
+	if (!ssl_out || evbuffer_get_length(ssl_out) == 0) {
+		SSL *ssl = bufferevent_openssl_get_ssl(client->ssl_bev);
+		if (ssl) {
+			SSL_shutdown(ssl);
+		}
+		evutil_socket_t fd = bufferevent_getfd(client->ssl_bev);
+		if (fd >= 0) {
+			shutdown(fd, SHUT_WR);
+		}
 	}
 }
 
 static void https2http_ssl_write_cb(struct bufferevent *bev, void *ctx)
 {
 	struct proxy_client *client = (struct proxy_client *)ctx;
-	if (!client || !client->local_proxy_bev) return;
+	if (!client) return;
+
+	if (client->pending_close) {
+		struct evbuffer *out = bufferevent_get_output(bev);
+		if (!out || evbuffer_get_length(out) == 0) {
+			https2http_trigger_shutdown(client);
+		}
+		return;
+	}
+
+	if (!client->local_proxy_bev) return;
 
 	struct common_conf *c_conf = get_common_config();
 	int has_window = (!c_conf->tcp_mux) || (client->stream.send_window > 0);
@@ -389,17 +415,68 @@ int https2http_bridge_drain(struct proxy_client *client)
 	return 0;
 }
 
-void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
+int https2http_try_finish_close(struct proxy_client *client)
 {
+	if (!client || !client->ctl_bev) return 0;
+	if (!client->bridge_eof) return 0;
+
+	if (https2http_bridge_drain(client) < 0) {
+		del_proxy_client_by_stream_id(client->stream.id ? client->stream.id : client->stream_id);
+		return -1;
+	}
+
+	int has_pending = 0;
+	if (client->enc_pending && evbuffer_get_length(client->enc_pending) > 0)
+		has_pending = 1;
+	if (client->bridge_bev && evbuffer_get_length(bufferevent_get_input(client->bridge_bev)) > 0)
+		has_pending = 1;
+
+	if (has_pending) {
+		return 0;
+	}
+
+	struct common_conf *c_conf = get_common_config();
+	if (c_conf->tcp_mux) {
+		if (client->stream.send_window == 0) {
+			return 0;
+		}
+		debug(LOG_INFO, "Stream %u: TLS bridge fully EOF drained, sending FIN", client->stream_id);
+		client->pending_close = 0;
+		tmux_stream_close(client->ctl_bev, &client->stream);
+	} else {
+		client->pending_close = 0;
+		bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FINISHED);
+	}
+
+	return 1;
+}
+
+void https2http_bridge_event_cb(struct bufferevent *bev, short what, void *ctx)
+{
+	(void)bev;
 	struct proxy_client *client = (struct proxy_client *)ctx;
 	if (!client) return;
 
-	uint32_t stream_id = client->stream_id;
+	if (what & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
+		client->bridge_eof = 1;
+		https2http_try_finish_close(client);
+	}
+}
+
+void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
+{
+	(void)bev;
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	if (!client) return;
+
 	int ret = https2http_bridge_drain(client);
 	if (ret < 0) {
-		debug(LOG_INFO, "Stream %u: https2http_bridge_drain error %d", stream_id, ret);
-		del_proxy_client_by_stream_id(stream_id);
+		del_proxy_client_by_stream_id(client->stream.id ? client->stream.id : client->stream_id);
 		return;
+	}
+
+	if (client->bridge_eof) {
+		https2http_try_finish_close(client);
 	}
 }
 
@@ -457,7 +534,7 @@ int https2http_setup(struct proxy_client *client)
 	/* Ownership of sp[1] is now transferred to bridge_bev */
 	client->bridge_fd = -1;
 
-	bufferevent_setcb(client->bridge_bev, https2http_bridge_read_cb, NULL, NULL, client);
+	bufferevent_setcb(client->bridge_bev, https2http_bridge_read_cb, NULL, https2http_bridge_event_cb, client);
 	bufferevent_enable(client->bridge_bev, EV_READ | EV_WRITE);
 
 	client->header_rewritten = 0;

@@ -16,6 +16,8 @@
 #include <syslog.h>
 #include <zlib.h>
 #include <event2/dns.h>
+#include <event2/bufferevent_ssl.h>
+#include <openssl/ssl.h>
 
 
 #include "debug.h"
@@ -109,56 +111,22 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 
 	if (is_https2http_proxy(client->ps)) {
 		/* For https2http, leftover local HTTP bytes must be fed through TLS, not raw to MUX */
-		if (bev && client->ssl_bev) {
-			struct evbuffer *src = bufferevent_get_input(bev);
-			if (evbuffer_get_length(src) > 0) {
-				struct evbuffer *dst = bufferevent_get_output(client->ssl_bev);
-				evbuffer_add_buffer(dst, src);
-			}
-		}
-		if (client->bridge_bev && client->ssl_bev) {
-			evutil_socket_t fd = bufferevent_getfd(client->bridge_bev);
-			struct evbuffer *bridge_in = bufferevent_get_input(client->bridge_bev);
-			while (1) {
-				bufferevent_flush(client->ssl_bev, EV_WRITE, BEV_FINISHED);
-				if (fd < 0 || !bridge_in) break;
-				int n = evbuffer_read(bridge_in, fd, 16384);
-				if (n <= 0) break;
-			}
-		}
 		if (bev) {
+			evutil_socket_t local_fd = bufferevent_getfd(bev);
+			struct evbuffer *src = bufferevent_get_input(bev);
+			if (local_fd >= 0 && src) {
+				while (evbuffer_read(src, local_fd, 65536) > 0) {
+				}
+			}
+			if (client->ssl_bev && src && evbuffer_get_length(src) > 0) {
+				bufferevent_write_buffer(client->ssl_bev, src);
+			}
 			bufferevent_free(bev);
 			client->local_proxy_bev = NULL;
 		}
 
-		uint32_t sid = client->stream.id ? client->stream.id : client->stream_id;
-		int drain_ret = https2http_bridge_drain(client);
-		if (drain_ret < 0) {
-			https2http_client_cleanup(client);
-			del_proxy_client_by_stream_id(sid);
-			return;
-		}
-
-		struct common_conf *c_conf = get_common_config();
-		int has_pending = 0;
-		if (client->enc_pending && evbuffer_get_length(client->enc_pending) > 0)
-			has_pending = 1;
-		if (client->bridge_bev && evbuffer_get_length(bufferevent_get_input(client->bridge_bev)) > 0)
-			has_pending = 1;
-
-		if (c_conf->tcp_mux && (drain_ret == 1 || has_pending || client->stream.send_window == 0)) {
-			debug(LOG_INFO, "Stream %d: data pending or send_window==0 at disconnect, deferring close",
-				  sid);
-			client->pending_close = 1;
-			return;
-		}
-
-		https2http_client_cleanup(client);
-		if (c_conf->tcp_mux) {
-			tmux_stream_close(client->ctl_bev, &client->stream);
-		} else {
-			bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FINISHED);
-		}
+		client->pending_close = 1;
+		https2http_trigger_shutdown(client);
 		return;
 	} else if (bev && client->ctl_bev) {
 		/* Flush remaining data from the local proxy bufferevent into MUX stream.

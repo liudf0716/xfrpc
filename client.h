@@ -115,6 +115,7 @@ struct proxy_client {
 	struct bufferevent *bridge_bev;     /* Mux bridge bufferevent */
 	int                 bridge_fd;      /* Bridge socket fd */
 	int                 header_rewritten; /* Flag if HTTP Host header rewrite completed */
+	int                 bridge_eof;       /* Bridge received EOF from ssl_bev */
 
 	/* Hash handling */
 	UT_hash_handle      hh;

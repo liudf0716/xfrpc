@@ -37,6 +37,12 @@ void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx);
 /* Drain encrypted data from bridge_bev to ctl/mux. Returns 0 on success, 1 on window stall, <0 on write error */
 int https2http_bridge_drain(struct proxy_client *client);
 
+/* Trigger TLS shutdown when local HTTP is done and all plaintext is submitted to ssl_bev */
+void https2http_trigger_shutdown(struct proxy_client *client);
+
+/* Finish closing the stream once bridge_bev has received EOF from ssl_bev and drained */
+int https2http_try_finish_close(struct proxy_client *client);
+
 /* Free resources allocated for https2http */
 void https2http_client_cleanup(struct proxy_client *client);
 

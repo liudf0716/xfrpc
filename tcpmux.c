@@ -835,24 +835,14 @@ static int incr_send_window(struct bufferevent *bev,
     }
 
     if (pc->pending_close) {
-        if (pc->bridge_bev) {
-            int ret = https2http_bridge_drain(pc);
-            if (ret < 0) {
-                del_proxy_client_by_stream_id(stream_id);
-                return 1;
-            }
-            if (ret == 1) {
-                return 1;
-            }
-            if ((pc->enc_pending && evbuffer_get_length(pc->enc_pending) > 0) ||
-                (pc->bridge_bev && evbuffer_get_length(bufferevent_get_input(pc->bridge_bev)) > 0)) {
-                return 1;
-            }
-            https2http_client_cleanup(pc);
+        if (is_https2http_proxy(pc->ps)) {
+            https2http_try_finish_close(pc);
+            return 1;
         }
         struct bufferevent *bout = get_main_control()->connect_bev;
         if (bout) {
             debug(LOG_INFO, "Stream %d: pending_close, sending FIN", stream_id);
+            pc->pending_close = 0;
             tmux_stream_close(bout, stream);
         }
         return 1;
@@ -979,7 +969,8 @@ int handle_tcp_mux_stream(struct tcp_mux_header *tmux_hdr,
 
     struct tmux_stream *stream = get_stream_by_id(stream_id);
     if (!stream) {
-        debug(LOG_ERR, "Stream %d not found", stream_id);
+        debug(LOG_ERR, "Stream %d not found (type=%u, flags=0x%x, length=%u)",
+              stream_id, tmux_hdr->type, flags, ntohl(tmux_hdr->length));
         return 0;
     }
 

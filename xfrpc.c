@@ -61,6 +61,9 @@ static void start_xfrpc_local_service(void)
 			start_tcp_redir_service(ps);
 		} else if (strcmp(ps->plugin, "httpd") == 0) {
 			start_httpd_service(ps);
+		} else if (strcmp(ps->plugin, "unix_domain_socket") == 0) {
+			/* UDS connections are handled dynamically on demand */
+			continue;
 		} else {
 			debug(LOG_ERR, "start_xfrpc_local_service: unknown plugin %s", ps->plugin);
 		}

@@ -325,7 +325,12 @@ int validate_proxy(struct proxy_service *ps)
 	}
 
 	// Common validation for services needing local endpoints
-	int needs_local_endpoint = (strcmp(ps->proxy_type, "tcp") == 0 ||
+	int is_uds = is_uds_proxy(ps);
+	if (ps->plugin && strcmp(ps->plugin, "unix_domain_socket") == 0 && !ps->plugin_unix_path) {
+		debug(LOG_ERR, "Proxy [%s] error: Plugin unix_domain_socket requires plugin_unix_path", ps->proxy_name);
+		return 0;
+	}
+	int needs_local_endpoint = !is_uds && (strcmp(ps->proxy_type, "tcp") == 0 ||
 							  strcmp(ps->proxy_type, "udp") == 0 ||
 							  strcmp(ps->proxy_type, "http") == 0 ||
 							  strcmp(ps->proxy_type, "https") == 0 ||
@@ -542,8 +547,8 @@ static void process_plugin_conf(struct proxy_service *ps)
 			if (strcmp(plugins[i].name, "unix_domain_socket") == 0) {
 				/* UDS plugin: no local_port needed, uses plugin_unix_path */
 				if (!ps->plugin_unix_path) {
-					debug(LOG_ERR, "Plugin unix_domain_socket requires plugin_unix_path");
-					exit(EXIT_FAILURE);
+					/* May not be parsed yet if 'plugin' appears before 'plugin_unix_path' */
+					debug(LOG_DEBUG, "Plugin unix_domain_socket pending plugin_unix_path");
 				}
 			} else if (strcmp(plugins[i].name, "telnetd") == 0) {
 				if (ps->plugin_user && ps->plugin_pwd) {

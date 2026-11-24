@@ -835,6 +835,21 @@ static int incr_send_window(struct bufferevent *bev,
     }
 
     if (pc->pending_close) {
+        if (pc->bridge_bev) {
+            int ret = https2http_bridge_drain(pc);
+            if (ret < 0) {
+                del_proxy_client_by_stream_id(stream_id);
+                return 1;
+            }
+            if (ret == 1) {
+                return 1;
+            }
+            if ((pc->enc_pending && evbuffer_get_length(pc->enc_pending) > 0) ||
+                (pc->bridge_bev && evbuffer_get_length(bufferevent_get_input(pc->bridge_bev)) > 0)) {
+                return 1;
+            }
+            https2http_client_cleanup(pc);
+        }
         struct bufferevent *bout = get_main_control()->connect_bev;
         if (bout) {
             debug(LOG_INFO, "Stream %d: pending_close, sending FIN", stream_id);
@@ -849,16 +864,20 @@ static int incr_send_window(struct bufferevent *bev,
                   "Stream %u: re-enabling EV_READ after WINDOW_UPDATE bridge_bev=%p",
                   stream_id, pc->bridge_bev);
             bufferevent_enable(pc->bridge_bev, EV_READ);
-            if (evbuffer_get_length(bufferevent_get_input(pc->bridge_bev)) > 0 ||
-                (pc->enc_pending && evbuffer_get_length(pc->enc_pending) > 0)) {
-                https2http_bridge_read_cb(pc->bridge_bev, pc);
+            int ret = https2http_bridge_drain(pc);
+            if (ret < 0) {
+                del_proxy_client_by_stream_id(stream_id);
+                return 1;
             }
         }
-        if (pc->local_proxy_bev) {
-            debug(LOG_DEBUG,
-                  "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p",
-                  stream_id, pc->local_proxy_bev);
-            bufferevent_enable(pc->local_proxy_bev, EV_READ);
+        if (pc->local_proxy_bev && stream->send_window > 0) {
+            struct evbuffer *ssl_out = pc->ssl_bev ? bufferevent_get_output(pc->ssl_bev) : NULL;
+            if (!ssl_out || evbuffer_get_length(ssl_out) <= 16384) {
+                debug(LOG_DEBUG,
+                      "Stream %u: re-enabling EV_READ after WINDOW_UPDATE local_proxy_bev=%p",
+                      stream_id, pc->local_proxy_bev);
+                bufferevent_enable(pc->local_proxy_bev, EV_READ);
+            }
         }
     }
 

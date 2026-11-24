@@ -34,6 +34,9 @@ void https2http_ssl_event_cb(struct bufferevent *bev, short what, void *ctx);
 /* Callback when encrypted TLS response is read from bridge_bev (to forward to ctl/mux) */
 void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx);
 
+/* Drain encrypted data from bridge_bev to ctl/mux. Returns 0 on success, 1 on window stall, <0 on write error */
+int https2http_bridge_drain(struct proxy_client *client);
+
 /* Free resources allocated for https2http */
 void https2http_client_cleanup(struct proxy_client *client);
 

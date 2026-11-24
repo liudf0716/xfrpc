@@ -141,6 +141,10 @@ void https2http_client_cleanup(struct proxy_client *client)
 		close(client->bridge_fd);
 		client->bridge_fd = -1;
 	}
+	if (client->enc_pending && evbuffer_get_length(client->enc_pending) == 0) {
+		evbuffer_free(client->enc_pending);
+		client->enc_pending = NULL;
+	}
 }
 
 static char *rewrite_http_host(const char *req, size_t req_len, const char *new_host, size_t *out_len)
@@ -248,6 +252,27 @@ void https2http_local_read_cb(struct bufferevent *bev, void *ctx)
 	struct evbuffer *src = bufferevent_get_input(bev);
 	struct evbuffer *dst = bufferevent_get_output(client->ssl_bev);
 	evbuffer_add_buffer(dst, src);
+
+	/* Watermark backpressure: if ssl_bev output buffer exceeds 64KB, stop reading from local HTTP */
+	if (evbuffer_get_length(dst) >= 65536) {
+		bufferevent_disable(bev, EV_READ);
+	}
+}
+
+static void https2http_ssl_write_cb(struct bufferevent *bev, void *ctx)
+{
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	if (!client || !client->local_proxy_bev) return;
+
+	struct common_conf *c_conf = get_common_config();
+	int has_window = (!c_conf->tcp_mux) || (client->stream.send_window > 0);
+
+	if (has_window) {
+		struct evbuffer *out = bufferevent_get_output(bev);
+		if (evbuffer_get_length(out) <= 16384) {
+			bufferevent_enable(client->local_proxy_bev, EV_READ);
+		}
+	}
 }
 
 void https2http_ssl_event_cb(struct bufferevent *bev, short what, void *ctx)
@@ -267,13 +292,12 @@ void https2http_ssl_event_cb(struct bufferevent *bev, short what, void *ctx)
 	}
 }
 
-void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
+int https2http_bridge_drain(struct proxy_client *client)
 {
-	struct proxy_client *client = (struct proxy_client *)ctx;
-	if (!client || !client->ctl_bev) return;
+	if (!client || !client->ctl_bev) return 0;
 
-	struct evbuffer *src = bufferevent_get_input(bev);
 	struct common_conf *c_conf = get_common_config();
+	struct evbuffer *bridge_in = client->bridge_bev ? bufferevent_get_input(client->bridge_bev) : NULL;
 
 	/* Apply encryption/compression if enabled */
 	if (client->use_encryption || client->use_compression) {
@@ -286,39 +310,38 @@ void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
 				while (evbuffer_get_length(client->enc_pending) > 0) {
 					int written = tmux_stream_write(client->ctl_bev, client->enc_pending, &client->stream);
 					if (written < 0) {
-						del_proxy_client_by_stream_id(client->stream.id);
-						return;
+						return written;
 					}
 					if (written == 0) {
-						bufferevent_disable(bev, EV_READ);
-						return;
+						if (client->bridge_bev)
+							bufferevent_disable(client->bridge_bev, EV_READ);
+						if (client->local_proxy_bev)
+							bufferevent_disable(client->local_proxy_bev, EV_READ);
+						return 1;
 					}
 				}
 			}
 		}
 
-		if (evbuffer_get_length(src) == 0)
-			return;
+		if (!bridge_in || evbuffer_get_length(bridge_in) == 0)
+			return 0;
 
 		struct evbuffer *processed = evbuffer_new();
-		if (!processed) return;
-		proxy_crypto_encode_evbuffer(client, src, processed);
+		if (!processed) return -1;
+		proxy_crypto_encode_evbuffer(client, bridge_in, processed);
 
 		if (!c_conf->tcp_mux) {
 			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
 			evbuffer_add_buffer(dst, processed);
 			evbuffer_free(processed);
-			return;
+			return 0;
 		}
 
 		while (evbuffer_get_length(processed) > 0) {
 			int written = tmux_stream_write(client->ctl_bev, processed, &client->stream);
 			if (written < 0) {
-				debug(LOG_INFO, "Stream %u: tmux_stream_write error %d",
-				      client->stream.id, written);
 				evbuffer_free(processed);
-				del_proxy_client_by_stream_id(client->stream.id);
-				return;
+				return written;
 			}
 			if (written == 0) {
 				if (!client->enc_pending)
@@ -327,35 +350,56 @@ void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
 					evbuffer_add_buffer(client->enc_pending, processed);
 				}
 				evbuffer_free(processed);
-				bufferevent_disable(bev, EV_READ);
-				return;
+				if (client->bridge_bev)
+					bufferevent_disable(client->bridge_bev, EV_READ);
+				if (client->local_proxy_bev)
+					bufferevent_disable(client->local_proxy_bev, EV_READ);
+				return 1;
 			}
 		}
 		evbuffer_free(processed);
-		return;
+		return 0;
 	}
 
 	/* Plain path (no frp crypto/compression) */
 	if (!c_conf->tcp_mux) {
-		struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
-		evbuffer_add_buffer(dst, src);
-		return;
+		if (bridge_in && evbuffer_get_length(bridge_in) > 0) {
+			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+			evbuffer_add_buffer(dst, bridge_in);
+		}
+		return 0;
 	}
 
-	while (evbuffer_get_length(src) > 0) {
-		int written = tmux_stream_write(client->ctl_bev, src, &client->stream);
-		if (written < 0) {
-			debug(LOG_INFO, "Stream %u: tmux_stream_write error %d, cleaning up",
-			      client->stream.id, written);
-			del_proxy_client_by_stream_id(client->stream.id);
-			return;
+	if (bridge_in) {
+		while (evbuffer_get_length(bridge_in) > 0) {
+			int written = tmux_stream_write(client->ctl_bev, bridge_in, &client->stream);
+			if (written < 0) {
+				return written;
+			}
+			if (written == 0) {
+				if (client->bridge_bev)
+					bufferevent_disable(client->bridge_bev, EV_READ);
+				if (client->local_proxy_bev)
+					bufferevent_disable(client->local_proxy_bev, EV_READ);
+				return 1;
+			}
 		}
-		if (written == 0) {
-			bufferevent_disable(bev, EV_READ);
-			debug(LOG_DEBUG, "Stream %u: send_window exhausted, disabling EV_READ on bridge_bev",
-			      client->stream.id);
-			return;
-		}
+	}
+
+	return 0;
+}
+
+void https2http_bridge_read_cb(struct bufferevent *bev, void *ctx)
+{
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	if (!client) return;
+
+	uint32_t stream_id = client->stream_id;
+	int ret = https2http_bridge_drain(client);
+	if (ret < 0) {
+		debug(LOG_INFO, "Stream %u: https2http_bridge_drain error %d", stream_id, ret);
+		del_proxy_client_by_stream_id(stream_id);
+		return;
 	}
 }
 
@@ -396,7 +440,8 @@ int https2http_setup(struct proxy_client *client)
 	}
 
 	bufferevent_openssl_set_allow_dirty_shutdown(client->ssl_bev, 1);
-	bufferevent_setcb(client->ssl_bev, https2http_ssl_read_cb, NULL, https2http_ssl_event_cb, client);
+	bufferevent_setcb(client->ssl_bev, https2http_ssl_read_cb, https2http_ssl_write_cb, https2http_ssl_event_cb, client);
+	bufferevent_setwatermark(client->ssl_bev, EV_WRITE, 16384, 0);
 	bufferevent_enable(client->ssl_bev, EV_READ | EV_WRITE);
 
 	client->bridge_bev = bufferevent_socket_new(client->base, sp[1], BEV_OPT_CLOSE_ON_FREE);

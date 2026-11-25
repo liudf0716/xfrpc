@@ -1,488 +1,295 @@
-
 ![xfrpc](https://user-images.githubusercontent.com/1182593/213063003-73501d3b-1a22-4f4a-8f3f-4ca3268b5bee.png)
 
+[English](README.md) | [中文文档](README_zh.md)
 
-## What is xfrpc 
+## What is xfrpc?
 
-The xfrpc project is an implementation of frp client written in C language for OpenWRT and IOT system. The main motivation of this project is to provide a lightweight solution for devices with limited resources such as OpenWRT devices which often have limited ROM and RAM space. The project aims to provide a frp client that uses less space and memory than other available options.
+**xfrpc** is a lightweight, high-performance reverse proxy client for [frp](https://github.com/fatedier/frp), written in pure C for **OpenWrt routers, embedded Linux, and IoT devices** with constrained flash and RAM.
 
-## Development Status
+While official Go `frpc` binaries typically require 15+ MB of storage, `xfrpc` compiles to **~197 KB (`.apk`) / ~418 KB installed** on `aarch64` OpenWrt while maintaining compatibility with **`frps` up to v0.72.0** (`wireProtocol` v1 & v2, TOML & INI configs).
 
-xfrpc partially compitable with latest frp release feature, It targets to fully compatible with latest frp release.
+---
 
-the following table is detail  compatible feature (vs official frpc / frp v0.71):
+## Feature Compatibility (vs Official `frpc v0.72.0`)
 
-| Feature | xfrpc | frpc |
-| ------------- | ------------- | ---------|
-| tcp | Yes | Yes |
-| tcpmux | Yes | Yes |
-| http | Yes | Yes |
-| https | Yes | Yes |
-| custom_domains | Yes | Yes |
-| subdomain | Yes | Yes |
-| socks5 (proxy type) | Yes | plugin only |
-| use_encryption | Yes | Yes |
-| use_compression | Yes | Yes |
-| udp | Yes | Yes |
-| xtcp (P2P) | Yes | Yes |
-| stcp | Yes | Yes |
-| quic transport | Yes | Yes |
-| `transport.wireProtocol = v1` | Yes (default) | Yes |
-| `transport.wireProtocol = v2` | Yes (JSON messages + AES-256-GCM control AEAD) | Yes |
-| kcp / websocket / wss | No | Yes |
-| SUDP | Partial (config only) | Yes |
-| VirtualNet | No | Yes |
-| official plugins (http_proxy, static_file, tls2raw, …) | No | Yes |
+### Supported Core & Mainstream Features
 
+| Category | Feature | xfrpc | Official frpc (v0.72.0) |
+| :--- | :--- | :---: | :---: |
+| **Proxy Types** | `tcp`, `udp`, `http`, `https` | Yes | Yes |
+| | `tcpmux` (`httpconnect`, `routeByHTTPUser`) | Yes | Yes |
+| | `stcp` (Secret TCP + visitor) | Yes | Yes |
+| | `sudp` (Secret UDP + visitor) | Yes | Yes |
+| | `xtcp` (P2P NAT hole punching + `fallbackTo`) | Yes | Yes |
+| **Transports** | `tcp`, `tls` (System CAs + `trustedCaFile`, mTLS, `disableCustomTLSFirstByte`) | Yes | Yes |
+| | `quic` (via `ngtcp2`, `-DENABLE_QUIC=ON`) | Yes | Yes |
+| | `websocket` (`ws`), `wss` (WebSocket over TLS) | Yes | Yes |
+| | `transport.wireProtocol = v1` / `v2` (JSON + AES-256-GCM AEAD) | Yes | Yes |
+| | `transport.tcpMux`, `poolCount`, `dialServerTimeout`, `dialServerKeepalive`, `connectServerLocalIP` | Yes | Yes |
+| **Auth & Security** | `auth.method = "token"` / `"oidc"` | Yes | Yes |
+| | `auth.additionalScopes` (`HeartBeats`, `NewWorkConns`) | Yes | Yes |
+| | `useEncryption` (AES-128-CFB) & `useCompression` (Snappy) | Yes | Yes |
+| **Traffic & HA** | `bandwidthLimit` (`client` token bucket / `server`) | Yes | Yes |
+| | `proxyProtocolVersion` (`v1` / `v2`) | Yes | Yes |
+| | `loadBalancer` (`group`, `groupKey`) & `healthCheck` (`tcp`, `http`) | Yes | Yes |
+| | `metadatas`, `annotations`, `requestHeaders.set`, `responseHeaders.set` | Yes | Yes |
+| **Client Plugins** | `socks5` (with RFC 1929 username/password auth) | Yes | Yes |
+| | `http_proxy` (Basic auth + `CONNECT` & HTTP forwarding) | Yes | Yes |
+| | `static_file` (`localPath`, `stripPrefix`, Basic auth) | Yes | Yes |
+| | `unix_domain_socket` | Yes | Yes |
+| | `https2http`, `https2https`, `http2https`, `tls2raw` | Yes | Yes |
+| | `http2http` | Partial (TCP forward only, no `Host` rewrite) | Yes |
+| **Config & CLI** | TOML (`frpc.toml`) & legacy INI | Yes | Yes |
+| | `includes` (glob), `start` filter, `enabled`, `loginFailExit`, `natHoleSTUNServer` | Yes | Yes |
+| | `SIGHUP` hot-reload, `xfrpc verify -c <file>`, `xfrpc version` | Yes | Yes |
 
+### Unsupported Features (vs Official `frpc v0.72.0`)
+
+To keep the binary minimal for embedded devices, the following official `frpc` features are **not supported**:
+
+* **`kcp` transport protocol**
+* **`VirtualNet` (`virtualNet` / `virtual_net` TUN device)**
+* **`transport.proxyURL` dialing** (parsed with a warning log; connecting to `frps` via an upstream HTTP/SOCKS5 proxy is not implemented)
+* **`webServer` (Client Admin UI / HTTP API) & `metricsServer` (`/metrics`, `/healthz`)**
+* **YAML / JSON config formats**, **Go `text/template` expressions** (`{{ .Envs.* }}`), and **`ValueSource`**
+* **HTTP/2 (`enableHTTP2`)** in `https2http` / `https2https` plugins & `hostHeaderRewrite` in `http2http`
+* **CLI subcommands** `reload`, `status`, `stop`, `nathole discover`, and config-less CLI proxy flags
+
+### Extra Features Unique to `xfrpc`
+
+Beyond official `frpc`, `xfrpc` provides features tailored for routers and IoT deployments:
+
+* **Built-in Utility Plugins**:
+  * `telnetd`: embedded lightweight Telnet daemon
+  * `httpd`: embedded HTTP server
+  * `instaloader` & `youtubedl`: media download plugins
+* **Time-Window Access Control**: `startTime` / `endTime` (`start_time` / `end_time` in INI) to restrict the active hours (0–23) of any proxy.
+* **XDPI Protocol Inspection**: `serviceType` / `service_type` (`mstsc`, `rdp`, `vnc`, `ssh`, `telnet`, `http`, `https`) for pre-connect protocol verification.
+* **Legacy `type = "socks5"` Proxy Type**: supported alongside standard `[proxies.plugin]` (`type = "socks5"`).
+* **OpenWrt Native Ecosystem**: official OpenWrt `apk` package, UCI configuration (`/etc/config/xfrpc`), and `luci-app-xfrpc` Web UI.
+
+---
 
 ## Architecture
 
-
 ![Architecture](https://user-images.githubusercontent.com/1182593/196329678-1781b4e9-2355-4863-be3f-e128b31cc82c.png)
 
+---
 
-## How to build
+## How to Build
 
-### Build on Ubuntu 20.04.3 LTS
+### Install Dependencies (Ubuntu/Debian)
 
-xfrpc requires libevent, json-c, and a TLS library (wolfSSL or OpenSSL).
-
-**Install dependencies on Ubuntu/Debian:**
-
-```
+```bash
 sudo apt-get update
-sudo apt-get install -y libjson-c-dev libevent-dev libssl-dev
+sudo apt-get install -y build-essential cmake libjson-c-dev libevent-dev libssl-dev zlib1g-dev
 ```
 
-**Install dependencies on OpenWrt:**
+### Standard Build
 
-wolfSSL is the default TLS library on OpenWrt and is recommended. No additional TLS package is needed for basic functionality.
-
-**Build:**
-
-```
+```bash
 git clone https://github.com/liudf0716/xfrpc.git
 cd xfrpc
-mkdir build && cd build
-cmake ..
-make
-```
-
-**Build options:**
-
-| Option | Default | Description |
-|---|---|---|
-| `-DUSE_WOLFSSL=ON` | ON | Use wolfSSL as TLS backend (falls back to OpenSSL if not found) |
-| `-DENABLE_QUIC=ON` | OFF | Enable QUIC transport via ngtcp2 (requires ngtcp2 + nghttp3) |
-| `-DBUILD_STATIC=ON` | OFF | Build a fully static binary with `-static` and `.a` libraries |
-| `-DDEBUG=ON` | OFF | Enable debug build with address sanitizer |
-
-**Build with QUIC support:**
-
-```
-cmake .. -DENABLE_QUIC=ON
-make
-```
-
-**Build with OpenSSL instead of wolfSSL:**
-
-```
-cmake .. -DUSE_WOLFSSL=OFF
-make
-```
-This will compile xfrpc and create an executable in the build directory. You can then run xfrpc using the executable by running the appropriate command in terminal.
-
-### TLS Backend
-
-xfrpc uses **wolfSSL** as the default TLS backend, which is the standard TLS library on OpenWrt. wolfSSL is smaller, faster, and has native QUIC support compared to OpenSSL.
-
-On systems where wolfSSL is not installed, xfrpc automatically falls back to OpenSSL. You can explicitly choose the backend:
-
-```
-# Use wolfSSL (default, recommended)
-cmake .. -DUSE_WOLFSSL=ON
-
-# Use OpenSSL
-cmake .. -DUSE_WOLFSSL=OFF
-```
-
-### Build Static Binary on Debian/Ubuntu/Linux
-
-To compile a standalone, statically linked `xfrpc` binary that can run on other machines without missing shared library errors (e.g. `libevent-2.1.so.7: cannot open shared object file`):
-
-1. Install static development libraries:
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential cmake libevent-dev libjson-c-dev zlib1g-dev libssl-dev
-```
-
-2. Build with `-DBUILD_STATIC=ON`:
-```bash
-cmake -B build -DBUILD_STATIC=ON
+cmake -B build
 cmake --build build -j
 ```
 
-The resulting `build/xfrpc` is a fully static executable (`statically linked`, no `.so` dependencies).
-
-### Build static binary in Alpine container
-
-Under project root directory:
-
-```shell
-$ DOCKER_BUILDKIT=1 docker build --output out -f docker/Dockerfile.static .
-
-$ ls out/
-xfrpc
-```
-
-To build for other Alpine-supported architectures (such as `linux/arm64`, `linux/arm/v7`, `linux/arm/v6`, `linux/riscv64`, `linux/386`) using `docker buildx`:
-
-```shell
-$ docker buildx build --platform linux/arm64 --output out -f docker/Dockerfile.static .
-$ file out/xfrpc
-```
-
-### Cross-compile static binary in Docker (MIPS, MIPSEL, ARM, ARM64)
-
-For target architectures not available as native Alpine Docker images (such as `mips` / `mipsel` for OpenWrt routers, or `arm` / `aarch64` without QEMU emulation), use `docker/Dockerfile.cross` with `TARGET_TRIPLE`:
-
-```shell
-# OpenWrt MIPS32 (big-endian)
-$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=mips-linux-musl --output out -f docker/Dockerfile.cross .
-
-# OpenWrt MIPS32 (little-endian)
-$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=mipsel-linux-musl --output out -f docker/Dockerfile.cross .
-
-# ARMv7 / ARM64 static Linux binary (runs standalone on ARM Linux / Android devices)
-$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=arm-linux-musleabihf --output out -f docker/Dockerfile.cross .
-$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=aarch64-linux-musl --output out -f docker/Dockerfile.cross .
-```
-
-The exported `out/xfrpc` binary is a fully static musl ELF executable with no shared library dependencies.
-
-### Cross-compile with an existing SDK or toolchain
-
-If you already have a cross-compiler and target sysroot (e.g., OpenWrt SDK or Android NDK):
-
-```shell
-cmake -B build-cross \
-  -DCMAKE_SYSTEM_NAME=Linux \
-  -DCMAKE_C_COMPILER=/path/to/target-gcc \
-  -DCMAKE_FIND_ROOT_PATH=/path/to/target-sysroot \
-  -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-  -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
-  -DBUILD_STATIC=ON \
-  -DUSE_WOLFSSL=OFF
-cmake --build build-cross -j
-```
-
-### Build on OpenWrt master
-
-xfrpc is included in the OpenWrt community since version 1.04.515, which allows users to easily include it in their custom firmware images. It is recommended to use the latest version of xfrpc as it may have bug fixes and new features.
-
-To include xfrpc in your OpenWrt firmware image, you can use the make menuconfig command to open the configuration menu. In the menu, navigate to "Network" and select "Web Servers/Proxies" and then select xfrpc. This will include xfrpc in the firmware image that will be built.
-
-### Build xfrpc with asan(For detect memory leak)
-
-When encountering a segment fault, please use the following command to compile xfrpc:
-
-```shell
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-```
-
-Now your xfrpc can detect memory leak.We will add it in ci flow in future.
-
-## Quick start for use
-
-**before using xfrpc, you should get frps server: [frps](https://github.com/fatedier/frp/releases)**
-
-frps is a server-side component of the FRP (Fast Reverse Proxy) system and it is used to forward incoming connections to xfrpc. 
-
-+ frps 
-
-To run frps, you can use the following command, providing it with the path to the frps configuration file:
-
-```
-./frps -c frps.ini
-```
-
-A sample frps.ini configuration file is provided in the example, which binds frps to listen on port 7000.
-
-```
-# frps.ini
-[common]
-bind_port = 7000
-```
-
-+ xfrpc tcp support
-
-xfrpc is a client-side component of the FRP system and it can be used to forward TCP connections. To forward incoming TCP connections to a local service, you can configure xfrpc with the following example in xfrpc_mini.ini file
-
-```
-#xfrpc_mini.ini 
-[common]
-server_addr = your_server_ip
-server_port = 7000
-
-[ssh]
-type = tcp
-local_ip = 127.0.0.1
-local_port = 22
-remote_port = 6128
-```
-
-+ xfrpc quic transport support
-
-xfrpc can connect to frps using QUIC (UDP-based transport) instead of TCP. QUIC provides faster connection establishment (0-RTT), built-in encryption (TLS 1.3), and better performance on lossy networks.
-
-**frps configuration:**
-
-```
-# frps.ini
-[common]
-bind_port = 7000
-quicBindPort = 7000
-```
-
-**xfrpc configuration:**
-
-```
-# xfrpc_quic.ini
-[common]
-server_addr = your_server_ip
-server_port = 7000
-protocol = quic
-quic_bind_port = 7000
-
-[ssh]
-type = tcp
-local_ip = 127.0.0.1
-local_port = 22
-remote_port = 6128
-```
-
-**Configuration options:**
+**CMake Build Options:**
 
 | Option | Default | Description |
-|---|---|---|
-| `protocol` | `tcp` | Transport protocol: `tcp` or `quic` |
-| `quic_bind_port` | 0 | frps QUIC listening port (required when protocol=quic) |
+| :--- | :--- | :--- |
+| `-DUSE_WOLFSSL=ON` | `ON` | Use wolfSSL as TLS backend (automatically falls back to OpenSSL if not found) |
+| `-DENABLE_QUIC=ON` | `OFF` | Enable QUIC transport via `ngtcp2` |
+| `-DBUILD_STATIC=ON` | `OFF` | Build a fully static binary (`-static` with `.a` libraries) |
+| `-DDEBUG=ON` | `OFF` | Enable debug logging and AddressSanitizer (`-fsanitize=address -fsanitize=leak`) |
 
-> **Note:** QUIC support requires building with `-DENABLE_QUIC=ON` and the ngtcp2/nghttp3 libraries installed.
+### Build Static Binary (Linux / Alpine / Cross-Compile)
 
-This configuration tells the frp server (frps) to forward incoming connections on remote port 6128 to the xfrpc client. The xfrpc client, in turn, will forward these connections to the local service running on IP address 127.0.0.1 and port 22.
+```bash
+# Native static build on Ubuntu/Debian
+cmake -B build-static -DDEBUG=OFF -DENABLE_SANITIZER=OFF -DBUILD_STATIC=ON
+cmake --build build-static -j
 
-+ xfrpc tcpmux support
+# Alpine static build via Docker
+DOCKER_BUILDKIT=1 docker build --output out -f docker/Dockerfile.static .
 
-TCPMux proxy uses HTTP CONNECT multiplexing on frps's `tcpmuxHTTPConnectPort` to route connections by domain. Multiple tcpmux proxies share a single connection pool, making it more resource-efficient than individual tcp proxies.
-
-First, enable tcpmux on frps:
-
-```
-# frps.ini
-[common]
-bind_port = 7000
-tcpmuxHTTPConnectPort = 5000
-```
-
-Then configure xfrpc with tcpmux proxies:
-
-```
-# xfrpc_tcpmux.ini
-[common]
-server_addr = your_server_ip
-server_port = 7000
-tcp_mux = 1
-
-[web]
-type = tcpmux
-local_ip = 127.0.0.1
-local_port = 80
-custom_domains = web.example.com
-multiplexer = httpconnect
-
-[api]
-type = tcpmux
-local_ip = 127.0.0.1
-local_port = 8080
-subdomain = api
-multiplexer = httpconnect
+# Cross-compile static binary via Docker (MIPS, MIPSEL, ARM, ARM64)
+DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=mips-linux-musl --output out -f docker/Dockerfile.cross .
+DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=mipsel-linux-musl --output out -f docker/Dockerfile.cross .
+DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=arm-linux-musleabihf --output out -f docker/Dockerfile.cross .
+DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=aarch64-linux-musl --output out -f docker/Dockerfile.cross .
 ```
 
-Access `web.example.com:5000` or `api.your_server_domain:5000` to reach the local services through the TCPMux multiplexer.
+### Build on OpenWrt
 
-+ xfrpc stcp support
+`xfrpc` is included in the official OpenWrt packages feed:
+* In `make menuconfig`: `Network` → `Web Servers/Proxies` → `xfrpc`
+* Or install directly on OpenWrt (24.10+):
+  ```bash
+  apk update && apk add xfrpc luci-app-xfrpc
+  ```
 
-STCP (Secret TCP) proxy allows you to expose services privately without opening a public port on frps. Unlike tcp/udp proxies, STCP requires a preshared key (`sk`) for authentication — only visitors with the correct key can access the service. This is ideal for sensitive services like SSH, databases, or internal APIs that you don't want exposed to the public internet.
+---
 
-**How it works:**
+## Quick Start
 
-STCP involves two xfrpc instances:
-1. **Service provider** (Machine B): Registers an STCP proxy with frps, specifying the local service to expose and a secret key.
-2. **Visitor** (Machine C): Connects to frps as a visitor, using the same secret key, and binds a local port that tunnels through to the remote service.
+Download `frps` from [fatedier/frp releases](https://github.com/fatedier/frp/releases) and run it on your public server:
 
-The traffic flow is: `Machine C (visitor) → frps → Machine B (provider) → local service`
-
-**Step 1: frps server configuration**
-
-No special configuration needed for frps beyond the basic setup:
-
-```
-# frps.ini
-[common]
-bind_port = 7000
+```toml
+# frps.toml
+bindPort = 7000
+auth.token = "your_secret_token"
 ```
 
-**Step 2: Service provider (Machine B) — expose a local service via STCP**
-
-```
-# xfrpc_stcp_server.ini
-[common]
-server_addr = your_server_ip
-server_port = 7000
-
-[secret_ssh]
-type = stcp
-local_ip = 127.0.0.1
-local_port = 22
-sk = my_secret_key_abc123
-# Allowed visitor users (default: same user only)
-# Use '*' to allow all users, or comma-separated list like 'user1, user2'
-allow_users = *
+```bash
+./frps -c frps.toml
 ```
 
-Key fields:
-- `type = stcp` — Use the STCP proxy type
-- `sk` — Preshared secret key (must match on both sides)
-- `allow_users` — Who can connect as a visitor (`*` = any user, or comma-separated usernames)
+### 1. Basic TCP & Wire Protocol v2 (TOML)
 
-**Step 3: Visitor (Machine C) — access the remote service**
+```toml
+# xfrpc.toml
+serverAddr = "your_server_ip"
+serverPort = 7000
+auth.method = "token"
+auth.token = "your_secret_token"
+transport.wireProtocol = "v2"
 
-```
-# xfrpc_stcp_visitor.ini
-[common]
-server_addr = your_server_ip
-server_port = 7000
-
-[visitor:stcp_ssh_visitor]
-type = stcp
-server_name = secret_ssh
-sk = my_secret_key_abc123
-bind_addr = 127.0.0.1
-bind_port = 6000
+[[proxies]]
+name = "ssh"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 22
+remotePort = 6000
 ```
 
-Key fields:
-- `[visitor:name]` — Section prefix `visitor:` indicates this is a visitor configuration
-- `server_name` — Must match the proxy name on the provider side (`secret_ssh`)
-- `sk` — Must match the secret key on the provider side
-- `bind_addr` / `bind_port` — Local address and port to listen on for incoming connections
+Verify and run:
 
-**Step 4: Connect to the service**
-
-On Machine C, connect to the SSH service on Machine B through the visitor tunnel:
-
-```
-ssh -oPort=6000 127.0.0.1
+```bash
+xfrpc verify -c xfrpc.toml
+xfrpc -c xfrpc.toml -f
 ```
 
-> **Note:** When using `user` in the common section, both the provider and visitor xfrpc instances should use the same `user` value to ensure they are recognized as belonging to the same user group.
+### 2. WebSocket Secure (`wss`) Transport
 
-+ xfrpc http&https support
+`wss` automatically enables TLS without the legacy `0x17` custom first byte, making it compatible with Nginx/Caddy/Cloudflare TLS termination:
 
- Supporting HTTP and HTTPS in xfrpc requires additional configuration compared to supporting just TCP. In the frps.ini configuration file, the vhost_http_port and vhost_https_port options must be added to specify the ports that the frp server (frps) will listen on for incoming HTTP and HTTPS connections.
- 
-```
-# frps.ini
-[common]
-bind_port = 7000
-vhost_http_port = 80
-vhost_https_port = 443
-```
+```toml
+serverAddr = "frp.example.com"
+serverPort = 443
+auth.token = "your_secret_token"
+transport.protocol = "wss"
+transport.wireProtocol = "v2"
+transport.tls.serverName = "frp.example.com"
 
-It is important to ensure that the xfrpc client is properly configured to communicate with the frp server by specifying the correct server address and port in the xfrpc configuration file.
-
-```
-# xfrpc_mini.ini 
-[common]
-server_addr = x.x.x.x
-server_port = 7000
-
-[http]
-type = http
-local_port = 80
-local_ip = 127.0.0.1
-custom_domains = www.example.com
-
-[https]
-type = https
-local_port = 443
-local_ip = 127.0.0.1
-custom_domains = www.example.com
+[[proxies]]
+name = "router_ssh"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 22
+remotePort = 6022
 ```
 
-The FRP server (frps) will forward incoming HTTP and HTTPS connections to the domain "www.example.com" to the location where xfrpc is running on the local IP and port specified in the configuration file (127.0.0.1:80 and 127.0.0.1:443 respectively).
+### 3. SUDP (Secret UDP) & STCP (Private Access)
 
-It is important to note that the domain name "www.example.com" should be pointed to the public IP address of the FRP server (frps) so that when a user's HTTP and HTTPS connections visit the domain, the FRP server can forward those connections to the xfrpc client. This can be done by configuring a DNS server or by using a dynamic DNS service.
+**Provider (`xfrpc_provider.toml`):**
 
-+ Run in debug mode 
+```toml
+serverAddr = "your_server_ip"
+serverPort = 7000
+auth.token = "your_secret_token"
 
-In order to troubleshooting problem when run xfrpc, you can use debug mode. which has more information when running.
-
-```shell
-xfrpc -c frpc_mini.ini -f -d 7 
+[[proxies]]
+name = "secret_dns"
+type = "sudp"
+localIP = "127.0.0.1"
+localPort = 53
+secretKey = "shared_secret_key"
 ```
 
-+ Run in release mode :
+**Visitor (`xfrpc_visitor.toml`):**
 
-```shell
-xfrpc -c frpc_mini.ini -d 0
+```toml
+serverAddr = "your_server_ip"
+serverPort = 7000
+auth.token = "your_secret_token"
+
+[[visitors]]
+name = "dns_visitor"
+type = "sudp"
+serverName = "secret_dns"
+secretKey = "shared_secret_key"
+bindAddr = "127.0.0.1"
+bindPort = 5353
 ```
 
-It is important to note that running xfrpc in release mode will generate less log output and will run faster than in debug mode, so it is the recommended way to run xfrpc in production environment.
+### 4. Client Plugins (`socks5`, `http_proxy`, `static_file`, `tls2raw`)
 
-## Openwrt luci configure ui
+```toml
+[[proxies]]
+name = "my_socks5"
+type = "tcp"
+remotePort = 1080
+[proxies.plugin]
+type = "socks5"
+username = "user"
+password = "password"
 
-If you're running xfrpc on an OpenWRT device, luci-app-xfrpc is a good option to use as it provides a web-based interface for configuring and managing xfrpc. luci-app-xfrpc is a module for the LuCI web interface, which is the default web interface for OpenWRT.
+[[proxies]]
+name = "my_http_proxy"
+type = "tcp"
+remotePort = 8080
+[proxies.plugin]
+type = "http_proxy"
+httpUser = "user"
+httpPassword = "password"
 
-luci-app-xfrpc was adopted by the LuCI project, which is the official web interface for OpenWRT. This means that it is a supported and well-maintained option for managing xfrpc on OpenWRT devices.
+[[proxies]]
+name = "my_static"
+type = "tcp"
+remotePort = 8000
+[proxies.plugin]
+type = "static_file"
+localPath = "/www"
+stripPrefix = "/static"
+```
 
-luci-app-xfrpc can be installed via the opkg package manager on OpenWRT and provides a user-friendly interface for configuring the xfrpc client, including options for setting up multiple connections, custom domains and more.
+### 5. CLI Options & Hot-Reload
 
-## How to contribute our project
+```bash
+xfrpc verify -c xfrpc.toml      # Validate configuration syntax
+xfrpc version                   # Show version
+xfrpc -c xfrpc.toml -f -d 7     # Run in foreground with debug logs
+xfrpc -c xfrpc.toml -d 0        # Run in daemon/release mode
+kill -HUP $(pidof xfrpc)        # Hot-reload configuration
+```
 
-See [CONTRIBUTING](https://github.com/liudf0716/xfrpc/blob/master/CONTRIBUTING.md) for details on submitting patches and the contribution workflow.
+---
+
+## OpenWrt LuCI Web UI
+
+If you are running `xfrpc` on OpenWrt, [luci-app-xfrpc](https://github.com/openwrt/luci/tree/master/applications/luci-app-xfrpc) is included in the official OpenWrt LuCI repository and provides a full web interface for configuring `xfrpc` via UCI (`/etc/config/xfrpc`).
+
+---
+
+## How to Contribute
+
+See [CONTRIBUTING.md](https://github.com/liudf0716/xfrpc/blob/master/CONTRIBUTING.md) for details on submitting patches and the contribution workflow.
 
 ## Contact
 
-QQ群 ： [331230369](https://jq.qq.com/?_wv=1027&k=47QGEhL)
+QQ Group: [331230369](https://jq.qq.com/?_wv=1027&k=47QGEhL)
 
-
-## Please support us and star our project
+## Star History
 
 [![Star History Chart](https://star-history.dera.page/svg?repos=liudf0716/xfrpc&type=Date)](https://star-history.dera.page/#liudf0716/xfrpc&Date)
 
-## 打赏
+## Donation
 
-支付宝打赏
+Alipay:
 
-![支付宝打赏](https://user-images.githubusercontent.com/1182593/169465135-d4522479-4068-4714-ab58-987d7d7eb338.png)
+![Alipay](https://user-images.githubusercontent.com/1182593/169465135-d4522479-4068-4714-ab58-987d7d7eb338.png)
 
+WeChat Pay:
 
-微信打赏
-
-
-![微信打赏](https://user-images.githubusercontent.com/1182593/169465249-db1b495e-078e-4cab-91fc-96dab3320b06.png)
-
-
- <!--
- 
-## 广告
-
-想学习OpenWrt开发，但是摸不着门道？自学没毅力？基础太差？怕太难学不会？跟着佐大学OpenWrt开发入门培训班助你能学有所成
-
-报名地址：https://forgotfun.org/2018/04/openwrt-training-2018.html
-
--->
+![WeChat](https://user-images.githubusercontent.com/1182593/169465249-db1b495e-078e-4cab-91fc-96dab3320b06.png)

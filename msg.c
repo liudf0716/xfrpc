@@ -191,17 +191,25 @@ char *get_auth_key(const char *token, time_t *timestamp)
 	// Get current timestamp
 	*timestamp = time(NULL);
 
-	// Create seed string
-	char seed[128] = {0};
-	int ret = snprintf(seed, sizeof(seed), "%s%jd", 
+	// Create seed string dynamically to support arbitrary token lengths
+	size_t token_len = token ? strlen(token) : 0;
+	size_t seed_cap = token_len + 32;
+	char *seed = malloc(seed_cap);
+	if (!seed) {
+		return NULL;
+	}
+	int ret = snprintf(seed, seed_cap, "%s%jd",
 					  token ? token : "", (intmax_t)*timestamp);
-	if (ret < 0 || ret >= sizeof(seed)) {
+	if (ret < 0 || (size_t)ret >= seed_cap) {
+		free(seed);
 		return NULL;
 	}
 
 	// Calculate MD5 hash
 	uint8_t digest[16] = {0};
-	if (calc_md5((const uint8_t *)seed, strlen(seed), digest) < 0) {
+	int md5_ret = calc_md5((const uint8_t *)seed, (int)ret, digest);
+	free(seed);
+	if (md5_ret < 0) {
 		return NULL;
 	}
 
@@ -662,18 +670,22 @@ struct login_resp *login_resp_unmarshal(const char *jres)
 		return NULL;
 	}
 
-	// Get version field
+	// Get optional version field (may be omitted in error responses)
 	struct json_object *l_version = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "version", &l_version) ||
-		!(lr->version = strdup(json_object_get_string(l_version)))) {
-		goto error;
+	if (json_object_object_get_ex(j_lg_res, "version", &l_version)) {
+		const char *ver_str = json_object_get_string(l_version);
+		if (ver_str && !(lr->version = strdup(ver_str))) {
+			goto error;
+		}
 	}
 
-	// Get run_id field
+	// Get optional run_id field (omitted by frps on authentication failure)
 	struct json_object *l_run_id = NULL;
-	if (!json_object_object_get_ex(j_lg_res, "run_id", &l_run_id) ||
-		!(lr->run_id = strdup(json_object_get_string(l_run_id)))) {
-		goto error;
+	if (json_object_object_get_ex(j_lg_res, "run_id", &l_run_id)) {
+		const char *run_id_str = json_object_get_string(l_run_id);
+		if (run_id_str && !(lr->run_id = strdup(run_id_str))) {
+			goto error;
+		}
 	}
 
 	// Get optional error field if present

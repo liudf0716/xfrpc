@@ -449,6 +449,53 @@ static void tcp_mux_send_go_away(struct bufferevent *bout, uint32_t reason) {
     }
 }
 
+static void handle_remote_fin(struct tmux_stream *stream, struct proxy_client *pc) {
+    if (!stream || !pc) return;
+    if (is_udp_proxy(pc->ps)) return;
+
+    if (is_https2http_proxy(pc->ps)) {
+        if (pc->bridge_bev) {
+            int bridge_fd = bufferevent_getfd(pc->bridge_bev);
+            if (bridge_fd >= 0) {
+                struct evbuffer *out = bufferevent_get_output(pc->bridge_bev);
+                if (out) {
+                    while (evbuffer_get_length(out) > 0) {
+                        int n = evbuffer_write(out, bridge_fd);
+                        if (n <= 0) break;
+                    }
+                }
+                debug(LOG_INFO, "Stream %u: remote FIN, shutdown SHUT_WR on bridge fd=%d",
+                      stream->id, bridge_fd);
+                shutdown(bridge_fd, SHUT_WR);
+            }
+        }
+        return;
+    }
+
+    if (pc->local_proxy_bev) {
+        int fd = bufferevent_getfd(pc->local_proxy_bev);
+        if (fd >= 0) {
+            struct evbuffer *out = bufferevent_get_output(pc->local_proxy_bev);
+            if (out) {
+                while (evbuffer_get_length(out) > 0) {
+                    int n = evbuffer_write(out, fd);
+                    if (n <= 0) break;
+                }
+            }
+            if (out && evbuffer_get_length(out) > 0) {
+                debug(LOG_INFO, "Stream %u: remote FIN received, %zu bytes pending in out buffer, deferring shutdown",
+                      stream->id, evbuffer_get_length(out));
+                pc->pending_shutdown_wr = 1;
+            } else {
+                debug(LOG_INFO, "Stream %u: remote FIN received, shutting down local write (fd=%d)",
+                      stream->id, fd);
+                shutdown(fd, SHUT_WR);
+                pc->pending_shutdown_wr = 0;
+            }
+        }
+    }
+}
+
 /**
  * @brief Processes the given flags and updates the state of the tmux stream accordingly.
  */
@@ -467,6 +514,7 @@ static int process_flags(uint16_t flags, struct tmux_stream *stream) {
             case SYN_RECEIVED:
             case ESTABLISHED:
                 stream->state = REMOTE_CLOSE;
+                handle_remote_fin(stream, get_proxy_client(stream->id));
                 break;
             case LOCAL_CLOSE:
                 stream->state = CLOSED;
@@ -569,13 +617,6 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
     }
 
     uint32_t stream_id = stream->id;
-
-    if (!process_flags(flags, stream)) {
-        debug(LOG_ERR, "Failed to process flags for stream %d", stream_id);
-        if (bev && length > 0)
-            evbuffer_drain(bufferevent_get_input(bev), length);
-        return 0;
-    }
 
     if (!get_stream_by_id(stream_id)) {
         debug(LOG_DEBUG, "Stream %d no longer exists", stream_id);
@@ -770,7 +811,14 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         tcp_mux_send_win_update_rst(bout, stream->id);
         stream->state = LOCAL_CLOSE;
     } else {
-        send_window_update(bout, stream, bytes_processed);
+        if (!(flags & (FIN | RST)) && bytes_processed > 0) {
+            send_window_update(bout, stream, bytes_processed);
+        }
+    }
+
+    if (!process_flags(flags, stream)) {
+        debug(LOG_ERR, "Failed to process flags for stream %d", stream_id);
+        return length;
     }
 
     return length;

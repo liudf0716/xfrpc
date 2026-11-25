@@ -42,9 +42,40 @@ static void xfrp_worker_event_cb(struct bufferevent *bev, short what, void *ctx)
 	struct proxy_client *client = (struct proxy_client *)ctx;
 	if (what & (BEV_EVENT_EOF|BEV_EVENT_ERROR)) {
 		debug(LOG_DEBUG, "Working connection closed");
-		if (client && client->ctl_bev == bev)
-			client->ctl_bev = NULL;
-		bufferevent_free(bev);
+		if (client) {
+			uint32_t sid = client->stream_id;
+			if (client->local_proxy_bev && bufferevent_get_input(bev)) {
+				struct evbuffer *in = bufferevent_get_input(bev);
+				if (evbuffer_get_length(in) > 0) {
+					if (client->use_encryption || client->use_compression) {
+						struct evbuffer *processed = evbuffer_new();
+						if (processed) {
+							proxy_crypto_decode_evbuffer(client, in, processed);
+							bufferevent_write_buffer(client->local_proxy_bev, processed);
+							evbuffer_free(processed);
+						}
+					} else {
+						bufferevent_write_buffer(client->local_proxy_bev, in);
+					}
+				}
+			}
+			if (client->local_proxy_bev) {
+				struct evbuffer *out = bufferevent_get_output(client->local_proxy_bev);
+				int local_fd = bufferevent_getfd(client->local_proxy_bev);
+				if (local_fd >= 0 && out) {
+					while (evbuffer_get_length(out) > 0) {
+						int n = evbuffer_write(out, local_fd);
+						if (n <= 0) break;
+					}
+				}
+			}
+			if (client->ctl_bev == bev)
+				client->ctl_bev = NULL;
+			bufferevent_free(bev);
+			del_proxy_client_by_stream_id(sid);
+		} else {
+			bufferevent_free(bev);
+		}
 	}
 }
 
@@ -139,7 +170,12 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 		/* Flush remaining data from the local proxy bufferevent into MUX stream.
 		 * Loop to handle partial sends — tmux_stream_write drains
 		 * what it writes directly from src when send_window allows. */
+		evutil_socket_t local_fd = bufferevent_getfd(bev);
 		struct evbuffer *src = bufferevent_get_input(bev);
+		if (local_fd >= 0 && src) {
+			while (evbuffer_read(src, local_fd, 65536) > 0) {
+			}
+		}
 		struct common_conf *c_conf = get_common_config();
 		if (!c_conf->tcp_mux) {
 			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
@@ -166,6 +202,24 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 	if (bev) {
 		bufferevent_free(bev);
 		client->local_proxy_bev = NULL;
+	}
+
+	struct common_conf *c_conf = get_common_config();
+	if (!c_conf->tcp_mux) {
+		if (client->ctl_bev) {
+			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+			int ctl_fd = bufferevent_getfd(client->ctl_bev);
+			if (ctl_fd >= 0 && dst) {
+				while (evbuffer_get_length(dst) > 0) {
+					int n = evbuffer_write(dst, ctl_fd);
+					if (n <= 0) break;
+				}
+			}
+			bufferevent_free(client->ctl_bev);
+			client->ctl_bev = NULL;
+		}
+		del_proxy_client_by_stream_id(client->stream_id);
+		return;
 	}
 
 	// If send_window is exhausted, mark as pending_close and wait for
@@ -215,8 +269,39 @@ void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 		if (fd >= 0 && !is_udp_proxy(client->ps)) {
 			int one = 1;
 			setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+			if (client->stream.state == REMOTE_CLOSE) {
+				struct evbuffer *out = bufferevent_get_output(bev);
+				if (!out || evbuffer_get_length(out) == 0) {
+					debug(LOG_INFO, "Stream %u: already in REMOTE_CLOSE at connect, shutting down local write (fd=%d)",
+					      client->stream_id, fd);
+					shutdown(fd, SHUT_WR);
+				} else {
+					client->pending_shutdown_wr = 1;
+				}
+			}
 		}
 		handle_post_connection_data(client);
+	}
+}
+
+/**
+ * @brief Write callback for local proxy connection; drains deferred half-close.
+ */
+static void xfrp_local_write_cb(struct bufferevent *bev, void *ctx) {
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	if (!client || !bev) return;
+
+	if (client->pending_shutdown_wr) {
+		struct evbuffer *out = bufferevent_get_output(bev);
+		if (!out || evbuffer_get_length(out) == 0) {
+			int fd = bufferevent_getfd(bev);
+			if (fd >= 0) {
+				debug(LOG_INFO, "Stream %u: local output drained, shutting down local write (fd=%d)",
+				      client->stream_id, fd);
+				shutdown(fd, SHUT_WR);
+			}
+			client->pending_shutdown_wr = 0;
+		}
 	}
 }
 
@@ -510,7 +595,7 @@ void start_xfrp_tunnel(struct proxy_client *client)
 
 	bufferevent_setwatermark(client->local_proxy_bev, EV_READ, 0, 0);
 
-	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, NULL,
+	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, xfrp_local_write_cb,
 					 xfrp_proxy_event_cb, client);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
 

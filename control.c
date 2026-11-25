@@ -1679,7 +1679,7 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 						continue;
 				}
 
-				if (len == 0) {
+				if (len == 0 && stream_len > 0) {
 					set_cur_stream(cur);
 					break;
 				}
@@ -1687,37 +1687,47 @@ static void handle_tcp_mux(struct bufferevent *bev, int len, void *ctx)
 		}
 
 		/* ---- Payload consumption (TMUX_DATA type only) ---- */
-		if (tmux_hdr.type == TMUX_DATA && stream_len > 0) {
-			uint32_t to_read = (uint32_t)len < stream_len ? (uint32_t)len : stream_len;
-
-			if (cur == &abandon_stream) {
-				/* Discard payload for unknown streams */
-				evbuffer_drain(bufferevent_get_input(bev), to_read);
-				len -= to_read;
-				stream_len -= to_read;
-				if (stream_len == 0) {
-					memset(cur, 0, sizeof(abandon_stream));
-					set_cur_stream(NULL);
+		if (tmux_hdr.type == TMUX_DATA) {
+			if (stream_len == 0) {
+				uint16_t flags = ntohs(tmux_hdr.flags);
+				struct proxy_client *pc = cur ? get_proxy_client(cur->id) : NULL;
+				debug(LOG_DEBUG, "[TMUX] Dispatching zero-len stream=%u, flags=0x%x, pc=%p",
+				      cur ? cur->id : 0, flags, (void *)pc);
+				if (cur) {
+					process_data(bev, cur, 0, flags, handle_frps_msg, (void *)pc);
 				}
-				continue;
-			}
+			} else {
+				uint32_t to_read = (uint32_t)len < stream_len ? (uint32_t)len : stream_len;
 
-			/* Partial frame: wait for more data */
-			if (to_read < stream_len) {
-				debug(LOG_DEBUG, "Stream %u: partial frame %u/%u, waiting",
-				      cur->id, to_read, stream_len);
-				set_cur_stream(cur);
-				break;
-			}
+				if (cur == &abandon_stream) {
+					/* Discard payload for unknown streams */
+					evbuffer_drain(bufferevent_get_input(bev), to_read);
+					len -= to_read;
+					stream_len -= to_read;
+					if (stream_len == 0) {
+						memset(cur, 0, sizeof(abandon_stream));
+						set_cur_stream(NULL);
+					}
+					continue;
+				}
 
-			/* Full frame available: read payload and dispatch */
-			uint16_t flags = ntohs(tmux_hdr.flags);
-			struct proxy_client *pc = get_proxy_client(cur->id);
-			debug(LOG_DEBUG, "[TMUX] Dispatching stream=%u, len=%u, flags=0x%x, pc=%p",
-			      cur->id, stream_len, flags, (void *)pc);
-			process_data(bev, cur, stream_len, flags, handle_frps_msg, (void *)pc);
-			len -= stream_len;
-			stream_len = 0;
+				/* Partial frame: wait for more data */
+				if (to_read < stream_len) {
+					debug(LOG_DEBUG, "Stream %u: partial frame %u/%u, waiting",
+					      cur->id, to_read, stream_len);
+					set_cur_stream(cur);
+					break;
+				}
+
+				/* Full frame available: read payload and dispatch */
+				uint16_t flags = ntohs(tmux_hdr.flags);
+				struct proxy_client *pc = get_proxy_client(cur->id);
+				debug(LOG_DEBUG, "[TMUX] Dispatching stream=%u, len=%u, flags=0x%x, pc=%p",
+				      cur->id, stream_len, flags, (void *)pc);
+				process_data(bev, cur, stream_len, flags, handle_frps_msg, (void *)pc);
+				len -= stream_len;
+				stream_len = 0;
+			}
 		} else if (tmux_hdr.type == WINDOW_UPDATE) {
 			debug(LOG_DEBUG, "[TMUX] WINDOW_UPDATE: stream=%u",
 			      ntohl(tmux_hdr.stream_id));

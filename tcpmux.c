@@ -836,6 +836,14 @@ static int incr_send_window(struct bufferevent *bev,
 
     if (pc->pending_close) {
         if (is_https2http_proxy(pc->ps)) {
+            if (pc->bridge_bev) {
+                bufferevent_enable(pc->bridge_bev, EV_READ);
+                int ret = https2http_bridge_drain(pc);
+                if (ret < 0) {
+                    del_proxy_client_by_stream_id(stream_id);
+                    return 1;
+                }
+            }
             https2http_try_finish_close(pc);
             return 1;
         }

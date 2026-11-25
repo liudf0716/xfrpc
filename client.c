@@ -127,6 +127,13 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 
 		client->pending_close = 1;
 		https2http_trigger_shutdown(client);
+		struct common_conf *c_conf = get_common_config();
+		int has_window = (!c_conf->tcp_mux) || (client->stream.send_window > 0);
+		if (has_window && client->bridge_bev) {
+			bufferevent_enable(client->bridge_bev, EV_READ);
+			https2http_bridge_drain(client);
+			https2http_try_finish_close(client);
+		}
 		return;
 	} else if (bev && client->ctl_bev) {
 		/* Flush remaining data from the local proxy bufferevent into MUX stream.

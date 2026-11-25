@@ -1,0 +1,135 @@
+# Cross-compile static musl xfrpc binaries from an x86_64 Docker container.
+# Useful for architectures not available as native Alpine Docker images
+# (e.g., mips/mipsel for OpenWrt, or arm/aarch64 without QEMU emulation).
+#
+# Supported TARGET_TRIPLE values (via musl.cc):
+#   mips-linux-musl       (OpenWrt big-endian MIPS32)
+#   mipsel-linux-musl     (OpenWrt little-endian MIPS32)
+#   arm-linux-musleabihf  (ARMv7 hard-float, Linux / Android static)
+#   aarch64-linux-musl    (ARM64, Linux / Android static)
+#   riscv64-linux-musl    (RISC-V 64)
+#   x86_64-linux-musl     (x86_64)
+#
+# Usage from repository root:
+#   DOCKER_BUILDKIT=1 docker build \
+#     --build-arg TARGET_TRIPLE=mips-linux-musl \
+#     --output out -f docker/Dockerfile.cross .
+
+FROM ubuntu:24.04 AS builder
+
+ARG TARGET_TRIPLE=mips-linux-musl
+ARG ZLIB_VERSION=1.3.1
+ARG OPENSSL_VERSION=3.0.15
+ARG JSONC_VERSION=0.18-20240915
+ARG LIBEVENT_VERSION=2.1.12-stable
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TOOLCHAIN_DIR=/opt/cross
+ENV SYSROOT=/opt/sysroot
+ENV PATH="${TOOLCHAIN_DIR}/bin:${PATH}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    curl \
+    file \
+    perl \
+    pkg-config \
+    xz-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+# Download musl cross-compiler toolchain
+RUN mkdir -p "${TOOLCHAIN_DIR}" "${SYSROOT}/usr" && \
+    curl -fSL "https://musl.cc/${TARGET_TRIPLE}-cross.tgz" | \
+      tar -xz --strip-components=1 -C "${TOOLCHAIN_DIR}"
+
+# Cross-compile static zlib
+RUN mkdir -p /tmp/deps/zlib && \
+    curl -fSL "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" | \
+      tar -xz --strip-components=1 -C /tmp/deps/zlib && \
+    cd /tmp/deps/zlib && \
+    CHOST="${TARGET_TRIPLE}" ./configure --prefix="${SYSROOT}/usr" --static && \
+    make -j"$(nproc)" && \
+    make install && \
+    rm -rf /tmp/deps/zlib
+
+# Cross-compile static OpenSSL
+RUN mkdir -p /tmp/deps/openssl && \
+    curl -fSL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz" | \
+      tar -xz --strip-components=1 -C /tmp/deps/openssl && \
+    cd /tmp/deps/openssl && \
+    case "${TARGET_TRIPLE}" in \
+      mips-linux-musl|mipsel-linux-musl) OPENSSL_TARGET="linux-mips32" ;; \
+      arm-linux-musl*) OPENSSL_TARGET="linux-armv4" ;; \
+      aarch64-linux-musl) OPENSSL_TARGET="linux-aarch64" ;; \
+      riscv64-linux-musl) OPENSSL_TARGET="linux64-riscv64" ;; \
+      x86_64-linux-musl) OPENSSL_TARGET="linux-x86_64" ;; \
+      *) echo "Unsupported TARGET_TRIPLE: ${TARGET_TRIPLE}" >&2; exit 1 ;; \
+    esac && \
+    ./Configure "${OPENSSL_TARGET}" \
+      --cross-compile-prefix="${TARGET_TRIPLE}-" \
+      --prefix="${SYSROOT}/usr" \
+      --libdir=lib \
+      no-shared no-tests no-docs && \
+    make -j"$(nproc)" && \
+    make install_sw && \
+    rm -rf /tmp/deps/openssl
+
+# Cross-compile static json-c
+RUN mkdir -p /tmp/deps/json-c && \
+    curl -fSL "https://github.com/json-c/json-c/archive/refs/tags/json-c-${JSONC_VERSION}.tar.gz" | \
+      tar -xz --strip-components=1 -C /tmp/deps/json-c && \
+    cmake -S /tmp/deps/json-c -B /tmp/deps/json-c/build \
+      -DCMAKE_SYSTEM_NAME=Linux \
+      -DCMAKE_C_COMPILER="${TARGET_TRIPLE}-gcc" \
+      -DCMAKE_INSTALL_PREFIX="${SYSROOT}/usr" \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DBUILD_STATIC_LIBS=ON \
+      -DDISABLE_WERROR=ON \
+      -DBUILD_APPS=OFF && \
+    cmake --build /tmp/deps/json-c/build -j"$(nproc)" && \
+    cmake --install /tmp/deps/json-c/build && \
+    rm -rf /tmp/deps/json-c
+
+# Cross-compile static libevent
+RUN mkdir -p /tmp/deps/libevent && \
+    curl -fSL "https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VERSION}/libevent-${LIBEVENT_VERSION}.tar.gz" | \
+      tar -xz --strip-components=1 -C /tmp/deps/libevent && \
+    cmake -S /tmp/deps/libevent -B /tmp/deps/libevent/build \
+      -DCMAKE_SYSTEM_NAME=Linux \
+      -DCMAKE_C_COMPILER="${TARGET_TRIPLE}-gcc" \
+      -DCMAKE_FIND_ROOT_PATH="${SYSROOT}" \
+      -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+      -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+      -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+      -DCMAKE_INSTALL_PREFIX="${SYSROOT}/usr" \
+      -DEVENT__LIBRARY_TYPE=STATIC \
+      -DEVENT__DISABLE_TESTS=ON \
+      -DEVENT__DISABLE_REGRESS=ON \
+      -DEVENT__DISABLE_SAMPLES=ON \
+      -DEVENT__DISABLE_BENCHMARK=ON \
+      -DOPENSSL_ROOT_DIR="${SYSROOT}/usr" \
+      -DOPENSSL_USE_STATIC_LIBS=TRUE && \
+    cmake --build /tmp/deps/libevent/build -j"$(nproc)" && \
+    cmake --install /tmp/deps/libevent/build && \
+    rm -rf /tmp/deps/libevent
+
+WORKDIR /src
+COPY . .
+
+RUN cmake -B build-cross \
+      -DCMAKE_SYSTEM_NAME=Linux \
+      -DCMAKE_C_COMPILER="${TARGET_TRIPLE}-gcc" \
+      -DCMAKE_FIND_ROOT_PATH="${SYSROOT}" \
+      -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+      -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+      -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_STATIC=ON \
+      -DUSE_WOLFSSL=OFF && \
+    cmake --build build-cross -j"$(nproc)" && \
+    "${TARGET_TRIPLE}-strip" build-cross/xfrpc
+
+FROM scratch AS export-stage
+COPY --from=builder /src/build-cross/xfrpc /xfrpc

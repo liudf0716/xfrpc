@@ -95,10 +95,14 @@ else()
 endif()
 
 include_directories(
+    ${LIBEVENT_INCLUDE_DIR}
     ${JSON-C_INCLUDE_DIR}
     ${ZLIB_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}
 )
+if(OPENSSL_FOUND AND OPENSSL_INCLUDE_DIR)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+endif()
 
 set(EXTRA_LIBS)
 
@@ -189,11 +193,12 @@ set(src_xfrpc
 
 # Required libraries
 set(SYSTEM_LIBS
-    pthread
     m
-    crypt
     dl
 )
+if(NOT ANDROID)
+    list(APPEND SYSTEM_LIBS pthread)
+endif()
 
 set(EXTERNAL_LIBS
     ${SSL_LIBRARIES}

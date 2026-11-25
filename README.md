@@ -127,13 +127,55 @@ The resulting `build/xfrpc` is a fully static executable (`statically linked`, n
 
 ### Build static binary in Alpine container
 
-Under project root directory
+Under project root directory:
 
 ```shell
-$ DOCKER_BUILDKIT=1 docker build --output out . -f docker/Dockerfile
+$ DOCKER_BUILDKIT=1 docker build --output out -f docker/Dockerfile.static .
 
 $ ls out/
 xfrpc
+```
+
+To build for other Alpine-supported architectures (such as `linux/arm64`, `linux/arm/v7`, `linux/arm/v6`, `linux/riscv64`, `linux/386`) using `docker buildx`:
+
+```shell
+$ docker buildx build --platform linux/arm64 --output out -f docker/Dockerfile.static .
+$ file out/xfrpc
+```
+
+### Cross-compile static binary in Docker (MIPS, MIPSEL, ARM, ARM64)
+
+For target architectures not available as native Alpine Docker images (such as `mips` / `mipsel` for OpenWrt routers, or `arm` / `aarch64` without QEMU emulation), use `docker/Dockerfile.cross` with `TARGET_TRIPLE`:
+
+```shell
+# OpenWrt MIPS32 (big-endian)
+$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=mips-linux-musl --output out -f docker/Dockerfile.cross .
+
+# OpenWrt MIPS32 (little-endian)
+$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=mipsel-linux-musl --output out -f docker/Dockerfile.cross .
+
+# ARMv7 / ARM64 static Linux binary (runs standalone on ARM Linux / Android devices)
+$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=arm-linux-musleabihf --output out -f docker/Dockerfile.cross .
+$ DOCKER_BUILDKIT=1 docker build --build-arg TARGET_TRIPLE=aarch64-linux-musl --output out -f docker/Dockerfile.cross .
+```
+
+The exported `out/xfrpc` binary is a fully static musl ELF executable with no shared library dependencies.
+
+### Cross-compile with an existing SDK or toolchain
+
+If you already have a cross-compiler and target sysroot (e.g., OpenWrt SDK or Android NDK):
+
+```shell
+cmake -B build-cross \
+  -DCMAKE_SYSTEM_NAME=Linux \
+  -DCMAKE_C_COMPILER=/path/to/target-gcc \
+  -DCMAKE_FIND_ROOT_PATH=/path/to/target-sysroot \
+  -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+  -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+  -DBUILD_STATIC=ON \
+  -DUSE_WOLFSSL=OFF
+cmake --build build-cross -j
 ```
 
 ### Build on OpenWrt master

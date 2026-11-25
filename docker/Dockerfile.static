@@ -1,0 +1,38 @@
+# Multi-architecture static xfrpc binary builder using Alpine Linux (musl)
+#
+# Usage from repository root:
+#   DOCKER_BUILDKIT=1 docker build --output out -f docker/Dockerfile.static .
+#
+# Multi-arch with docker buildx:
+#   docker buildx build --platform linux/arm64 --output out -f docker/Dockerfile.static .
+#   docker buildx build --platform linux/arm/v7 --output out -f docker/Dockerfile.static .
+#   docker buildx build --platform linux/riscv64 --output out -f docker/Dockerfile.static .
+
+FROM alpine:3.21 AS builder
+
+RUN apk add --no-cache \
+    cmake \
+    make \
+    gcc \
+    musl-dev \
+    linux-headers \
+    openssl-dev \
+    openssl-libs-static \
+    libevent-dev \
+    libevent-static \
+    json-c-dev \
+    zlib-dev \
+    zlib-static
+
+WORKDIR /src
+COPY . .
+
+RUN cmake -B build \
+      -DBUILD_STATIC=ON \
+      -DUSE_WOLFSSL=OFF \
+      -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build -j"$(nproc)" && \
+    strip build/xfrpc
+
+FROM scratch AS export-stage
+COPY --from=builder /src/build/xfrpc /xfrpc

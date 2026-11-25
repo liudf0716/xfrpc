@@ -214,7 +214,7 @@ int get_net_ifname(char *if_buf, int blen)
 			// Check for router specific interfaces
 			if (strcmp(ifa->ifa_name, "br-lan") == 0 || 
 				strcmp(ifa->ifa_name, "br0") == 0) {
-				strncpy(if_buf, ifa->ifa_name, blen);
+				snprintf(if_buf, (size_t)blen, "%s", ifa->ifa_name);
 				freeifaddrs(ifaddr);
 				return 0;
 			}
@@ -222,13 +222,13 @@ int get_net_ifname(char *if_buf, int blen)
 				  ifa->ifa_data != NULL && 
 				  strcmp(ifa->ifa_name, "lo") != 0) {
 			// Store first non-loopback interface as backup
-			strncpy(backup_ifname, ifa->ifa_name, IFNAMSIZ-1);
+			snprintf(backup_ifname, sizeof(backup_ifname), "%s", ifa->ifa_name);
 		}
 	}
 
 	// Use backup interface if router interfaces not found
 	if (backup_ifname[0] != '\0') {
-		strncpy(if_buf, backup_ifname, blen);
+		snprintf(if_buf, (size_t)blen, "%s", backup_ifname);
 		freeifaddrs(ifaddr);
 		return 0;
 	}
@@ -255,7 +255,8 @@ int get_net_ifname(char *if_buf, int blen)
 int dns_unified(const char *dname, char *udname_buf, int udname_buf_len)
 {
 	// Validate input parameters
-	if (!dname || !udname_buf || udname_buf_len < strlen(dname) + 1) {
+	if (!dname || !udname_buf || udname_buf_len <= 0 ||
+	    (size_t)udname_buf_len < strlen(dname) + 1) {
 		return 1;
 	}
 

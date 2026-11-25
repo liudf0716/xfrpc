@@ -22,7 +22,10 @@ struct tcp_redir_service {
     struct sockaddr_in server_addr; /**< server address information */
 };
 
-static struct bufferevent *current_bev = NULL; // Global variable to hold the current connection
+struct tcp_redir_conn {
+    struct bufferevent *bev_in;
+    struct bufferevent *bev_out;
+};
 
 /**
  * @brief Read callback function for handling incoming data
@@ -35,14 +38,15 @@ static struct bufferevent *current_bev = NULL; // Global variable to hold the cu
  */
 static void read_cb(struct bufferevent *bev, void *arg)
 {
-    if (!bev || !arg) {
+    struct tcp_redir_conn *conn = (struct tcp_redir_conn *)arg;
+    if (!bev || !conn) {
         debug(LOG_ERR, "Invalid bufferevent parameters");
         return;
     }
 
-    struct bufferevent *bev_out = (struct bufferevent *)arg;
+    struct bufferevent *bev_out = (bev == conn->bev_in) ? conn->bev_out : conn->bev_in;
     struct evbuffer *input = bufferevent_get_input(bev);
-    struct evbuffer *output = bufferevent_get_output(bev_out);
+    struct evbuffer *output = bev_out ? bufferevent_get_output(bev_out) : NULL;
 
     if (!input || !output) {
         debug(LOG_ERR, "Failed to get buffers");
@@ -68,9 +72,9 @@ static void read_cb(struct bufferevent *bev, void *arg)
  */
 static void event_cb(struct bufferevent *bev, short events, void *arg)
 {
-    struct bufferevent *partner = arg;
+    struct tcp_redir_conn *conn = (struct tcp_redir_conn *)arg;
     
-    if (!bev || !partner) {
+    if (!bev || !conn) {
         debug(LOG_ERR, "Invalid bufferevent parameters");
         return;
     }
@@ -86,80 +90,70 @@ static void event_cb(struct bufferevent *bev, short events, void *arg)
                          "Connection closed by peer";
         debug(LOG_INFO, "%s", msg);
 
-        if (current_bev) {
-            bufferevent_free(bev);
-            bufferevent_free(partner);
-            current_bev = NULL;
-        }
+        if (conn->bev_in)
+            bufferevent_free(conn->bev_in);
+        if (conn->bev_out)
+            bufferevent_free(conn->bev_out);
+        free(conn);
     }
 }
 
 /**
  * @brief Callback function for accepting new TCP connections
  *
- * This callback is triggered when a new TCP connection is received. It handles the following:
- * - Checks if there's already an existing connection (only one allowed)
- * - Creates bufferevent for the local connection
- * - Creates bufferevent for the remote connection
- * - Establishes connection to the remote server
- * - Sets up callbacks and enables events for both local and remote bufferevents
- *
  * @param listener The event listener that received the connection
  * @param fd The socket file descriptor for the new connection
  * @param address The address structure of the connecting client
  * @param socklen The length of the address structure
  * @param arg User-provided argument (tcp_redir_service structure)
- *
- * @note This implementation only allows one active connection at a time
  */
 static void accept_cb(struct evconnlistener *listener, evutil_socket_t fd,
     struct sockaddr *address, int socklen, void *arg)
 {
     struct tcp_redir_service *trs = (struct tcp_redir_service *)arg;
-    struct bufferevent *bev_in = NULL, *bev_out = NULL;
-
-    // Check for existing connection
-    if (current_bev) {
-        debug(LOG_INFO, "Rejecting new connection: only one connection allowed");
+    struct tcp_redir_conn *conn = calloc(1, sizeof(struct tcp_redir_conn));
+    if (!conn) {
         evutil_closesocket(fd);
         return;
     }
 
     // Create local bufferevent
-    bev_in = bufferevent_socket_new(trs->base, fd, 
+    conn->bev_in = bufferevent_socket_new(trs->base, fd, 
                                    BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
-    if (!bev_in) {
+    if (!conn->bev_in) {
         debug(LOG_ERR, "Failed to create local bufferevent");
         evutil_closesocket(fd);
+        free(conn);
         return;
     }
 
     // Create remote bufferevent
-    bev_out = bufferevent_socket_new(trs->base, -1, 
+    conn->bev_out = bufferevent_socket_new(trs->base, -1, 
                                     BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
-    if (!bev_out) {
+    if (!conn->bev_out) {
         debug(LOG_ERR, "Failed to create remote bufferevent");
-        bufferevent_free(bev_in);
+        bufferevent_free(conn->bev_in);
+        free(conn);
         return;
     }
 
     // Connect to remote server
-    if (bufferevent_socket_connect(bev_out, (struct sockaddr *)&(trs->server_addr), 
+    if (bufferevent_socket_connect(conn->bev_out, (struct sockaddr *)&(trs->server_addr), 
                                   sizeof(trs->server_addr)) < 0) {
         debug(LOG_ERR, "Failed to connect to remote server: %s", strerror(errno));
-        bufferevent_free(bev_in);
-        bufferevent_free(bev_out);
+        bufferevent_free(conn->bev_in);
+        bufferevent_free(conn->bev_out);
+        free(conn);
         return;
     }
 
     // Setup callbacks and enable events
-    bufferevent_setcb(bev_in, read_cb, NULL, event_cb, bev_out);
-    bufferevent_setcb(bev_out, read_cb, NULL, event_cb, bev_in);
-    bufferevent_enable(bev_in, EV_READ|EV_WRITE);
-    bufferevent_enable(bev_out, EV_READ|EV_WRITE);
+    bufferevent_setcb(conn->bev_in, read_cb, NULL, event_cb, conn);
+    bufferevent_setcb(conn->bev_out, read_cb, NULL, event_cb, conn);
+    bufferevent_enable(conn->bev_in, EV_READ|EV_WRITE);
+    bufferevent_enable(conn->bev_out, EV_READ|EV_WRITE);
 
-    current_bev = bev_in;
-    debug(LOG_INFO, "Connected to remote server %s:%d", 
+    debug(LOG_INFO, "Connected to remote server %s:%d",
           get_common_config()->server_addr, trs->ps->remote_port);
 }
 

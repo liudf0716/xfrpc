@@ -985,6 +985,9 @@ void xtcp_client_run(struct event_base *base, struct proxy_client *client)
 	struct stun_result sresult;
 	const char *servers[8];
 	int scount = 0;
+	struct common_conf *cc = get_common_config();
+	if (cc && cc->nat_hole_stun_server && *cc->nat_hole_stun_server)
+		servers[scount++] = cc->nat_hole_stun_server;
 	for (int i = 0; default_stun_servers[i] && scount < 7; i++)
 		servers[scount++] = default_stun_servers[i];
 	servers[scount] = NULL;

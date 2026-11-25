@@ -153,6 +153,7 @@ set(CORE_SOURCES
     common.c
     login.c
     tls.c
+    ws_transport.c
     health_check.c
 )
 
@@ -182,6 +183,7 @@ set(PLUGIN_SOURCES
     plugins/httpd.c
     plugins/youtubedl.c
     plugins/https2http.c
+    plugins/std_plugins.c
 )
 
 # Combine all sources

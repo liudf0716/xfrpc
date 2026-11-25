@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 
 #include "config.h"
@@ -100,10 +101,19 @@ static void makedaemon(void)
     /* Set restrictive file permissions */
     umask(0177);
 
-    /* Close standard file descriptors */
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO); 
-    close(STDERR_FILENO);
+    /* Redirect standard file descriptors to /dev/null so new sockets never reuse 0/1/2 */
+    int devnull = open("/dev/null", O_RDWR);
+    if (devnull >= 0) {
+        dup2(devnull, STDIN_FILENO);
+        dup2(devnull, STDOUT_FILENO);
+        dup2(devnull, STDERR_FILENO);
+        if (devnull > STDERR_FILENO)
+            close(devnull);
+    } else {
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        close(STDERR_FILENO);
+    }
 }
 
 /*
@@ -158,7 +168,10 @@ static void usage(const char *appname)
         {"-r",           "Display client run ID"}
     };
 
-    fprintf(stdout, "Usage: %s [options]\n\n", appname);
+    fprintf(stdout, "Usage: %s [subcommand] [options]\n\n", appname);
+    fprintf(stdout, "Subcommands:\n");
+    fprintf(stdout, "  verify -c <file>  Verify config file syntax and exit\n");
+    fprintf(stdout, "  version           Display version information\n\n");
     fprintf(stdout, "Options:\n");
 
     for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); i++) {
@@ -180,8 +193,18 @@ void parse_commandline(int argc, char **argv)
 {
     int c;
     int config_specified = 0;
+    int verify_only = 0;
 
-    while (-1 != (c = getopt(argc, argv, "c:hfd:svr"))) {
+    if (argc >= 2 && strcmp(argv[1], "version") == 0) {
+        fprintf(stdout, "version: " VERSION "\n");
+        exit(0);
+    }
+    if (argc >= 2 && strcmp(argv[1], "verify") == 0) {
+        verify_only = 1;
+        optind = 2;
+    }
+
+    while (-1 != (c = getopt(argc, argv, "c:hfd:svrt"))) {
         switch (c) {
             case 'h':
                 usage(argv[0]);
@@ -239,6 +262,10 @@ void parse_commandline(int argc, char **argv)
                 }
                 break;
 
+            case 't':
+                verify_only = 1;
+                break;
+
             default:
                 usage(argv[0]);
                 exit(1);
@@ -252,6 +279,24 @@ void parse_commandline(int argc, char **argv)
     }
 
     load_config(g_config.config_file);
+
+    if (verify_only) {
+        struct proxy_service *ps = get_all_proxy_services();
+        struct proxy_service *cur, *tmp;
+        HASH_ITER(hh, ps, cur, tmp) {
+            if (!validate_proxy(cur)) {
+                fprintf(stderr, "xfrpc: configuration file %s test failed\n", g_config.config_file);
+                exit(1);
+            }
+        }
+        fprintf(stdout, "xfrpc: the configuration file %s syntax is ok\n", g_config.config_file);
+        exit(0);
+    }
+
+    /* Ignore SIGPIPE so closed sockets return EPIPE instead of terminating xfrpc */
+    set_signal_handler(SIGPIPE, SIG_IGN);
+    /* Install SIGHUP handler for config hot-reload in both foreground and daemon mode */
+    set_signal_handler(SIGHUP, sighup_handler);
 
     if (g_config.is_daemon) {
         makedaemon();

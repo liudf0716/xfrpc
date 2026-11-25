@@ -87,12 +87,13 @@ static int parse_socks5_addr(const uint8_t *buf, int len, int *offset,
 				 * or SOCKS5_ADDRES_LEN to prevent buffer overflow in addr[]. */
 				if (domain_len == 0 ||
 				    domain_len > SOCKS5_MAX_DOMAIN_LEN ||
-				    domain_len > SOCKS5_ADDRES_LEN) {
+				    domain_len >= SOCKS5_ADDRES_LEN) {
 					debug(LOG_ERR, "SOCKS5 domain length %u out of bounds", domain_len);
 					return 0;
 				}
 				if (len < pos + domain_len + 2) return 0;
 				memcpy(addr->addr, buf + pos, domain_len);
+				addr->addr[domain_len] = '\0';
 				pos += domain_len;
 				memcpy(&addr->port, buf + pos, 2);
 				pos += 2;
@@ -270,11 +271,34 @@ void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_
 			if (buf[0] != 0x05) {
 				debug(LOG_ERR, "Unsupported SOCKS version: 0x%02x", buf[0]);
 				client->state = CLOSED;
+				if (c_conf->tcp_mux) {
+					tmux_stream_close(client->ctl_bev, &client->stream);
+				} else {
+					bufferevent_free(client->ctl_bev);
+					client->ctl_bev = NULL;
+					del_proxy_client_by_stream_id(client->stream_id);
+				}
 				return;
 			}
 
-			/* Respond: 選中 NO AUTH (0x00) */
-			uint8_t resp[2] = {0x05, 0x00};
+			size_t consumed = 2 + buf[1]; // VER + NMETHODS + METHODS
+			if (buf_len < consumed) {
+				/* The full list of methods hasn't arrived yet.
+				 * SOCKS5 init greeting is VER(1) + NMETHODS(1) + METHODS(N) */
+				break;
+			}
+
+			int need_auth = (client->ps && ((client->ps->plugin_user && *client->ps->plugin_user) ||
+			                               (client->ps->plugin_pwd && *client->ps->plugin_pwd)));
+			uint8_t chosen_method = need_auth ? 0x02 : 0x00;
+			int method_supported = 0;
+			for (uint8_t mi = 0; mi < buf[1]; mi++) {
+				if (buf[2 + mi] == chosen_method) {
+					method_supported = 1;
+					break;
+				}
+			}
+			uint8_t resp[2] = {0x05, method_supported ? chosen_method : 0xFF};
 			if (!c_conf->tcp_mux) {
 				bufferevent_write(client->ctl_bev, resp, 2);
 			} else {
@@ -287,17 +311,67 @@ void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_
 			}
 			bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FLUSH);
 
-			size_t consumed = 2 + buf[1]; // VER + NMETHODS + METHODS
-			if (buf_len < consumed) {
-				/* The full list of methods hasn't arrived yet. 
-				 * SOCKS5 init greeting is VER(1) + NMETHODS(1) + METHODS(N) */
-				break; 
-			}
-
 			memmove(buf, buf + consumed, buf_len - consumed);
 			client->socks5_buf_len -= consumed;
-			client->state = SOCKS5_HANDSHAKE;
+			if (!method_supported) {
+				client->state = CLOSED;
+				if (c_conf->tcp_mux) {
+					tmux_stream_close(client->ctl_bev, &client->stream);
+				} else {
+					bufferevent_free(client->ctl_bev);
+					client->ctl_bev = NULL;
+					del_proxy_client_by_stream_id(client->stream_id);
+				}
+				return;
+			}
+			client->state = need_auth ? SOCKS5_AUTH : SOCKS5_HANDSHAKE;
 			continue; // Check if next state's data is already in pipe
+		}
+
+		if (client->state == SOCKS5_AUTH) {
+			if (buf_len < 3) break;
+			if (buf[0] != 0x01) {
+				uint8_t aresp[2] = {0x01, 0x01};
+				if (!c_conf->tcp_mux) bufferevent_write(client->ctl_bev, aresp, 2);
+				else {
+					struct evbuffer *tmp = evbuffer_new();
+					if (tmp) { evbuffer_add(tmp, aresp, 2); tmux_stream_write(client->ctl_bev, tmp, &client->stream); evbuffer_free(tmp); }
+				}
+				client->state = CLOSED;
+				return;
+			}
+			uint8_t ulen = buf[1];
+			if (buf_len < (size_t)(3 + ulen)) break;
+			uint8_t plen = buf[2 + ulen];
+			size_t aconsumed = 3 + ulen + plen;
+			if (buf_len < aconsumed) break;
+
+			const char *exp_u = (client->ps && client->ps->plugin_user) ? client->ps->plugin_user : "";
+			const char *exp_p = (client->ps && client->ps->plugin_pwd) ? client->ps->plugin_pwd : "";
+			int ok = (strlen(exp_u) == ulen && memcmp(buf + 2, exp_u, ulen) == 0 &&
+			          strlen(exp_p) == plen && memcmp(buf + 3 + ulen, exp_p, plen) == 0);
+			uint8_t aresp[2] = {0x01, ok ? 0x00 : 0x01};
+			if (!c_conf->tcp_mux) {
+				bufferevent_write(client->ctl_bev, aresp, 2);
+			} else {
+				struct evbuffer *tmp = evbuffer_new();
+				if (tmp) {
+					evbuffer_add(tmp, aresp, 2);
+					tmux_stream_write(client->ctl_bev, tmp, &client->stream);
+					evbuffer_free(tmp);
+				}
+			}
+			bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FLUSH);
+			memmove(buf, buf + aconsumed, buf_len - aconsumed);
+			client->socks5_buf_len -= aconsumed;
+			if (!ok) {
+				client->state = CLOSED;
+				if (c_conf->tcp_mux) tmux_stream_close(client->ctl_bev, &client->stream);
+				else { bufferevent_free(client->ctl_bev); client->ctl_bev = NULL; del_proxy_client_by_stream_id(client->stream_id); }
+				return;
+			}
+			client->state = SOCKS5_HANDSHAKE;
+			continue;
 		}
 
 		if (client->state == SOCKS5_HANDSHAKE) {
@@ -308,6 +382,13 @@ void handle_socks5(struct proxy_client *client, struct bufferevent *bev, uint32_
 				debug(LOG_ERR, "Invalid SOCKS5 request header: %02x %02x %02x", 
 				      buf[0], buf[1], buf[2]);
 				client->state = CLOSED;
+				if (c_conf->tcp_mux) {
+					tmux_stream_close(client->ctl_bev, &client->stream);
+				} else {
+					bufferevent_free(client->ctl_bev);
+					client->ctl_bev = NULL;
+					del_proxy_client_by_stream_id(client->stream_id);
+				}
 				return;
 			}
 
@@ -528,49 +609,84 @@ void proxy_crypto_decode_evbuffer(struct proxy_client *client,
 		crypto_decrypt(client->decrypt_ctx, work_data, len);
 	}
 
-	/* Decompress */
+	/* Decompress using staging buffer so coalesced/split 4-byte framed chunks work cleanly */
 	if (client->use_compression) {
-		/* Check for 4-byte length prefix */
-		if (len >= 4) {
-			uint32_t net_len = 0;
-			memcpy(&net_len, work_data, 4);
-			uint32_t comp_len = ntohl(net_len);
-			if (comp_len > 0 && comp_len == len - 4) {
-				size_t uncomp_len = 0;
-				if (snappy_uncompressed_length((const char *)work_data + 4, comp_len, &uncomp_len) && uncomp_len > 0) {
-					uint8_t *uncomp = malloc(uncomp_len);
-					if (uncomp) {
-						if (snappy_uncompress((const char *)work_data + 4, comp_len, (char *)uncomp) == 0) {
-							evbuffer_add(dst, uncomp, uncomp_len);
-							free(uncomp);
-							free(work_data);
-							return;
+		if (!client->decomp_buf) {
+			client->decomp_buf = evbuffer_new();
+			if (!client->decomp_buf) {
+				free(work_data);
+				return;
+			}
+		}
+		evbuffer_add(client->decomp_buf, work_data, len);
+		free(work_data);
+
+		while (evbuffer_get_length(client->decomp_buf) > 0) {
+			size_t avail = evbuffer_get_length(client->decomp_buf);
+			uint8_t *buf = evbuffer_pullup(client->decomp_buf, avail);
+			if (!buf) break;
+
+			if (avail >= 4) {
+				uint32_t net_len = 0;
+				memcpy(&net_len, buf, 4);
+				uint32_t comp_len = ntohl(net_len);
+				if (comp_len > 0 && comp_len <= 16 * 1024 * 1024) {
+					if (avail >= 4 + (size_t)comp_len) {
+						size_t uncomp_len = 0;
+						if (snappy_uncompressed_length((const char *)buf + 4, comp_len, &uncomp_len) && uncomp_len > 0) {
+							uint8_t *uncomp = malloc(uncomp_len);
+							if (uncomp) {
+								if (snappy_uncompress((const char *)buf + 4, comp_len, (char *)uncomp) == 0) {
+									evbuffer_add(dst, uncomp, uncomp_len);
+									free(uncomp);
+									evbuffer_drain(client->decomp_buf, 4 + (size_t)comp_len);
+									continue;
+								}
+								free(uncomp);
+							}
 						}
-						free(uncomp);
+					} else {
+						/* Wait for remaining bytes unless this is already a complete unframed snappy block */
+						size_t uncomp_len = 0;
+						if (snappy_uncompressed_length((const char *)buf, avail, &uncomp_len) && uncomp_len > 0) {
+							uint8_t *uncomp_data = malloc(uncomp_len);
+							if (uncomp_data) {
+								size_t out_len = uncomp_len;
+								if (xfrpc_decompress(buf, avail, uncomp_data, uncomp_len, &out_len) == 0) {
+									evbuffer_add(dst, uncomp_data, out_len);
+									free(uncomp_data);
+									evbuffer_drain(client->decomp_buf, avail);
+									break;
+								}
+								free(uncomp_data);
+							}
+						}
+						return;
 					}
 				}
 			}
-		}
 
-		/* Try raw snappy block decompression */
-		size_t uncomp_len = 0;
-		if (snappy_uncompressed_length((const char *)work_data, len, &uncomp_len) && uncomp_len > 0) {
-			uint8_t *uncomp_data = malloc(uncomp_len);
-			if (uncomp_data) {
-				size_t out_len = uncomp_len;
-				if (xfrpc_decompress(work_data, len, uncomp_data, uncomp_len, &out_len) == 0) {
-					evbuffer_add(dst, uncomp_data, out_len);
+			/* Try raw snappy block decompression on the buffered bytes */
+			size_t uncomp_len = 0;
+			if (snappy_uncompressed_length((const char *)buf, avail, &uncomp_len) && uncomp_len > 0) {
+				uint8_t *uncomp_data = malloc(uncomp_len);
+				if (uncomp_data) {
+					size_t out_len = uncomp_len;
+					if (xfrpc_decompress(buf, avail, uncomp_data, uncomp_len, &out_len) == 0) {
+						evbuffer_add(dst, uncomp_data, out_len);
+						free(uncomp_data);
+						evbuffer_drain(client->decomp_buf, avail);
+						continue;
+					}
 					free(uncomp_data);
-					free(work_data);
-					return;
 				}
-				free(uncomp_data);
 			}
-		}
 
-		/* Do NOT treat a failed decompress as raw proxy bytes! */
-		debug(LOG_ERR, "Decompression failed for %zu bytes, dropping corrupted block", len);
-		free(work_data);
+			/* Do NOT treat a failed decompress as raw proxy bytes! */
+			debug(LOG_ERR, "Decompression failed for %zu bytes, dropping corrupted block", avail);
+			evbuffer_drain(client->decomp_buf, avail);
+			break;
+		}
 		return;
 	}
 

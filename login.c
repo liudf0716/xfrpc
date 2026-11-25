@@ -106,7 +106,7 @@ void init_login()
 		c_login->user = strdup(c_conf->user);
 	}
 	c_login->metas = NULL;
-	c_login->pool_count = 1;
+	c_login->pool_count = (c_conf && c_conf->pool_count > 0) ? c_conf->pool_count : 1;
 	c_login->privilege_key = NULL;
 	c_login->logged = 0;
 
@@ -188,9 +188,14 @@ int login_resp_check(struct login_resp *lr)
 		  lr->run_id, lr->version);
 
 	// Update run_id
+	char *new_run_id = strdup(lr->run_id);
+	if (!new_run_id) {
+		debug(LOG_ERR, "Failed to allocate memory for run_id");
+		c_login->logged = 0;
+		return 0;
+	}
 	SAFE_FREE(c_login->run_id);
-	c_login->run_id = strdup(lr->run_id);
-	assert(c_login->run_id);
+	c_login->run_id = new_run_id;
 
 	c_login->logged = 1;
 	return 1;

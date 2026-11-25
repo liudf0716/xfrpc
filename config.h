@@ -70,6 +70,32 @@ struct common_conf {
 	/* Identity settings */
 	char    *user;                /* client user name (for visitor auth) */
 
+	/* Lifecycle & selection */
+	int     login_fail_exit;      /* default 1 (exit on login failure) */
+	char    *start_proxies;       /* comma-separated list of enabled proxies/visitors */
+
+	/* NAT hole traversal */
+	char    *nat_hole_stun_server;/* STUN server host:port (default stun.easyvoip.com:3478) */
+
+	/* Pool & dial settings */
+	int     pool_count;           /* pre-created work connection pool count (default 1) */
+	int     dial_server_timeout;  /* seconds (default 10) */
+	int     dial_server_keepalive;/* seconds (default 7200) */
+	char    *connect_server_local_ip; /* local IP to bind when dialing server */
+	char    *proxy_url;           /* HTTP/SOCKS5 proxy URL for dialing server */
+
+	/* TLS advanced */
+	int     tls_disable_custom_first_byte; /* default 1 (frp >= 0.50) */
+
+	/* Auth additional scopes */
+	char    *auth_additional_scopes; /* comma-separated: HeartBeats, NewWorkConns */
+
+	/* UDP & Logging */
+	int     udp_packet_size;      /* default 1500 */
+	char    *log_to;              /* log destination ("console", file path) */
+	char    *log_level;           /* "trace", "debug", "info", "warn", "error" */
+	int     log_max_days;         /* log retention days */
+
 	/* Environment settings */
 	int     is_router;            /* indicates if running on router (OpenWrt/LEDE) */
 };

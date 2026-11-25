@@ -24,15 +24,19 @@ int deflate_write(uint8_t *source, int len, uint8_t **dest, int *wlen, int gzip)
 {
 	int ret;
 	unsigned have;
+	if (!source || len < 0 || !dest || !wlen)
+		return Z_STREAM_ERROR;
+
 	z_stream strm = {
 		.zalloc = Z_NULL,
 		.zfree = Z_NULL,
 		.opaque = Z_NULL,
-		.avail_in = len,
+		.avail_in = (uInt)len,
 		.next_in = source
 	};
 	unsigned char out[CHUNK] = {0};
 	int totalsize = 0;
+	uint8_t *buf = NULL;
 
 	/* Initialize deflate */
 	if (gzip) {
@@ -51,21 +55,36 @@ int deflate_write(uint8_t *source, int len, uint8_t **dest, int *wlen, int gzip)
 		strm.next_out = out;
 		ret = deflate(&strm, Z_FINISH);
 
-		if (ret < 0 && ret != Z_STREAM_END) {
+		if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT ||
+		    (ret < 0 && ret != Z_BUF_ERROR)) {
+			free(buf);
 			deflateEnd(&strm);
 			return (ret == Z_NEED_DICT) ? Z_DATA_ERROR : ret;
 		}
 
 		have = CHUNK - strm.avail_out;
-		totalsize += have;
-		*dest = realloc(*dest, totalsize);
-		memcpy(*dest + totalsize - have, out, have);
+		if (have > 0) {
+			uint8_t *nb = realloc(buf, (size_t)totalsize + have);
+			if (!nb) {
+				free(buf);
+				deflateEnd(&strm);
+				return Z_MEM_ERROR;
+			}
+			buf = nb;
+			memcpy(buf + totalsize, out, have);
+			totalsize += (int)have;
+		}
 	} while (strm.avail_out == 0);
 
 	/* Clean up and set output length */
 	deflateEnd(&strm);
+	if (ret != Z_STREAM_END) {
+		free(buf);
+		return Z_DATA_ERROR;
+	}
+	*dest = buf;
 	*wlen = totalsize;
-	return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
+	return Z_OK;
 }
 
 /**
@@ -82,18 +101,22 @@ int inflate_read(uint8_t *source, int len, uint8_t **dest, int *rlen, int gzip)
 {  
 	int ret;  
 	unsigned have;  
+	if (!source || len < 0 || !dest || !rlen)
+		return Z_STREAM_ERROR;
+
 	z_stream strm = {
 		.zalloc = Z_NULL,
 		.zfree = Z_NULL,
 		.opaque = Z_NULL,
-		.avail_in = len,
+		.avail_in = (uInt)len,
 		.next_in = source
 	};  
 	unsigned char out[CHUNK] = {0};  
 	int totalsize = 0;  
+	uint8_t *buf = NULL;
 
-	/* Initialize inflate */
-	ret = gzip ? inflateInit2(&strm, -MAX_WBITS) : inflateInit(&strm);
+	/* Initialize inflate: match deflate_write's windowBits | GZIP_ENCODING */
+	ret = gzip ? inflateInit2(&strm, windowBits | GZIP_ENCODING) : inflateInit(&strm);
 	if (ret != Z_OK)  
 		return ret;  
 
@@ -103,19 +126,33 @@ int inflate_read(uint8_t *source, int len, uint8_t **dest, int *rlen, int gzip)
 		strm.next_out = out;  
 		ret = inflate(&strm, Z_NO_FLUSH);   
 
-		if (ret < 0) {
+		if (ret == Z_NEED_DICT || (ret < 0 && ret != Z_BUF_ERROR)) {
+			free(buf);
 			inflateEnd(&strm);  
 			return (ret == Z_NEED_DICT) ? Z_DATA_ERROR : ret;
 		}
 
 		have = CHUNK - strm.avail_out;  
-		totalsize += have;  
-		*dest = realloc(*dest, totalsize);  
-		memcpy(*dest + totalsize - have, out, have);  
+		if (have > 0) {
+			uint8_t *nb = realloc(buf, (size_t)totalsize + have);
+			if (!nb) {
+				free(buf);
+				inflateEnd(&strm);
+				return Z_MEM_ERROR;
+			}
+			buf = nb;
+			memcpy(buf + totalsize, out, have);  
+			totalsize += (int)have;  
+		}
 	} while (strm.avail_out == 0);  
 
 	/* Clean up and set output length */
 	inflateEnd(&strm);  
+	if (ret != Z_STREAM_END) {
+		free(buf);
+		return Z_DATA_ERROR;
+	}
+	*dest = buf;
 	*rlen = totalsize;
-	return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;  
+	return Z_OK;  
 }

@@ -348,8 +348,12 @@ static void hc_http_event_cb(struct bufferevent *bev, short what, void *arg)
 		int n = snprintf(request, sizeof(request),
 						 "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
 						 url, host);
+		if (n < 0 || (size_t)n >= sizeof(request)) {
+			debug(LOG_ERR, "Health check [%s]: HTTP request exceeds buffer", entry->proxy_name);
+			n = (int)(sizeof(request) - 1);
+		}
 
-		bufferevent_write(bev, request, n);
+		bufferevent_write(bev, request, (size_t)n);
 
 		/* Switch to reading response */
 		entry->state = HC_READING;

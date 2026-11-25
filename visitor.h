@@ -29,6 +29,8 @@ struct visitor_conf {
 	UT_hash_handle hh;
 };
 
+struct visitor_session;
+
 /* Runtime visitor instance */
 struct visitor_instance {
 	struct visitor_conf         *conf;
@@ -36,6 +38,14 @@ struct visitor_instance {
 	struct evconnlistener       *listener;
 	struct bufferevent          *ctl_bev;    /* Connection to frps */
 	struct tmux_stream           stream;
+
+	/* SUDP visitor UDP socket & active tunnel session */
+	int                          udp_fd;
+	struct event                *udp_ev;
+	struct visitor_session      *sudp_sess;
+	struct evbuffer             *sudp_pending;
+	struct sockaddr_in           sudp_peer_addr;
+	int                          sudp_peer_valid;
 
 	/* Hash handling */
 	UT_hash_handle               hh;

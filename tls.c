@@ -110,7 +110,8 @@ int tls_init(void)
 	/* Set minimum TLS version to 1.2 */
 	SSL_CTX_set_min_proto_version(g_ssl_ctx, TLS1_2_VERSION);
 
-	/* Load trusted CA certificate for server verification */
+	/* Load system default CA store first, and optionally combine with custom CA file (frp v0.72.0) */
+	SSL_CTX_set_default_verify_paths(g_ssl_ctx);
 	if (conf->tls_trusted_ca_file) {
 		if (SSL_CTX_load_verify_locations(g_ssl_ctx, conf->tls_trusted_ca_file, NULL) != 1) {
 			debug(LOG_ERR, "[TLS] Failed to load CA file: %s", conf->tls_trusted_ca_file);
@@ -119,12 +120,9 @@ int tls_init(void)
 			g_ssl_ctx = NULL;
 			return -1;
 		}
-		/* Enable certificate verification */
 		SSL_CTX_set_verify(g_ssl_ctx, SSL_VERIFY_PEER, tls_verify_callback);
-		debug(LOG_DEBUG, "[TLS] CA file loaded: %s", conf->tls_trusted_ca_file);
+		debug(LOG_DEBUG, "[TLS] CA file loaded (combined with system CAs): %s", conf->tls_trusted_ca_file);
 	} else {
-		/* No CA file: still verify peer but use system defaults */
-		SSL_CTX_set_default_verify_paths(g_ssl_ctx);
 		SSL_CTX_set_verify(g_ssl_ctx, SSL_VERIFY_PEER, tls_verify_callback);
 		debug(LOG_DEBUG, "[TLS] Using system default CA store");
 	}
@@ -177,13 +175,14 @@ int tls_init(void)
  */
 struct bufferevent *tls_wrap_bev(struct event_base *base, struct bufferevent *bev)
 {
-	if (!g_ssl_ctx) {
-		debug(LOG_ERR, "[TLS] SSL context not initialized");
+	if (!bev) {
+		debug(LOG_ERR, "[TLS] NULL bufferevent to wrap");
 		return NULL;
 	}
 
-	if (!bev) {
-		debug(LOG_ERR, "[TLS] NULL bufferevent to wrap");
+	if (!g_ssl_ctx) {
+		debug(LOG_ERR, "[TLS] SSL context not initialized");
+		bufferevent_free(bev);
 		return NULL;
 	}
 
@@ -191,6 +190,7 @@ struct bufferevent *tls_wrap_bev(struct event_base *base, struct bufferevent *be
 	evutil_socket_t fd = bufferevent_getfd(bev);
 	if (fd < 0) {
 		debug(LOG_ERR, "[TLS] Cannot get fd from bufferevent");
+		bufferevent_free(bev);
 		return NULL;
 	}
 
@@ -223,7 +223,7 @@ struct bufferevent *tls_wrap_bev(struct event_base *base, struct bufferevent *be
 		debug(LOG_DEBUG, "[TLS] SNI set to: %s", conf->tls_server_name);
 	}
 
-	/* Set hostname for verification (skip for raw IP addresses) */
+	/* Set hostname or IP SAN for verification */
 	SSL_set_hostflags(ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
 	if (sni_host) {
 		struct in_addr addr4;
@@ -233,11 +233,34 @@ struct bufferevent *tls_wrap_bev(struct event_base *base, struct bufferevent *be
 		if (!is_ip) {
 			SSL_set1_host(ssl, sni_host);
 		} else {
-			debug(LOG_DEBUG, "[TLS] Skipping hostname verification for IP address: %s", sni_host);
+			X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
+			if (param)
+				X509_VERIFY_PARAM_set1_ip_asc(param, sni_host);
 		}
 	}
 
 	/* Create SSL-wrapped bufferevent */
+	if (conf && !conf->tls_disable_custom_first_byte) {
+		/* Legacy frp (< 0.50) custom TLS first byte 0x17 */
+		struct bufferevent *plain_bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
+		if (!plain_bev) {
+			SSL_free(ssl);
+			evutil_closesocket(fd);
+			return NULL;
+		}
+		static const uint8_t custom_byte = 0x17;
+		bufferevent_write(plain_bev, &custom_byte, 1);
+		struct bufferevent *ssl_bev = bufferevent_openssl_filter_new(
+			base, plain_bev, ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE);
+		if (!ssl_bev) {
+			tls_log_errors("bufferevent_openssl_filter_new");
+			SSL_free(ssl);
+			bufferevent_free(plain_bev);
+			return NULL;
+		}
+		return ssl_bev;
+	}
+
 	int sock_err = 0;
 	socklen_t err_len = sizeof(sock_err);
 	getsockopt(fd, SOL_SOCKET, SO_ERROR, &sock_err, &err_len);
@@ -297,11 +320,11 @@ int tls_load_certs_to_ctx(void *vctx)
 			debug(LOG_ERR, "[TLS/QUIC] Failed to load CA: %s",
 			      conf->tls_trusted_ca_file);
 			tls_log_errors("QUIC CA load");
-		} else {
-			SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
-			debug(LOG_INFO, "[TLS/QUIC] CA loaded: %s",
-			      conf->tls_trusted_ca_file);
+			return -1;
 		}
+		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+		debug(LOG_INFO, "[TLS/QUIC] CA loaded: %s",
+		      conf->tls_trusted_ca_file);
 	} else {
 		/* No CA file: still verify the peer against system defaults
 		 * instead of silently running unverified. */

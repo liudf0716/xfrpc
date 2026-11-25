@@ -12,6 +12,8 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <pwd.h>
+#include <glob.h>
+#include <libgen.h>
 
 #include "ini.h"
 #include "toml_parser.h"
@@ -65,18 +67,33 @@ struct common_conf *get_common_config(void)
  */
 void free_common_config(void)
 {
-	struct common_conf *c_conf = get_common_config();
 	if (!c_conf)
 		return;
 	SAFE_FREE(c_conf->server_addr);
 	SAFE_FREE(c_conf->auth_token);
+	SAFE_FREE(c_conf->auth_method);
+	SAFE_FREE(c_conf->oidc_client_id);
+	SAFE_FREE(c_conf->oidc_client_secret);
+	SAFE_FREE(c_conf->oidc_audience);
+	SAFE_FREE(c_conf->oidc_scope);
+	SAFE_FREE(c_conf->oidc_token_endpoint_url);
+	SAFE_FREE(c_conf->oidc_trusted_ca_file);
+	SAFE_FREE(c_conf->oidc_proxy_url);
 	SAFE_FREE(c_conf->tls_cert_file);
 	SAFE_FREE(c_conf->tls_key_file);
 	SAFE_FREE(c_conf->tls_trusted_ca_file);
 	SAFE_FREE(c_conf->tls_server_name);
 	SAFE_FREE(c_conf->user);
+	SAFE_FREE(c_conf->start_proxies);
+	SAFE_FREE(c_conf->nat_hole_stun_server);
+	SAFE_FREE(c_conf->connect_server_local_ip);
+	SAFE_FREE(c_conf->proxy_url);
+	SAFE_FREE(c_conf->auth_additional_scopes);
+	SAFE_FREE(c_conf->log_to);
+	SAFE_FREE(c_conf->log_level);
 	SAFE_FREE(c_conf->protocol);
 	SAFE_FREE(c_conf->wire_protocol);
+	SAFE_FREE(c_conf);
 }
 
 /**
@@ -391,8 +408,20 @@ int validate_proxy(struct proxy_service *ps)
 
 	// Common validation for services needing local endpoints
 	int is_uds = is_uds_proxy(ps);
+	int is_no_endpoint_plugin = (ps->plugin && (
+		strcmp(ps->plugin, "socks5") == 0 ||
+		strcmp(ps->plugin, "http_proxy") == 0 ||
+		strcmp(ps->plugin, "static_file") == 0 ||
+		strcmp(ps->plugin, "telnetd") == 0 ||
+		strcmp(ps->plugin, "httpd") == 0 ||
+		strcmp(ps->plugin, "instaloader") == 0 ||
+		strcmp(ps->plugin, "youtubedl") == 0));
 	if (ps->plugin && strcmp(ps->plugin, "unix_domain_socket") == 0 && !ps->plugin_unix_path) {
 		debug(LOG_ERR, "Proxy [%s] error: Plugin unix_domain_socket requires plugin_unix_path", ps->proxy_name);
+		return 0;
+	}
+	if (ps->plugin && strcmp(ps->plugin, "static_file") == 0 && !ps->s_root_dir) {
+		debug(LOG_ERR, "Proxy [%s] error: Plugin static_file requires plugin.localPath", ps->proxy_name);
 		return 0;
 	}
 	if (is_https2http_proxy(ps)) {
@@ -414,7 +443,7 @@ int validate_proxy(struct proxy_service *ps)
 			return 0;
 		}
 	}
-	int needs_local_endpoint = !is_uds && (strcmp(ps->proxy_type, "tcp") == 0 ||
+	int needs_local_endpoint = !is_uds && !is_no_endpoint_plugin && (strcmp(ps->proxy_type, "tcp") == 0 ||
 							  strcmp(ps->proxy_type, "udp") == 0 ||
 							  strcmp(ps->proxy_type, "http") == 0 ||
 							  strcmp(ps->proxy_type, "https") == 0 ||
@@ -704,10 +733,11 @@ static int proxy_service_handler(void *user, const char *sect, const char *nm, c
 		return 0;
 	}
 
-	// Route visitor sections to visitor parser
-	if (strstr(sect, "visitor") != NULL) {
-		parse_visitor_section(sect, nm, value);
-		return 0;
+	// Route visitor sections (must match parse_visitor_section naming: *visitor*:name)
+	const char *colon = strchr(sect, ':');
+	const char *vmarker = strstr(sect, "visitor");
+	if (colon && vmarker && vmarker < colon) {
+		return parse_visitor_section(sect, nm, value);
 	}
 
 	// Strip "proxy:" prefix if present (e.g., [proxy:stcp_ssh] -> stcp_ssh)
@@ -980,7 +1010,98 @@ static void init_common_conf(struct common_conf *config) {
 	config->tls_key_file = NULL;
 	config->tls_trusted_ca_file = NULL;
 	config->tls_server_name = NULL;
+	config->login_fail_exit = 0; /* INI default: stay alive on login failure; TOML sets 1 */
+	config->start_proxies = NULL;
+	config->nat_hole_stun_server = strdup("stun.easyvoip.com:3478");
+	config->pool_count = 1;
+	config->dial_server_timeout = 10;
+	config->dial_server_keepalive = 7200;
+	config->connect_server_local_ip = NULL;
+	config->proxy_url = NULL;
+	config->tls_disable_custom_first_byte = 1;
+	config->auth_additional_scopes = NULL;
+	config->udp_packet_size = 1500;
+	config->log_to = NULL;
+	config->log_level = NULL;
+	config->log_max_days = 3;
 	config->is_router = 0;
+}
+
+/**
+ * @brief Parse frp bandwidth limit string (e.g. "1MB", "500KB", "1024B") to bytes/sec.
+ */
+static uint64_t parse_bandwidth_limit(const char *str)
+{
+	if (!str || !*str)
+		return 0;
+	char *end = NULL;
+	double val = strtod(str, &end);
+	if (val <= 0 || end == str)
+		return 0;
+	while (*end == ' ' || *end == '\t')
+		end++;
+	if (*end == '\0' || strcasecmp(end, "B") == 0)
+		return (uint64_t)val;
+	if (strcasecmp(end, "KB") == 0 || strcasecmp(end, "K") == 0)
+		return (uint64_t)(val * 1024.0);
+	if (strcasecmp(end, "MB") == 0 || strcasecmp(end, "M") == 0)
+		return (uint64_t)(val * 1024.0 * 1024.0);
+	if (strcasecmp(end, "GB") == 0 || strcasecmp(end, "G") == 0)
+		return (uint64_t)(val * 1024.0 * 1024.0 * 1024.0);
+	return 0;
+}
+
+/**
+ * @brief Check if proxy/visitor name is allowed by c_conf->start_proxies (if set).
+ */
+static int is_name_in_start_list(const char *name)
+{
+	if (!c_conf || !c_conf->start_proxies || !*c_conf->start_proxies)
+		return 1;
+	if (!name)
+		return 0;
+	char *copy = strdup(c_conf->start_proxies);
+	if (!copy)
+		return 1;
+	int found = 0;
+	char *saveptr = NULL;
+	for (char *tok = strtok_r(copy, ",", &saveptr); tok; tok = strtok_r(NULL, ",", &saveptr)) {
+		while (*tok == ' ' || *tok == '\t') tok++;
+		size_t len = strlen(tok);
+		while (len > 0 && (tok[len - 1] == ' ' || tok[len - 1] == '\t'))
+			tok[--len] = '\0';
+		if (strcmp(tok, name) == 0) {
+			found = 1;
+			break;
+		}
+	}
+	free(copy);
+	return found;
+}
+
+/**
+ * @brief Apply log.level / log.to settings to debugconf.
+ */
+static void apply_log_config(void)
+{
+	if (!c_conf)
+		return;
+	if (c_conf->log_level) {
+		if (strcasecmp(c_conf->log_level, "trace") == 0 ||
+		    strcasecmp(c_conf->log_level, "debug") == 0) {
+			debugconf.debuglevel = LOG_DEBUG;
+		} else if (strcasecmp(c_conf->log_level, "info") == 0) {
+			debugconf.debuglevel = LOG_INFO;
+		} else if (strcasecmp(c_conf->log_level, "warn") == 0 ||
+		           strcasecmp(c_conf->log_level, "warning") == 0) {
+			debugconf.debuglevel = LOG_WARNING;
+		} else if (strcasecmp(c_conf->log_level, "error") == 0) {
+			debugconf.debuglevel = LOG_ERR;
+		}
+	}
+	if (c_conf->log_to && strcmp(c_conf->log_to, "console") == 0) {
+		debugconf.log_stderr = 1;
+	}
 }
 
 /**
@@ -1049,6 +1170,7 @@ static void load_toml_common(struct toml_doc *doc)
 	const char *v;
 
 	/* Server settings */
+	c_conf->login_fail_exit = 1; /* frp TOML default is true */
 	if ((v = toml_get(root, "serverAddr"))) {
 		SAFE_FREE(c_conf->server_addr);
 		c_conf->server_addr = strdup(v);
@@ -1060,12 +1182,28 @@ static void load_toml_common(struct toml_doc *doc)
 		SAFE_FREE(c_conf->user);
 		c_conf->user = strdup(v);
 	}
+	if ((v = toml_get(root, "loginFailExit")))
+		c_conf->login_fail_exit = is_true(v);
+	if ((v = toml_get(root, "start"))) {
+		SAFE_FREE(c_conf->start_proxies);
+		c_conf->start_proxies = strdup(v);
+	}
+	if ((v = toml_get(root, "natHoleSTUNServer"))) {
+		SAFE_FREE(c_conf->nat_hole_stun_server);
+		c_conf->nat_hole_stun_server = strdup(v);
+	}
+	if ((v = toml_get(root, "udpPacketSize")))
+		c_conf->udp_packet_size = atoi(v);
 
 	/* Auth */
 	if ((v = toml_get(root, "auth.token"))) {
 		SAFE_FREE(c_conf->auth_token);
 		c_conf->auth_token = strdup(v);
 		assert(c_conf->auth_token);
+	}
+	if ((v = toml_get(root, "auth.additionalScopes"))) {
+		SAFE_FREE(c_conf->auth_additional_scopes);
+		c_conf->auth_additional_scopes = strdup(v);
 	}
 
 	/* OIDC Auth */
@@ -1119,6 +1257,27 @@ static void load_toml_common(struct toml_doc *doc)
 	}
 	if ((v = toml_get(root, "transport.tcpMux")))
 		c_conf->tcp_mux = is_true(v);
+	if ((v = toml_get(root, "transport.poolCount"))) {
+		c_conf->pool_count = atoi(v);
+		if (c_conf->pool_count < 0)
+			c_conf->pool_count = 1;
+	}
+	if ((v = toml_get(root, "transport.dialServerTimeout")))
+		c_conf->dial_server_timeout = atoi(v);
+	if ((v = toml_get(root, "transport.dialServerKeepalive")))
+		c_conf->dial_server_keepalive = atoi(v);
+	if ((v = toml_get(root, "transport.connectServerLocalIP"))) {
+		SAFE_FREE(c_conf->connect_server_local_ip);
+		c_conf->connect_server_local_ip = strdup(v);
+	}
+	if ((v = toml_get(root, "transport.proxyURL"))) {
+		SAFE_FREE(c_conf->proxy_url);
+		c_conf->proxy_url = strdup(v);
+		debug(LOG_WARNING, "transport.proxyURL (%s) is not yet supported for dialing frps, ignoring", v);
+	} else if (getenv("http_proxy") && *getenv("http_proxy")) {
+		SAFE_FREE(c_conf->proxy_url);
+		c_conf->proxy_url = strdup(getenv("http_proxy"));
+	}
 	if ((v = toml_get(root, "transport.heartbeatInterval")))
 		c_conf->heartbeat_interval = atoi(v);
 	if ((v = toml_get(root, "transport.heartbeatTimeout")))
@@ -1127,6 +1286,8 @@ static void load_toml_common(struct toml_doc *doc)
 	/* TLS */
 	if ((v = toml_get(root, "transport.tls.enable")))
 		c_conf->tls_enable = is_true(v);
+	if ((v = toml_get(root, "transport.tls.disableCustomTLSFirstByte")))
+		c_conf->tls_disable_custom_first_byte = is_true(v);
 	if ((v = toml_get(root, "transport.tls.certFile"))) {
 		SAFE_FREE(c_conf->tls_cert_file);
 		c_conf->tls_cert_file = strdup(v);
@@ -1147,6 +1308,19 @@ static void load_toml_common(struct toml_doc *doc)
 	/* QUIC */
 	if ((v = toml_get(root, "quicBindPort")))
 		c_conf->quic_bind_port = atoi(v);
+
+	/* Logging */
+	if ((v = toml_get(root, "log.to"))) {
+		SAFE_FREE(c_conf->log_to);
+		c_conf->log_to = strdup(v);
+	}
+	if ((v = toml_get(root, "log.level"))) {
+		SAFE_FREE(c_conf->log_level);
+		c_conf->log_level = strdup(v);
+	}
+	if ((v = toml_get(root, "log.maxDays")))
+		c_conf->log_max_days = atoi(v);
+	apply_log_config();
 }
 
 /**
@@ -1209,6 +1383,24 @@ static void load_toml_proxies(struct toml_doc *doc)
 			ps->use_encryption = is_true(v);
 		if ((v = toml_get(sec, "transport.useCompression")))
 			ps->use_compression = is_true(v);
+		if ((v = toml_get(sec, "transport.bandwidthLimit"))) {
+			ps_set_string(&ps->bandwidth_limit, v);
+			ps->bandwidth_limit_bps = parse_bandwidth_limit(v);
+		}
+		if ((v = toml_get(sec, "transport.bandwidthLimitMode")))
+			ps_set_string(&ps->bandwidth_limit_mode, v);
+		if ((v = toml_get(sec, "transport.proxyProtocolVersion")))
+			ps_set_string(&ps->proxy_protocol_version, v);
+
+		/* Metadatas & Annotations */
+		{
+			const char *meta_pairs = xfrpc_toml_get_table_pairs(sec, "metadatas");
+			if (meta_pairs) ps_set_string(&ps->metadatas, meta_pairs);
+			const char *ann_pairs = xfrpc_toml_get_table_pairs(sec, "annotations");
+			if (ann_pairs) ps_set_string(&ps->annotations, ann_pairs);
+		}
+		if ((v = toml_get(sec, "natTraversal.disableAssistedAddrs")))
+			ps->disable_assisted_addrs = is_true(v);
 
 		/* HTTP/HTTPS */
 		if ((v = toml_get(sec, "customDomains")))
@@ -1243,7 +1435,11 @@ static void load_toml_proxies(struct toml_doc *doc)
 			ps_set_string(&ps->plugin, v);
 		if ((v = toml_get(sec, "plugin.httpUser")))
 			ps_set_string(&ps->plugin_user, v);
+		else if ((v = toml_get(sec, "plugin.username")))
+			ps_set_string(&ps->plugin_user, v);
 		if ((v = toml_get(sec, "plugin.httpPassword")))
+			ps_set_string(&ps->plugin_pwd, v);
+		else if ((v = toml_get(sec, "plugin.password")))
 			ps_set_string(&ps->plugin_pwd, v);
 		if ((v = toml_get(sec, "plugin.unixPath")))
 			ps_set_string(&ps->plugin_unix_path, v);
@@ -1253,13 +1449,20 @@ static void load_toml_proxies(struct toml_doc *doc)
 			ps_set_string(&ps->plugin_key_path, v);
 		if ((v = toml_get(sec, "plugin.hostHeaderRewrite")))
 			ps_set_string(&ps->plugin_host_header_rewrite, v);
+		if ((v = toml_get(sec, "plugin.stripPrefix")))
+			ps_set_string(&ps->plugin_strip_prefix, v);
 		if ((v = toml_get(sec, "plugin.localAddr"))) {
+			ps_set_string(&ps->plugin_local_addr, v);
 			if (parse_local_addr(v, &ps->local_ip, &ps->local_port) < 0) {
 				debug(LOG_ERR, "Proxy [%s] error: Invalid plugin.localAddr [%s]", name, v);
 			}
 		}
 		if ((v = toml_get(sec, "plugin.localPath")))
 			ps_set_string(&ps->s_root_dir, v);
+		{
+			const char *prh_pairs = xfrpc_toml_get_table_pairs(sec, "plugin.requestHeaders.set");
+			if (prh_pairs) ps_set_string(&ps->plugin_request_headers, prh_pairs);
+		}
 
 		/* TCPMux */
 		if ((v = toml_get(sec, "multiplexer")))
@@ -1288,6 +1491,11 @@ static void load_toml_proxies(struct toml_doc *doc)
 		/* Enabled flag (frp uses 'enabled' to disable proxies) */
 		if ((v = toml_get(sec, "enabled")) && !is_true(v)) {
 			debug(LOG_DEBUG, "Proxy [%s] is disabled, skipping", name);
+			free_proxy_service(ps);
+			continue;
+		}
+		if (!is_name_in_start_list(name)) {
+			debug(LOG_DEBUG, "Proxy [%s] not in 'start' list, skipping", name);
 			free_proxy_service(ps);
 			continue;
 		}
@@ -1330,6 +1538,16 @@ static void load_toml_visitors(struct toml_doc *doc)
 
 		const char *v;
 
+		/* Enabled check before registering visitor */
+		if ((v = toml_get(sec, "enabled")) && !is_true(v)) {
+			debug(LOG_DEBUG, "Visitor [%s] is disabled, skipping", name);
+			continue;
+		}
+		if (!is_name_in_start_list(name)) {
+			debug(LOG_DEBUG, "Visitor [%s] not in 'start' list, skipping", name);
+			continue;
+		}
+
 		/* Map TOML visitor fields to INI-style key names */
 		if ((v = toml_get(sec, "type")))
 			parse_visitor_section(sect_name, "type", v);
@@ -1347,12 +1565,6 @@ static void load_toml_visitors(struct toml_doc *doc)
 			parse_visitor_section(sect_name, "use_compression", v);
 		if ((v = toml_get(sec, "fallbackTo")))
 			parse_visitor_section(sect_name, "fallback_to", v);
-
-		/* Enabled check */
-		if ((v = toml_get(sec, "enabled")) && !is_true(v)) {
-			debug(LOG_DEBUG, "Visitor [%s] is disabled, skipping", name);
-			continue;
-		}
 
 		debug(LOG_DEBUG, "TOML: loaded visitor [%s] type=%s", name, vtype);
 	}
@@ -1393,6 +1605,11 @@ static void load_toml_config(const char *confile)
 			c_conf->tcp_mux = 0;
 		}
 	}
+	/* WSS protocol always enables TLS without custom 0x17 first byte */
+	if (c_conf->protocol && strcmp(c_conf->protocol, "wss") == 0) {
+		c_conf->tls_enable = 1;
+		c_conf->tls_disable_custom_first_byte = 1;
+	}
 
 	dump_common_conf();
 	validate_heartbeat_config();
@@ -1402,6 +1619,49 @@ static void load_toml_config(const char *confile)
 
 	/* Load visitors */
 	load_toml_visitors(doc);
+
+	/* Load included TOML files (includes) */
+	{
+		void *root = toml_find_array_section(doc, "", -1);
+		const char *inc_list = root ? toml_get(root, "includes") : NULL;
+		if (inc_list && *inc_list) {
+			char *confile_copy = strdup(confile);
+			char *base_dir = confile_copy ? dirname(confile_copy) : ".";
+			char *copy = strdup(inc_list);
+			char *saveptr = NULL;
+			for (char *pat = strtok_r(copy, ",", &saveptr); pat; pat = strtok_r(NULL, ",", &saveptr)) {
+				while (*pat == ' ' || *pat == '\t') pat++;
+				size_t plen = strlen(pat);
+				while (plen > 0 && (pat[plen - 1] == ' ' || pat[plen - 1] == '\t'))
+					pat[--plen] = '\0';
+				if (!*pat) continue;
+				char full_pat[1024];
+				if (pat[0] == '/') {
+					snprintf(full_pat, sizeof(full_pat), "%s", pat);
+				} else {
+					snprintf(full_pat, sizeof(full_pat), "%s/%s", base_dir, pat);
+				}
+				glob_t gl;
+				if (glob(full_pat, GLOB_TILDE, NULL, &gl) == 0) {
+					for (size_t gi = 0; gi < gl.gl_pathc; gi++) {
+						struct toml_doc *inc_doc = NULL;
+						if (toml_parse_file(gl.gl_pathv[gi], &inc_doc) == 0 && inc_doc) {
+							debug(LOG_DEBUG, "Loading included TOML file: %s", gl.gl_pathv[gi]);
+							load_toml_proxies(inc_doc);
+							load_toml_visitors(inc_doc);
+							toml_doc_free(inc_doc);
+						} else {
+							debug(LOG_ERR, "Failed to parse included TOML file: %s", gl.gl_pathv[gi]);
+							exit(EXIT_FAILURE);
+						}
+					}
+					globfree(&gl);
+				}
+			}
+			free(copy);
+			free(confile_copy);
+		}
+	}
 
 	dump_all_ps();
 
@@ -1514,6 +1774,11 @@ void free_proxy_service(struct proxy_service *ps)
 
 	SAFE_FREE(ps->proxy_name);
 	SAFE_FREE(ps->proxy_type);
+	SAFE_FREE(ps->bandwidth_limit);
+	SAFE_FREE(ps->bandwidth_limit_mode);
+	SAFE_FREE(ps->proxy_protocol_version);
+	SAFE_FREE(ps->metadatas);
+	SAFE_FREE(ps->annotations);
 	SAFE_FREE(ps->local_ip);
 	SAFE_FREE(ps->custom_domains);
 	SAFE_FREE(ps->subdomain);
@@ -1521,6 +1786,8 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->host_header_rewrite);
 	SAFE_FREE(ps->http_user);
 	SAFE_FREE(ps->http_pwd);
+	SAFE_FREE(ps->request_headers);
+	SAFE_FREE(ps->response_headers);
 	SAFE_FREE(ps->group);
 	SAFE_FREE(ps->group_key);
 	SAFE_FREE(ps->plugin);
@@ -1530,6 +1797,9 @@ void free_proxy_service(struct proxy_service *ps)
 	SAFE_FREE(ps->plugin_crt_path);
 	SAFE_FREE(ps->plugin_key_path);
 	SAFE_FREE(ps->plugin_host_header_rewrite);
+	SAFE_FREE(ps->plugin_strip_prefix);
+	SAFE_FREE(ps->plugin_local_addr);
+	SAFE_FREE(ps->plugin_request_headers);
 	SAFE_FREE(ps->s_root_dir);
 	SAFE_FREE(ps->bind_addr);
 	SAFE_FREE(ps->multiplexer);

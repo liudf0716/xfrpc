@@ -35,6 +35,11 @@
 
 #include "common.h"
 #include "uthash.h"
+#include "mongoose.h"
+#include "crypto.h"
+#include "crypto_stream.h"
+#include "proxy.h"
+#include "wire_v2.h"
 
 /* ---- global state ---- */
 
@@ -165,18 +170,26 @@ enum visitor_sess_state {
 
 struct visitor_session {
 	struct visitor_conf     *conf;
+	struct visitor_instance *vi;         /* backpointer for SUDP */
 	struct bufferevent      *user_bev;   /* local user connection */
 	struct bufferevent      *frps_bev;   /* connection to frps (legacy, unused in tmux mode) */
+	struct bufferevent      *sudp_pair_bev; /* SUDP framing pair[1] */
+	struct msg_hdr          *pending_msg; /* pre-built NewVisitorConn before connect */
 	struct proxy_client     *client;     /* tmux stream proxy client */
 	enum visitor_sess_state  state;
 	int                      tls_done;   /* TLS already wrapped */
+	int                      is_sudp;
 };
 
 static void visitor_session_free(struct visitor_session *sess)
 {
 	if (!sess) return;
+	if (sess->vi && sess->vi->sudp_sess == sess)
+		sess->vi->sudp_sess = NULL;
+	if (sess->sudp_pair_bev) bufferevent_free(sess->sudp_pair_bev);
 	if (sess->user_bev) bufferevent_free(sess->user_bev);
 	if (sess->frps_bev) bufferevent_free(sess->frps_bev);
+	if (sess->pending_msg) free(sess->pending_msg);
 	free(sess);
 }
 
@@ -220,6 +233,8 @@ static void tunnel_event_cb(struct bufferevent *bev, short what, void *ctx)
 		visitor_session_free(sess);
 	}
 }
+
+static void sudp_send_encoded(struct visitor_session *sess, const void *data, size_t len);
 
 /* ---- frps response handling ---- */
 
@@ -319,6 +334,17 @@ static void visitor_frps_recv_cb(struct bufferevent *bev, void *ctx)
 			struct evbuffer *dst = bufferevent_get_output(sess->user_bev);
 			evbuffer_add_buffer(dst, src);
 		}
+		if (sess->is_sudp && sess->vi && sess->vi->sudp_pending && sess->sudp_pair_bev) {
+			size_t plen = evbuffer_get_length(sess->vi->sudp_pending);
+			if (plen > 0) {
+				uint8_t *pbuf = malloc(plen);
+				if (pbuf) {
+					evbuffer_remove(sess->vi->sudp_pending, pbuf, plen);
+					sudp_send_encoded(sess, pbuf, plen);
+					free(pbuf);
+				}
+			}
+		}
 		return;
 	}
 
@@ -355,15 +381,16 @@ static void visitor_frps_event_cb(struct bufferevent *bev, short what, void *ctx
 		}
 
 		/* Send the pre-built NewVisitorConn msg_hdr */
-		struct msg_hdr *hdr = (struct msg_hdr *)sess->frps_bev;
+		struct msg_hdr *hdr = sess->pending_msg;
 		if (hdr) {
 			size_t total = sizeof(struct msg_hdr) + msg_ntoh(hdr->length);
 			debug(LOG_DEBUG, "Visitor [%s]: sending NewVisitorConn for proxy '%s'",
 				sess->conf->visitor_name, sess->conf->server_name);
 			bufferevent_write(bev, hdr, total);
 			free(hdr);
-			sess->frps_bev = bev; /* now store the real connection bev */
+			sess->pending_msg = NULL;
 		}
+		sess->frps_bev = bev; /* store the real connection bev */
 
 		/* Wait for NewVisitorConnResp */
 		sess->state = VSESS_WAIT_RESP;
@@ -421,51 +448,281 @@ static void visitor_user_event_cb(struct bufferevent *bev, short what, void *ctx
 	}
 }
 
+/* Forward declaration for SUDP */
+static void visitor_start_session(struct event_base *base,
+	struct visitor_instance *vi, struct bufferevent *user_bev,
+	struct bufferevent *sudp_pair_bev, int is_sudp);
+
+/* ---- SUDP framing callbacks ---- */
+
+static void sudp_send_encoded(struct visitor_session *sess, const void *data, size_t len)
+{
+	if (!sess || !sess->sudp_pair_bev || len == 0) return;
+	struct evbuffer *out = bufferevent_get_output(sess->sudp_pair_bev);
+	if (sess->client && (sess->client->use_encryption || sess->client->use_compression)) {
+		struct evbuffer *plain = evbuffer_new();
+		if (plain) {
+			evbuffer_add(plain, data, len);
+			proxy_crypto_encode_evbuffer(sess->client, plain, out);
+			evbuffer_free(plain);
+		}
+	} else {
+		evbuffer_add(out, data, len);
+	}
+}
+
+static void sudp_pair_read_cb(struct bufferevent *bev, void *ctx)
+{
+	struct visitor_session *sess = (struct visitor_session *)ctx;
+	if (!sess || !sess->vi || sess->vi->udp_fd < 0) return;
+
+	struct evbuffer *raw_in = bufferevent_get_input(bev);
+	struct evbuffer *in = raw_in;
+	if (sess->client && (sess->client->use_encryption || sess->client->use_compression)) {
+		if (!sess->client->decomp_buf)
+			sess->client->decomp_buf = evbuffer_new();
+		if (!sess->client->decomp_buf) return;
+		proxy_crypto_decode_evbuffer(sess->client, raw_in, sess->client->decomp_buf);
+		in = sess->client->decomp_buf;
+	}
+
+	if (wire_protocol_is_v2()) {
+		size_t avail;
+		while ((avail = evbuffer_get_length(in)) > 0) {
+			const uint8_t *buf = evbuffer_pullup(in, (ssize_t)avail);
+			uint16_t ftype = 0;
+			const uint8_t *payload = NULL;
+			uint32_t plen = 0;
+			int consumed = wire_v2_parse_frame(buf, avail, &ftype, &payload, &plen);
+			if (consumed == 0) break;
+			if (consumed < 0) {
+				evbuffer_drain(in, avail);
+				return;
+			}
+			uint8_t *v1 = NULL;
+			size_t v1_len = 0;
+			if (ftype == WIRE_V2_FRAME_MESSAGE &&
+			    wire_v2_payload_to_v1(payload, plen, &v1, &v1_len) == 0 && v1) {
+				struct msg_hdr *hdr = (struct msg_hdr *)v1;
+				if (hdr->type == TypeUDPPacket && v1_len > sizeof(struct msg_hdr)) {
+					size_t jsz = v1_len - sizeof(struct msg_hdr);
+					char *jbuf = malloc(jsz + 1);
+					if (jbuf) {
+						memcpy(jbuf, hdr->data, jsz);
+						jbuf[jsz] = '\0';
+						struct udp_packet *pkt = udp_packet_unmarshal(jbuf);
+						free(jbuf);
+						if (pkt && pkt->content) {
+							size_t clen = strlen(pkt->content);
+							uint8_t *raw = malloc(clen + 4);
+							if (raw) {
+								size_t rlen = mg_base64_decode(pkt->content, clen, (char *)raw, clen + 4);
+								if (rlen > 0 && sess->vi->sudp_peer_valid) {
+									sendto(sess->vi->udp_fd, raw, rlen, 0,
+										(struct sockaddr *)&sess->vi->sudp_peer_addr,
+										sizeof(sess->vi->sudp_peer_addr));
+								}
+								free(raw);
+							}
+						}
+						if (pkt) udp_packet_free(pkt);
+					}
+				}
+				free(v1);
+			}
+			evbuffer_drain(in, (size_t)consumed);
+		}
+		return;
+	}
+
+	while (evbuffer_get_length(in) >= sizeof(struct msg_hdr)) {
+		struct msg_hdr hdr;
+		evbuffer_copyout(in, &hdr, sizeof(hdr));
+		uint64_t dlen = msg_ntoh(hdr.length);
+		if (dlen > 65536) {
+			evbuffer_drain(in, evbuffer_get_length(in));
+			return;
+		}
+		size_t total = sizeof(struct msg_hdr) + (size_t)dlen;
+		if (evbuffer_get_length(in) < total)
+			break;
+
+		char *frame = malloc(total + 1);
+		if (!frame) return;
+		evbuffer_remove(in, frame, total);
+		frame[total] = '\0';
+
+		if (hdr.type == TypeUDPPacket) {
+			const char *json = frame + sizeof(struct msg_hdr);
+			struct udp_packet *pkt = udp_packet_unmarshal(json);
+			if (pkt && pkt->content) {
+				size_t clen = strlen(pkt->content);
+				uint8_t *raw = malloc(clen + 4);
+				if (raw) {
+					size_t rlen = mg_base64_decode(pkt->content, clen, (char *)raw, clen + 4);
+					if (rlen > 0 && sess->vi->sudp_peer_valid) {
+						sendto(sess->vi->udp_fd, raw, rlen, 0,
+							(struct sockaddr *)&sess->vi->sudp_peer_addr,
+							sizeof(sess->vi->sudp_peer_addr));
+					}
+					free(raw);
+				}
+			}
+			if (pkt) udp_packet_free(pkt);
+		}
+		free(frame);
+	}
+}
+
+static void sudp_user_read_cb(evutil_socket_t fd, short what, void *ctx)
+{
+	(void)what;
+	struct visitor_instance *vi = (struct visitor_instance *)ctx;
+	if (!vi || !vi->conf) return;
+
+	uint8_t buf[4096];
+	struct sockaddr_in peer;
+	socklen_t peerlen = sizeof(peer);
+	ssize_t n = recvfrom(fd, buf, sizeof(buf), 0, (struct sockaddr *)&peer, &peerlen);
+	debug(LOG_DEBUG, "SUDP Visitor [%s]: recvfrom n=%zd", vi->conf->visitor_name, n);
+	if (n <= 0) return;
+
+	vi->sudp_peer_addr = peer;
+	vi->sudp_peer_valid = 1;
+
+	/* Base64 encode payload and marshal TypeUDPPacket */
+	size_t b64_cap = ((size_t)n * 4) / 3 + 8;
+	char *b64 = malloc(b64_cap);
+	if (!b64) return;
+	mg_base64_encode(buf, (size_t)n, b64, b64_cap);
+
+	char ipbuf[INET_ADDRSTRLEN] = {0};
+	inet_ntop(AF_INET, &peer.sin_addr, ipbuf, sizeof(ipbuf));
+
+	struct udp_addr laddr = {
+		.addr = vi->conf->bind_addr ? vi->conf->bind_addr : "127.0.0.1",
+		.port = vi->conf->bind_port,
+		.zone = ""
+	};
+	struct udp_addr raddr = {
+		.addr = ipbuf,
+		.port = ntohs(peer.sin_port),
+		.zone = ""
+	};
+	struct udp_packet pkt = {
+		.content = b64,
+		.laddr = &laddr,
+		.raddr = &raddr
+	};
+	char *json_str = NULL;
+	if (new_udp_packet_marshal(&pkt, &json_str) < 0 || !json_str) {
+		SAFE_FREE(json_str);
+		free(b64);
+		return;
+	}
+	free(b64);
+	size_t jlen = strlen(json_str);
+
+	uint8_t *frame = NULL;
+	size_t frame_len = 0;
+	if (wire_protocol_is_v2()) {
+		if (wire_v2_encode_message(TypeUDPPacket, json_str, jlen, &frame, &frame_len) < 0 || !frame) {
+			free(json_str);
+			return;
+		}
+	} else {
+		struct msg_hdr hdr;
+		hdr.type = TypeUDPPacket;
+		hdr.length = msg_hton((uint64_t)jlen);
+		frame_len = sizeof(hdr) + jlen;
+		frame = malloc(frame_len);
+		if (!frame) {
+			free(json_str);
+			return;
+		}
+		memcpy(frame, &hdr, sizeof(hdr));
+		memcpy(frame + sizeof(hdr), json_str, jlen);
+	}
+	free(json_str);
+
+	if (vi->sudp_sess && vi->sudp_sess->state == VSESS_TUNNEL && vi->sudp_sess->sudp_pair_bev) {
+		sudp_send_encoded(vi->sudp_sess, frame, frame_len);
+	} else {
+		if (!vi->sudp_pending)
+			vi->sudp_pending = evbuffer_new();
+		if (vi->sudp_pending) {
+			evbuffer_add(vi->sudp_pending, frame, frame_len);
+		}
+		if (!vi->sudp_sess) {
+			struct bufferevent *pair[2] = {NULL, NULL};
+			if (bufferevent_pair_new(vi->base, BEV_OPT_CLOSE_ON_FREE, pair) == 0) {
+				bufferevent_setcb(pair[1], sudp_pair_read_cb, NULL, NULL, NULL);
+				bufferevent_enable(pair[1], EV_READ | EV_WRITE);
+				visitor_start_session(vi->base, vi, pair[0], pair[1], 1);
+			}
+		}
+	}
+	free(frame);
+}
+
 /* ---- local listener accept callback ---- */
 
 static void visitor_accept_cb(struct evconnlistener *listener,
 	evutil_socket_t fd, struct sockaddr *addr, int socklen, void *ctx)
 {
+	(void)addr;
+	(void)socklen;
 	struct visitor_instance *vi = (struct visitor_instance *)ctx;
 	if (!vi || !vi->conf) return;
 
 	debug(LOG_INFO, "Visitor [%s]: new local connection (fd=%d)",
 		vi->conf->visitor_name, fd);
 
+	struct event_base *base = evconnlistener_get_base(listener);
+	struct bufferevent *user_bev = bufferevent_socket_new(base, fd,
+		BEV_OPT_CLOSE_ON_FREE);
+	if (!user_bev) {
+		close(fd);
+		return;
+	}
+
 	/* Route XTCP visitors to the dedicated XTCP handler */
 	if (vi->conf->visitor_type &&
 	    strcmp(vi->conf->visitor_type, "xtcp") == 0) {
-		struct event_base *base = evconnlistener_get_base(listener);
-		struct bufferevent *user_bev = bufferevent_socket_new(base, fd,
-			BEV_OPT_CLOSE_ON_FREE);
-		if (!user_bev) {
-			close(fd);
-			return;
-		}
 		xtcp_visitor_run(base, vi, user_bev);
 		return;
 	}
 
-	struct event_base *base = evconnlistener_get_base(listener);
+	visitor_start_session(base, vi, user_bev, NULL, 0);
+}
+
+static void visitor_start_session(struct event_base *base,
+	struct visitor_instance *vi, struct bufferevent *user_bev,
+	struct bufferevent *sudp_pair_bev, int is_sudp)
+{
 	struct common_conf *c_conf = get_common_config();
 
 	/* Create session */
 	struct visitor_session *sess = calloc(1, sizeof(struct visitor_session));
 	if (!sess) {
-		close(fd);
+		bufferevent_free(user_bev);
+		if (sudp_pair_bev) bufferevent_free(sudp_pair_bev);
 		return;
 	}
 	sess->conf = vi->conf;
+	sess->vi = vi;
 	sess->state = VSESS_CONNECTING;
-
-	/* User bev */
-	sess->user_bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
-	if (!sess->user_bev) {
-		free(sess);
-		close(fd);
-		return;
+	sess->user_bev = user_bev;
+	sess->sudp_pair_bev = sudp_pair_bev;
+	sess->is_sudp = is_sudp;
+	if (is_sudp) {
+		vi->sudp_sess = sess;
+		if (sudp_pair_bev) {
+			bufferevent_setcb(sudp_pair_bev, sudp_pair_read_cb, NULL, NULL, sess);
+		}
+	} else {
+		bufferevent_setcb(sess->user_bev, NULL, NULL, visitor_user_event_cb, sess);
 	}
-	bufferevent_setcb(sess->user_bev, NULL, NULL, visitor_user_event_cb, sess);
 	bufferevent_enable(sess->user_bev, EV_READ | EV_WRITE);
 
 	/* Use control connection's tmux to send NewVisitorConn (same as frpc) */
@@ -482,6 +739,19 @@ static void visitor_accept_cb(struct evconnlistener *listener,
 	client->local_proxy_bev = NULL; /* Defer binding until handshake OK */
 	client->visitor_ctx = sess;
 	sess->client = client; /* reverse link for data forwarding */
+
+	if (is_sudp) {
+		client->use_encryption = sess->conf->use_encryption;
+		client->use_compression = sess->conf->use_compression;
+		if (client->use_encryption) {
+			const char *tok = c_conf->auth_token ? c_conf->auth_token : "";
+			uint8_t key[16];
+			if (crypto_derive_key(tok, key) == 0) {
+				client->encrypt_ctx = crypto_ctx_new_writer(key);
+				client->decrypt_ctx = crypto_ctx_new_reader(key);
+			}
+		}
+	}
 
 	if (c_conf->tcp_mux) {
 		/* Send WINDOW_UPDATE + NewVisitorConn through tmux stream */
@@ -599,18 +869,19 @@ static void visitor_accept_cb(struct evconnlistener *listener,
 		json_object_put(jreq);
 		SAFE_FREE(sign_key);
 
-		/* Store the pre-built message in frps_bev for the event callback */
-		sess->frps_bev = (struct bufferevent *)hdr; /* temporarily store msg */
+		/* Store the pre-built message in pending_msg until frps connects */
+		sess->pending_msg = hdr;
+		sess->frps_bev = NULL;
 		sess->state = VSESS_CONNECTING;
 
 		/* Create TCP connection to frps */
 		struct bufferevent *conn_bev = bufferevent_socket_new(base, -1,
 			BEV_OPT_CLOSE_ON_FREE);
 		if (!conn_bev) {
-			free(hdr);
 			visitor_session_free(sess);
 			return;
 		}
+		sess->frps_bev = conn_bev;
 
 		struct sockaddr_in sin;
 		memset(&sin, 0, sizeof(sin));
@@ -626,8 +897,6 @@ static void visitor_accept_cb(struct evconnlistener *listener,
 				(struct sockaddr *)&sin, sizeof(sin)) < 0) {
 			debug(LOG_ERR, "Visitor [%s]: failed to connect to frps",
 				vi->conf->visitor_name);
-			free(hdr);
-			bufferevent_free(conn_bev);
 			visitor_session_free(sess);
 			return;
 		}
@@ -653,6 +922,40 @@ static int init_visitor(struct event_base *base, struct visitor_conf *vc)
 			vc->visitor_name, vc->bind_addr);
 		free(vi);
 		return -1;
+	}
+
+	vi->udp_fd = -1;
+	if (vc->visitor_type && strcmp(vc->visitor_type, "sudp") == 0) {
+		int ufd = socket(AF_INET, SOCK_DGRAM, 0);
+		if (ufd < 0) {
+			debug(LOG_ERR, "Visitor [%s]: failed to create UDP socket: %s",
+				vc->visitor_name, strerror(errno));
+			free(vi);
+			return -1;
+		}
+		int reuse = 1;
+		setsockopt(ufd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+		evutil_make_socket_nonblocking(ufd);
+		if (bind(ufd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+			debug(LOG_ERR, "Visitor [%s]: failed to bind UDP %s:%d — %s",
+				vc->visitor_name, vc->bind_addr, vc->bind_port, strerror(errno));
+			close(ufd);
+			free(vi);
+			return -1;
+		}
+		vi->udp_fd = ufd;
+		vi->udp_ev = event_new(base, ufd, EV_READ | EV_PERSIST, sudp_user_read_cb, vi);
+		if (!vi->udp_ev || event_add(vi->udp_ev, NULL) < 0) {
+			if (vi->udp_ev) event_free(vi->udp_ev);
+			close(ufd);
+			free(vi);
+			return -1;
+		}
+		HASH_ADD_KEYPTR(hh, all_visitors, vc->visitor_name,
+			strlen(vc->visitor_name), vi);
+		debug(LOG_INFO, "SUDP Visitor [%s]: listening UDP on %s:%d -> proxy '%s'",
+			vc->visitor_name, vc->bind_addr, vc->bind_port, vc->server_name);
+		return 0;
 	}
 
 	vi->listener = evconnlistener_new_bind(base, visitor_accept_cb, vi,
@@ -737,6 +1040,17 @@ void handle_visitor_conn_resp(const char *resp_json, struct proxy_client *pc)
 		struct visitor_session *sess = (struct visitor_session *)pc->visitor_ctx;
 		pc->local_proxy_bev = sess->user_bev;
 		sess->state = VSESS_TUNNEL;
+		if (sess->is_sudp && sess->vi && sess->vi->sudp_pending && sess->sudp_pair_bev) {
+			size_t plen = evbuffer_get_length(sess->vi->sudp_pending);
+			if (plen > 0) {
+				uint8_t *pbuf = malloc(plen);
+				if (pbuf) {
+					evbuffer_remove(sess->vi->sudp_pending, pbuf, plen);
+					sudp_send_encoded(sess, pbuf, plen);
+					free(pbuf);
+				}
+			}
+		}
 		debug(LOG_INFO, "Visitor [%s]: handshake OK, entering tunnel mode (tmux)",
 			sess->conf->visitor_name);
 	}
@@ -750,6 +1064,16 @@ void free_all_visitor_instances(void)
 	HASH_ITER(hh, all_visitors, vi, tmp) {
 		if (vi->listener) {
 			evconnlistener_free(vi->listener);
+		}
+		if (vi->udp_ev) {
+			event_del(vi->udp_ev);
+			event_free(vi->udp_ev);
+		}
+		if (vi->udp_fd >= 0) {
+			close(vi->udp_fd);
+		}
+		if (vi->sudp_pending) {
+			evbuffer_free(vi->sudp_pending);
 		}
 		HASH_DEL(all_visitors, vi);
 		free(vi);

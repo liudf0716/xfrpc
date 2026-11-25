@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
-#include <errno.h>
+#include <limits.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -35,6 +35,7 @@
 #include "tcpmux.h"
 #include "proxy.h"
 #include "tls.h"
+#include "ws_transport.h"
 #include "commandline.h"
 #include "health_check.h"
 #include "quic_client_transport.h"
@@ -437,8 +438,23 @@ static void ping(void)
 		return;
 	}
 
-	// Send empty ping message
+	struct common_conf *c_conf = get_common_config();
+	char ping_buf[256];
 	const char *ping_msg = "{}";
+	if (c_conf && c_conf->auth_additional_scopes &&
+	    strstr(c_conf->auth_additional_scopes, "HeartBeats") != NULL &&
+	    c_conf->auth_token) {
+		time_t ts = time(NULL);
+		char *pkey = get_auth_key(c_conf->auth_token, &ts);
+		if (pkey) {
+			snprintf(ping_buf, sizeof(ping_buf),
+				 "{\"privilege_key\":\"%s\",\"timestamp\":%lld}",
+				 pkey, (long long)ts);
+			ping_msg = ping_buf;
+			free(pkey);
+		}
+	}
+
 	send_enc_msg_frp_server(main_ctl->connect_bev, 
 						   TypePing, 
 						   ping_msg, 
@@ -573,11 +589,36 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 		return quic_open_work_stream(base);
 	}
 
-	// Create new bufferevent socket
-	struct bufferevent *bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+	// Create new bufferevent socket (optionally bound to connect_server_local_ip)
+	evutil_socket_t pre_fd = -1;
+	if (c_conf && c_conf->connect_server_local_ip && *c_conf->connect_server_local_ip &&
+	    strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
+		pre_fd = socket(AF_INET, SOCK_STREAM, 0);
+		if (pre_fd >= 0) {
+			evutil_make_socket_nonblocking(pre_fd);
+			struct sockaddr_in lsin;
+			memset(&lsin, 0, sizeof(lsin));
+			lsin.sin_family = AF_INET;
+			if (inet_pton(AF_INET, c_conf->connect_server_local_ip, &lsin.sin_addr) == 1) {
+				if (bind(pre_fd, (struct sockaddr *)&lsin, sizeof(lsin)) < 0) {
+					debug(LOG_WARNING, "Failed to bind local IP %s: %s",
+					      c_conf->connect_server_local_ip, strerror(errno));
+				}
+			}
+		}
+	}
+
+	struct bufferevent *bev = bufferevent_socket_new(base, pre_fd, BEV_OPT_CLOSE_ON_FREE);
 	if (!bev) {
+		if (pre_fd >= 0) evutil_closesocket(pre_fd);
 		debug(LOG_ERR, "Failed to create new bufferevent socket");
 		return NULL;
+	}
+
+	if (c_conf && c_conf->dial_server_timeout > 0 &&
+	    strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
+		struct timeval tv = { .tv_sec = c_conf->dial_server_timeout, .tv_usec = 0 };
+		bufferevent_set_timeouts(bev, NULL, &tv);
 	}
 
 	// For IP addresses, connect directly without DNS
@@ -609,11 +650,19 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 		return NULL;
 	}
 
-	// Disable Nagle's algorithm for lower latency on all TCP connections
+	// Disable Nagle's algorithm and configure TCP keepalive
 	int fd = bufferevent_getfd(bev);
 	if (fd >= 0) {
 		int one = 1;
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+		if (c_conf && c_conf->dial_server_keepalive > 0 &&
+		    strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
+			setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+#ifdef TCP_KEEPIDLE
+			int idle = c_conf->dial_server_keepalive;
+			setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+#endif
+		}
 	}
 
 	// Wrap with TLS if enabled AND target is the frps server
@@ -622,7 +671,6 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 		debug(LOG_DEBUG, "TLS check: tls_is_enabled=%d, name=%s, port=%d", _tls_on, name, port);
 	}
 	if (tls_is_enabled()) {
-		struct common_conf *c_conf = get_common_config();
 		if (c_conf && strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
 			debug(LOG_DEBUG, "TLS wrapping connection to %s:%d", name, port);
 			struct bufferevent *ssl_bev = tls_wrap_bev(base, bev);
@@ -631,8 +679,16 @@ struct bufferevent *connect_server(struct event_base *base, const char *name, co
 				/* bev was consumed/freed by tls_wrap_bev on failure */
 				return NULL;
 			}
-			return ssl_bev;
+			bev = ssl_bev;
 		}
+	}
+
+	if (c_conf && c_conf->protocol &&
+	    (strcmp(c_conf->protocol, "wss") == 0 || strcmp(c_conf->protocol, "websocket") == 0) &&
+	    strcmp(name, c_conf->server_addr) == 0 && port == c_conf->server_port) {
+		const char *ws_host = (c_conf->tls_server_name && *c_conf->tls_server_name)
+			? c_conf->tls_server_name : name;
+		return ws_wrap_bev(base, bev, ws_host, port, strcmp(c_conf->protocol, "wss") == 0);
 	}
 
 	return bev;
@@ -1031,6 +1087,70 @@ int data_len = (int)msg_hton(msg->length);
     struct proxy_client *client = (struct proxy_client *)ctx;
     client->ps = ps;
 
+    /* Build HAProxy Proxy Protocol v1/v2 header if configured */
+    if (ps->proxy_protocol_version && sr->src_addr && sr->dst_addr) {
+        SAFE_FREE(client->pp_header);
+        client->pp_header_len = 0;
+        if (strcmp(ps->proxy_protocol_version, "v1") == 0) {
+            struct in6_addr v6;
+            const char *proto = (inet_pton(AF_INET6, sr->src_addr, &v6) == 1) ? "TCP6" : "TCP4";
+            char ppbuf[256];
+            int n = snprintf(ppbuf, sizeof(ppbuf), "PROXY %s %s %s %u %u\r\n",
+                             proto, sr->src_addr, sr->dst_addr,
+                             sr->src_port, sr->dst_port);
+            if (n > 0 && n < (int)sizeof(ppbuf)) {
+                client->pp_header = malloc((size_t)n);
+                if (client->pp_header) {
+                    memcpy(client->pp_header, ppbuf, (size_t)n);
+                    client->pp_header_len = (size_t)n;
+                }
+            }
+        } else if (strcmp(ps->proxy_protocol_version, "v2") == 0) {
+            static const uint8_t sig[12] = {
+                0x0d, 0x0a, 0x0d, 0x0a, 0x00, 0x0d, 0x0a, 0x51, 0x55, 0x49, 0x54, 0x0a
+            };
+            struct in_addr src4, dst4;
+            struct in6_addr src6, dst6;
+            if (inet_pton(AF_INET, sr->src_addr, &src4) == 1 &&
+                inet_pton(AF_INET, sr->dst_addr, &dst4) == 1) {
+                uint8_t *buf = malloc(28);
+                if (buf) {
+                    memcpy(buf, sig, 12);
+                    buf[12] = 0x21; /* v2 | PROXY */
+                    buf[13] = 0x11; /* AF_INET | STREAM */
+                    buf[14] = 0x00;
+                    buf[15] = 12;
+                    memcpy(buf + 16, &src4.s_addr, 4);
+                    memcpy(buf + 20, &dst4.s_addr, 4);
+                    uint16_t sp = htons(sr->src_port);
+                    uint16_t dp = htons(sr->dst_port);
+                    memcpy(buf + 24, &sp, 2);
+                    memcpy(buf + 26, &dp, 2);
+                    client->pp_header = buf;
+                    client->pp_header_len = 28;
+                }
+            } else if (inet_pton(AF_INET6, sr->src_addr, &src6) == 1 &&
+                       inet_pton(AF_INET6, sr->dst_addr, &dst6) == 1) {
+                uint8_t *buf = malloc(52);
+                if (buf) {
+                    memcpy(buf, sig, 12);
+                    buf[12] = 0x21; /* v2 | PROXY */
+                    buf[13] = 0x21; /* AF_INET6 | STREAM */
+                    buf[14] = 0x00;
+                    buf[15] = 36;
+                    memcpy(buf + 16, &src6, 16);
+                    memcpy(buf + 32, &dst6, 16);
+                    uint16_t sp = htons(sr->src_port);
+                    uint16_t dp = htons(sr->dst_port);
+                    memcpy(buf + 48, &sp, 2);
+                    memcpy(buf + 50, &dp, 2);
+                    client->pp_header = buf;
+                    client->pp_header_len = 52;
+                }
+            }
+        }
+    }
+
     int remaining_len = len - sizeof(struct msg_hdr) - msg_hton(msg->length);
     debug(LOG_DEBUG, "Proxy service [%s] [%s:%d] starting work connection. Remaining data length %d",
           sr->proxy_name, ps->local_ip, ps->local_port, remaining_len);
@@ -1066,7 +1186,13 @@ int data_len = (int)msg_hton(msg->length);
         return;
     }
 
+    uint32_t sid = client->stream_id;
     start_xfrp_tunnel(client);
+    /* start_xfrp_tunnel may delete & free client on setup failure */
+    if (get_proxy_client(sid) != client) {
+        start_work_conn_resp_free(sr);
+        return;
+    }
     set_client_work_start(client, 1);
     if (is_udp_proxy(client->ps) && client->udp_rx_buf &&
         evbuffer_get_length(client->udp_rx_buf) > 0) {
@@ -1248,11 +1374,24 @@ static int validate_login_msg(const struct msg_hdr *mhdr) {
  * @param mhdr Pointer to the message header structure containing login response
  * @return Returns status code: 0 on success, negative value on failure
  */
-static int process_login_response(const struct msg_hdr *mhdr) {
+static int process_login_response(const struct msg_hdr *mhdr, int len) {
 	/* mhdr->data points into an evbuffer and is NOT null-terminated.
 	 * json_tokener_parse requires a C string, so we must copy and
 	 * null-terminate before passing it. */
-	int data_len = (int)msg_hton(mhdr->length);
+	if (len < (int)sizeof(struct msg_hdr)) {
+		debug(LOG_ERR, "Login response buffer too short (%d bytes)", len);
+		return 0;
+	}
+
+	uint64_t raw_len = msg_hton(mhdr->length);
+	uint64_t max_payload = (uint64_t)(len - (int)sizeof(struct msg_hdr));
+	if (raw_len > max_payload || raw_len > (uint64_t)(INT_MAX - 1)) {
+		debug(LOG_ERR, "Invalid login response length %llu (buffer %d)",
+		      (unsigned long long)raw_len, len);
+		return 0;
+	}
+
+	size_t data_len = (size_t)raw_len;
 	char *json_str = malloc(data_len + 1);
 	if (!json_str) {
 		debug(LOG_ERR, "Failed to allocate login response buffer");
@@ -1273,6 +1412,11 @@ static int process_login_response(const struct msg_hdr *mhdr) {
 
 	if (!success) {
 		debug(LOG_ERR, "Login validation failed");
+		struct common_conf *c_conf = get_common_config();
+		if (c_conf && c_conf->login_fail_exit) {
+			debug(LOG_ERR, "loginFailExit is enabled, exiting");
+			exit(1);
+		}
 		return 0;
 	}
 
@@ -1293,8 +1437,8 @@ static int process_login_response(const struct msg_hdr *mhdr) {
  */
 static int handle_login_response(const uint8_t *buf, int len)
 {
-	if (!buf || len <= 0) {
-		debug(LOG_ERR, "Invalid input parameters");
+	if (!buf || len < (int)sizeof(struct msg_hdr)) {
+		debug(LOG_ERR, "Invalid login response buffer (%d bytes)", len);
 		return 0;
 	}
 
@@ -1303,7 +1447,7 @@ static int handle_login_response(const uint8_t *buf, int len)
 		return 0;
 	}
 
-	if (!process_login_response(mhdr)) {
+	if (!process_login_response(mhdr, len)) {
 		return 0;
 	}
 
@@ -1394,8 +1538,8 @@ static void v2_dispatch_v1_buf(uint8_t *v1, size_t v1_len, void *ctx)
 		free(v1);
 	} else {
 		handle_control_work(v1, (int)v1_len, ctx);
-		if (ctx)
-			free(v1);
+		/* In wire v2, handle_control_work never frees buf regardless of ctx */
+		free(v1);
 	}
 }
 
@@ -1437,10 +1581,11 @@ static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 				trigger_reconnect();
 				return;
 			}
-			if (v2_init_aead_from_hello(pl, plen) != 0) {
+			int hello_rc = v2_init_aead_from_hello(pl, plen);
+			memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
+			st->v2_rx_len -= (size_t)n;
+			if (hello_rc != 0) {
 				debug(LOG_ERR, "v2 failed to process ServerHello, reconnecting");
-				memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
-				st->v2_rx_len -= (size_t)n;
 				trigger_reconnect();
 				return;
 			}
@@ -1448,6 +1593,7 @@ static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 			uint8_t *v1 = NULL;
 			size_t v1_len = 0;
 			int is_start_work = 0;
+			uint32_t sid = ctx ? ((struct proxy_client *)ctx)->stream_id : 0;
 			if (wire_v2_payload_to_v1(pl, plen, &v1, &v1_len) == 0) {
 				if (v1 && v1_len >= sizeof(struct msg_hdr)) {
 					struct msg_hdr *mh = (struct msg_hdr *)v1;
@@ -1456,6 +1602,10 @@ static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 				}
 				v2_dispatch_v1_buf(v1, v1_len, ctx);
 			}
+			/* Dispatch may free client/stream (e.g. failed StartWorkConn) */
+			if (ctx && get_proxy_client(sid) != (struct proxy_client *)ctx)
+				return;
+
 			memmove(st->v2_rx, st->v2_rx + n, st->v2_rx_len - (size_t)n);
 			st->v2_rx_len -= (size_t)n;
 
@@ -1497,22 +1647,28 @@ static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 		if (!ctx && is_login && v2_got_hello && !v2_aead_ready) {
 			v2_aead_ready = 1;
 			if (st->v2_rx_len) {
-				if (aead_reader_feed(&v2_ar, st->v2_rx, st->v2_rx_len) == 0 &&
-				    v2_ar.pt_len > 0) {
+				if (aead_reader_feed(&v2_ar, st->v2_rx, st->v2_rx_len) != 0) {
+					debug(LOG_ERR, "v2 initial AEAD decryption failed, triggering reconnect");
+					st->v2_rx_len = 0;
+					trigger_reconnect();
+					return;
+				}
+				st->v2_rx_len = 0;
+				if (v2_ar.pt_len > 0) {
 					size_t pt_len = v2_ar.pt_len;
 					uint8_t *pt = malloc(pt_len);
 					if (pt) {
 						memcpy(pt, v2_ar.pt_buf, pt_len);
 						v2_ar.pt_len = 0;
-						st->v2_rx_len = 0;
-						v2_buf_append(&st->v2_rx, &st->v2_rx_len, &st->v2_rx_cap,
-							      pt, pt_len);
+						if (v2_buf_append(&st->v2_rx, &st->v2_rx_len, &st->v2_rx_cap,
+								  pt, pt_len) == 0) {
+							free(pt);
+							v2_consume_plain_frames(st, ctx);
+							return;
+						}
 						free(pt);
-						v2_consume_plain_frames(st, ctx);
-						return;
 					}
 				}
-				st->v2_rx_len = 0;
 			}
 			return;
 		}
@@ -1790,7 +1946,10 @@ static void handle_non_mux(struct bufferevent *bev, struct evbuffer *input, int 
 	} else {
 		/* Fallback: data spans multiple chunks, copy to contiguous buffer */
 		uint8_t *buf = malloc(len);
-		assert(buf);
+		if (!buf) {
+			debug(LOG_ERR, "Failed to allocate %d bytes for non-mux message", len);
+			return;
+		}
 		evbuffer_remove(input, buf, len);
 
 		int drain_len = len;
@@ -1942,6 +2101,7 @@ static void handle_connection_failure(struct common_conf *c_conf) {
  */
 static void handle_connection_success(struct bufferevent *bev) {
 	g_retry_times = 0;
+	bufferevent_set_timeouts(bev, NULL, NULL);
 	debug(LOG_INFO, "Successfully connected to xfrp server");
 	struct common_conf *c_conf = get_common_config();
 	debug(LOG_DEBUG, "handle_connection_success: tcp_mux=%d", c_conf->tcp_mux);
@@ -3123,10 +3283,8 @@ void reload_xfrpc_config(void)
 	/* 3. Reload config from file */
 	load_config(config_file);
 
-	/* 4. Re-register proxies with frps (if connected) */
-	if (is_xfrpc_connected()) {
-		start_proxy_services();
-	}
+	/* 4. Reconnect cleanly with updated config (rebuilds mux streams & proxies) */
+	trigger_reconnect();
 
 	debug(LOG_INFO, "=== Hot-reload complete ===");
 }

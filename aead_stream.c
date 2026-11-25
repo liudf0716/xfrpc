@@ -176,9 +176,14 @@ int aead_writer_seal(struct aead_writer *w, const uint8_t *pt, size_t pt_len,
 	if (!w || !pt || !out || !out_len || pt_len == 0)
 		return -1;
 
+	if (pt_len > SIZE_MAX - AEAD_MAX_PAYLOAD + 1)
+		return -1;
 	size_t num_chunks = (pt_len + AEAD_MAX_PAYLOAD - 1) / AEAD_MAX_PAYLOAD;
 	size_t prefix = w->header_sent ? 0 : AEAD_GCM_NONCE_SIZE;
-	size_t total = prefix + num_chunks * (4 + AEAD_GCM_TAG_SIZE) + pt_len;
+	size_t per_chunk_hdr = 4 + AEAD_GCM_TAG_SIZE;
+	if (num_chunks > (SIZE_MAX - prefix - pt_len) / per_chunk_hdr)
+		return -1;
+	size_t total = prefix + num_chunks * per_chunk_hdr + pt_len;
 
 	uint8_t *buf = malloc(total);
 	if (!buf)
@@ -253,10 +258,18 @@ void aead_reader_free(struct aead_reader *r)
 
 static int buf_append(uint8_t **buf, size_t *len, size_t *cap, const uint8_t *p, size_t n)
 {
-	if (*len + n > *cap) {
-		size_t capn = *cap ? *cap * 2 : 4096;
-		while (capn < *len + n)
+	if (n > SIZE_MAX - *len)
+		return -1;
+	size_t need = *len + n;
+	if (need > *cap) {
+		size_t capn = *cap ? *cap : 2048;
+		while (capn < need) {
+			if (capn > SIZE_MAX / 2) {
+				capn = need;
+				break;
+			}
 			capn *= 2;
+		}
 		uint8_t *nb = realloc(*buf, capn);
 		if (!nb)
 			return -1;

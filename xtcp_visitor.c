@@ -434,6 +434,9 @@ void xtcp_handle_precheck_resp(struct xtcp_session *sess,
 	struct stun_result sresult;
 	const char *servers[8];
 	int scount = 0;
+	struct common_conf *cc = get_common_config();
+	if (cc && cc->nat_hole_stun_server && *cc->nat_hole_stun_server)
+		servers[scount++] = cc->nat_hole_stun_server;
 
 	for (int i = 0; default_stun_servers[i] && scount < 7; i++)
 		servers[scount++] = default_stun_servers[i];
@@ -680,12 +683,12 @@ static void xtcp_send_sid_probe(struct xtcp_session *sess, const char *addr)
 	sid_msg.sid = sess->sid;
 	sid_msg.response = false;
 
-	/* Generate random nonce */
+	/* Generate random nonce (1..15 hex chars within 16-byte rand_buf) */
 	char nonce[32];
 	unsigned char rand_buf[16];
 	RAND_bytes(rand_buf, sizeof(rand_buf));
 	static const char hex_chars[] = "0123456789abcdef";
-	int nonce_len = rand_buf[0] % 20;
+	int nonce_len = (rand_buf[0] % 15) + 1;
 	for (int i = 0; i < nonce_len; i++)
 		nonce[i] = hex_chars[rand_buf[i + 1] & 0xf];
 	nonce[nonce_len] = '\0';
@@ -704,7 +707,7 @@ static void xtcp_send_sid_probe(struct xtcp_session *sess, const char *addr)
 	target.sin_family = AF_INET;
 
 	char addr_copy[128];
-	strncpy(addr_copy, addr, sizeof(addr_copy) - 1);
+	snprintf(addr_copy, sizeof(addr_copy), "%s", addr);
 	char *colon = strrchr(addr_copy, ':');
 	if (!colon) {
 		free(pkt);
@@ -1409,8 +1412,11 @@ static void xtcp_cleanup(struct xtcp_session *sess)
 	/* Unregister from active sessions */
 	xtcp_session_unregister(sess);
 
-	/* Don't free user_bev here - it's managed by the caller */
-	sess->user_bev = NULL;
+	/* Free user_bev if still owned by this session (fallback clears it first) */
+	if (sess->user_bev) {
+		bufferevent_free(sess->user_bev);
+		sess->user_bev = NULL;
+	}
 
 	free(sess);
 }

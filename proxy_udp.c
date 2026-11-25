@@ -82,16 +82,19 @@ static int base64_decode(const char *src, int srclen, uint8_t *dst)
 
     uint32_t bits_buf = 0;
     int bits_cnt = 0;
+    int pad_cnt = 0;
     uint8_t *out = dst;
 
     while (srclen--) {
         char c = *src++;
         
         if (c == '=') {
+            if (++pad_cnt > 2) return -1;
             bits_buf <<= 6;
             bits_cnt += 6;
             continue;
         }
+        if (pad_cnt > 0) return -1;
 
         const char *p = strchr(BASE64_CHARS, c);
         if (!p) return -1;  // Invalid character
@@ -106,7 +109,7 @@ static int base64_decode(const char *src, int srclen, uint8_t *dst)
     }
 
     // Check for invalid trailing bits
-    if (bits_buf & ((1 << bits_cnt) - 1)) {
+    if (bits_cnt >= 32 || (bits_buf & ((1U << bits_cnt) - 1))) {
         return -1;
     }
 
@@ -607,11 +610,13 @@ void udp_proxy_c2s_cb(struct bufferevent *bev, void *ctx)
 
 cleanup:
     free(json_buf);
-    free(udp_pkt->laddr);
-    udp_pkt->laddr = NULL;
+    if (udp_pkt) {
+        free(udp_pkt->laddr);
+        udp_pkt->laddr = NULL;
+        udp_pkt->raddr = NULL;
+        free(udp_pkt);
+    }
     free(raddr);
-    udp_pkt->raddr = NULL;
-    free(udp_pkt);
     evbuffer_free(base64_output);
 }
 

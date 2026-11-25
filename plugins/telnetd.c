@@ -133,7 +133,7 @@ remove_iacs(struct tsession *ts, int *pnum_totty)
 			 * Many client implementations send \r\n when
 			 * the user hits the CarriageReturn key.
 			 */
-			if (c == '\r' && (*ptr == '\n' || *ptr == 0) && ptr < end)
+			if (c == '\r' && ptr < end && (*ptr == '\n' || *ptr == 0))
 				ptr++;
 		}
 		else
@@ -299,6 +299,9 @@ make_new_session(int sockfd)
 	if ((pid = fork()) < 0)
 	{
 		syslog(LOG_ERR, "Can`t forking");
+		close(pty);
+		free(ts);
+		return NULL;
 	}
 	if (pid == 0)
 	{
@@ -366,9 +369,10 @@ free_session(struct tsession *ts)
 		t->next = ts->next;
 	}
 
-	kill(ts->shell_pid, SIGKILL);
-
-	wait4(ts->shell_pid, NULL, 0, NULL);
+	if (ts->shell_pid > 0) {
+		kill(ts->shell_pid, SIGKILL);
+		wait4(ts->shell_pid, NULL, 0, NULL);
+	}
 
 	close(ts->ptyfd);
 	close(ts->sockfd);

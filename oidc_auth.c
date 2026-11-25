@@ -191,22 +191,39 @@ static char *build_post_body(const char *client_id, const char *client_secret,
 	urlencode(client_id, enc_id, sizeof(enc_id));
 	urlencode(client_secret, enc_secret, sizeof(enc_secret));
 
-	char *body = malloc(2048);
+	size_t cap = 2048;
+	char *body = malloc(cap);
 	if (!body) return NULL;
 
-	int len = snprintf(body, 2048,
+	size_t pos = 0;
+	int n = snprintf(body, cap,
 		"grant_type=client_credentials"
 		"&client_id=%s"
 		"&client_secret=%s",
 		enc_id, enc_secret);
+	if (n < 0 || (size_t)n >= cap) {
+		free(body);
+		return NULL;
+	}
+	pos = (size_t)n;
 
 	if (audience && *audience) {
 		urlencode(audience, enc_aud, sizeof(enc_aud));
-		len += snprintf(body + len, 2048 - len, "&audience=%s", enc_aud);
+		n = snprintf(body + pos, cap - pos, "&audience=%s", enc_aud);
+		if (n < 0 || (size_t)n >= cap - pos) {
+			free(body);
+			return NULL;
+		}
+		pos += (size_t)n;
 	}
 	if (scope && *scope) {
 		urlencode(scope, enc_scope, sizeof(enc_scope));
-		len += snprintf(body + len, 2048 - len, "&scope=%s", enc_scope);
+		n = snprintf(body + pos, cap - pos, "&scope=%s", enc_scope);
+		if (n < 0 || (size_t)n >= cap - pos) {
+			free(body);
+			return NULL;
+		}
+		pos += (size_t)n;
 	}
 
 	return body;
@@ -285,6 +302,10 @@ char *oidc_fetch_token(const char *token_endpoint_url,
 		"%s",
 		url.path, url.host, strlen(post_body), post_body);
 	free(post_body);
+	if (req_len < 0 || (size_t)req_len >= sizeof(request)) {
+		debug(LOG_ERR, "OIDC: HTTP request exceeds buffer size");
+		return NULL;
+	}
 
 	/* Connect */
 	int fd = tcp_connect(url.host, url.port);
@@ -304,13 +325,24 @@ char *oidc_fetch_token(const char *token_endpoint_url,
 		} else {
 			/* never leave verification off implicitly: fall back to
 			 * the system CA store, and always check the hostname */
-			if (trusted_ca_file)
-				SSL_CTX_load_verify_locations(ssl_ctx, trusted_ca_file, NULL);
-			else
+			if (trusted_ca_file) {
+				if (SSL_CTX_load_verify_locations(ssl_ctx, trusted_ca_file, NULL) != 1) {
+					debug(LOG_ERR, "OIDC: failed to load CA file: %s", trusted_ca_file);
+					SSL_CTX_free(ssl_ctx);
+					close(fd);
+					return NULL;
+				}
+			} else {
 				SSL_CTX_set_default_verify_paths(ssl_ctx);
+			}
 			SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
 		}
 		ssl = SSL_new(ssl_ctx);
+		if (!ssl) {
+			SSL_CTX_free(ssl_ctx);
+			close(fd);
+			return NULL;
+		}
 		SSL_set_fd(ssl, fd);
 		SSL_set_tlsext_host_name(ssl, url.host);
 		if (!insecure_skip_verify)

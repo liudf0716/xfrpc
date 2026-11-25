@@ -32,6 +32,9 @@
 #include "utils.h"
 #include "tcpmux.h"
 #include "plugins/https2http.h"
+#include "plugins/std_plugins.h"
+#include <openssl/ssl.h>
+#include <event2/bufferevent_ssl.h>
 #include "crypto_stream.h"
 
 static struct proxy_client 	*all_pc = NULL;
@@ -168,9 +171,7 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 		}
 		return;
 	} else if (bev && client->ctl_bev) {
-		/* Flush remaining data from the local proxy bufferevent into MUX stream.
-		 * Loop to handle partial sends — tmux_stream_write drains
-		 * what it writes directly from src when send_window allows. */
+		/* Flush remaining data from the local proxy bufferevent into MUX stream */
 		evutil_socket_t local_fd = bufferevent_getfd(bev);
 		struct evbuffer *src = bufferevent_get_input(bev);
 		if (local_fd >= 0 && src) {
@@ -178,24 +179,55 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 			}
 		}
 		struct common_conf *c_conf = get_common_config();
+		struct evbuffer *out_src = src;
+		struct evbuffer *encoded = NULL;
+		if (client->use_encryption || client->use_compression) {
+			encoded = evbuffer_new();
+			if (encoded) {
+				if (client->enc_pending && evbuffer_get_length(client->enc_pending) > 0) {
+					evbuffer_add_buffer(encoded, client->enc_pending);
+				}
+				if (src && evbuffer_get_length(src) > 0) {
+					proxy_crypto_encode_evbuffer(client, src, encoded);
+				}
+				out_src = encoded;
+			}
+		} else if (client->enc_pending && evbuffer_get_length(client->enc_pending) > 0) {
+			if (src && evbuffer_get_length(src) > 0) {
+				evbuffer_add_buffer(client->enc_pending, src);
+			}
+			out_src = client->enc_pending;
+		}
+
 		if (!c_conf->tcp_mux) {
-			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
-			evbuffer_add_buffer(dst, src);
-		} else {
-			while (evbuffer_get_length(src) > 0) {
-				int written = tmux_stream_write(client->ctl_bev, src, &client->stream);
+			if (out_src && evbuffer_get_length(out_src) > 0) {
+				struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+				evbuffer_add_buffer(dst, out_src);
+			}
+		} else if (out_src) {
+			while (evbuffer_get_length(out_src) > 0) {
+				int written = tmux_stream_write(client->ctl_bev, out_src, &client->stream);
 				if (written < 0) {
 					debug(LOG_INFO, "Stream %d: tmux_stream_write error %d during flush, aborting",
 						  client->stream.id, written);
 					break;
 				}
 				if (written == 0) {
-					/* send_window == 0: can't send more right now */
+					/* send_window == 0: stash remainder until WINDOW_UPDATE */
 					debug(LOG_INFO, "%zu bytes unsent, send_window exhausted",
-						  evbuffer_get_length(src));
+						  evbuffer_get_length(out_src));
+					if (out_src != client->enc_pending) {
+						if (!client->enc_pending)
+							client->enc_pending = evbuffer_new();
+						if (client->enc_pending)
+							evbuffer_add_buffer(client->enc_pending, out_src);
+					}
 					break;
 				}
 			}
+		}
+		if (encoded) {
+			evbuffer_free(encoded);
 		}
 	}
 
@@ -223,10 +255,10 @@ static void handle_proxy_disconnect(struct proxy_client *client,
 		return;
 	}
 
-	// If send_window is exhausted, mark as pending_close and wait for
-	// WINDOW_UPDATE to send FIN.
-	if (client->stream.send_window == 0) {
-		debug(LOG_INFO, "Stream %d: send_window==0 at disconnect, deferring close",
+	// If send_window is exhausted or stashed bytes remain, defer FIN until WINDOW_UPDATE
+	if (client->stream.send_window == 0 ||
+	    (client->enc_pending && evbuffer_get_length(client->enc_pending) > 0)) {
+		debug(LOG_INFO, "Stream %d: deferring close until pending bytes / window drain",
 			  client->stream.id);
 		client->pending_close = 1;
 		return;
@@ -322,7 +354,8 @@ static int is_proxy_type(const struct proxy_service *ps, const char *type, int e
  * @brief Check if proxy service is SOCKS5 type
  */
 int is_socks5_proxy(const struct proxy_service *ps) {
-	return is_proxy_type(ps, "socks5", 1);
+	return is_proxy_type(ps, "socks5", 1) ||
+	       (ps && ps->plugin && strcmp(ps->plugin, "socks5") == 0);
 }
 
 /**
@@ -338,7 +371,7 @@ int has_service_type(const struct proxy_service *ps) {
  * @brief Check if proxy service is UDP type
  */
 int is_udp_proxy(const struct proxy_service *ps) {
-	return is_proxy_type(ps, "udp", 1);
+	return is_proxy_type(ps, "udp", 1) || is_proxy_type(ps, "sudp", 1);
 }
 
 /**
@@ -367,7 +400,10 @@ int is_uds_proxy(const struct proxy_service *ps) {
  * Check if proxy service uses https2http plugin
  */
 int is_https2http_proxy(const struct proxy_service *ps) {
-	return (ps && ps->plugin && strcmp(ps->plugin, "https2http") == 0);
+	return (ps && ps->plugin &&
+	        (strcmp(ps->plugin, "https2http") == 0 ||
+	         strcmp(ps->plugin, "https2https") == 0 ||
+	         strcmp(ps->plugin, "tls2raw") == 0));
 }
 
 /**
@@ -460,6 +496,7 @@ static void udp_local_dns_cb(int errcode, struct addrinfo *addr, void *ptr)
 		if (addr) evutil_freeaddrinfo(addr);
 		return;
 	}
+	client->udp_dns_req = NULL;
 	if (errcode != 0 || !addr) {
 		debug(LOG_ERR, "Async DNS resolution failed for %s: %s",
 		      (client->ps && client->ps->local_ip) ? client->ps->local_ip : "unknown",
@@ -514,16 +551,40 @@ static int setup_local_connection(struct proxy_client *client)
 					memset(&hints, 0, sizeof(hints));
 					hints.ai_family = AF_INET;
 					hints.ai_socktype = SOCK_DGRAM;
-					evdns_getaddrinfo(ctl->dnsbase, ps->local_ip, NULL, &hints, udp_local_dns_cb, client);
+					client->udp_dns_req = evdns_getaddrinfo(ctl->dnsbase, ps->local_ip, NULL,
+									       &hints, udp_local_dns_cb, client);
 				} else {
 					debug(LOG_ERR, "Failed to resolve UDP local IP/host: %s", ps->local_ip);
 				}
 			}
 		}
+	} else if (is_std_plugin_proxy(ps)) {
+		if (std_plugin_setup(client) < 0) {
+			del_proxy_client_by_stream_id(client->stream_id);
+			return -1;
+		}
+		return 1;
 	} else if (is_uds_proxy(ps)) {
 		client->local_proxy_bev = connect_unix_server(client->base, ps->plugin_unix_path);
 	} else if (!is_socks5_proxy(ps) && !has_service_type(ps)) {
 		client->local_proxy_bev = connect_server(client->base, ps->local_ip, ps->local_port);
+		if (client->local_proxy_bev && ps->plugin &&
+		    (strcmp(ps->plugin, "http2https") == 0 || strcmp(ps->plugin, "https2https") == 0)) {
+			evutil_socket_t lfd = bufferevent_getfd(client->local_proxy_bev);
+			SSL_CTX *cctx = SSL_CTX_new(TLS_client_method());
+			if (cctx && lfd >= 0) {
+				SSL *cssl = SSL_new(cctx);
+				if (cssl) {
+					bufferevent_setfd(client->local_proxy_bev, -1);
+					bufferevent_free(client->local_proxy_bev);
+					client->local_proxy_bev = bufferevent_openssl_socket_new(
+						client->base, lfd, cssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE);
+				}
+				SSL_CTX_free(cctx);
+			} else if (cctx) {
+				SSL_CTX_free(cctx);
+			}
+		}
 	} else {
 		debug(LOG_INFO, "socks5 proxy client or xdpi proxy client: connection deferred ...");
 		return 0;
@@ -544,7 +605,8 @@ static int setup_local_connection(struct proxy_client *client)
 void start_xfrp_tunnel(struct proxy_client *client)
 {
 	if (!client || !client->ctl_bev || !client->base || !client->ps ||
-		    (!client->ps->local_port && !is_uds_proxy(client->ps) && !is_socks5_proxy(client->ps))) {
+		    (!client->ps->local_port && !is_uds_proxy(client->ps) &&
+		     !is_socks5_proxy(client->ps) && !is_std_plugin_proxy(client->ps))) {
 		debug(LOG_ERR, "Invalid client configuration");
 		return;
 	}
@@ -579,7 +641,8 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		debug(LOG_INFO, "Proxy [%s] compression enabled (snappy)", ps->proxy_name);
 	}
 
-	if (setup_local_connection(client) <= 0) {
+	int conn_ret = setup_local_connection(client);
+	if (conn_ret < 0) {
 		return;
 	}
 
@@ -596,11 +659,40 @@ void start_xfrp_tunnel(struct proxy_client *client)
 		bufferevent_enable(client->ctl_bev, EV_READ|EV_WRITE);
 	}
 
+	/* Deferred-connect proxies (SOCKS5 / XDPI) bind local_proxy_bev on first protocol message */
+	if (conn_ret == 0 || !client->local_proxy_bev) {
+		return;
+	}
+
 	bufferevent_setwatermark(client->local_proxy_bev, EV_READ, 0, 0);
+
+	if (ps->bandwidth_limit_bps > 0 &&
+	    (!ps->bandwidth_limit_mode || strcmp(ps->bandwidth_limit_mode, "client") == 0)) {
+		size_t rate = (size_t)ps->bandwidth_limit_bps;
+		size_t burst = rate * 2;
+		if (burst < rate) burst = rate;
+		client->rate_cfg = ev_token_bucket_cfg_new(rate, burst, rate, burst, NULL);
+		if (client->rate_cfg) {
+			bufferevent_set_rate_limit(client->local_proxy_bev, client->rate_cfg);
+			debug(LOG_INFO, "Proxy [%s] client-side bandwidth limit: %llu B/s",
+			      ps->proxy_name, (unsigned long long)ps->bandwidth_limit_bps);
+		}
+	}
 
 	bufferevent_setcb(client->local_proxy_bev, proxy_c2s_recv, xfrp_local_write_cb,
 					 xfrp_proxy_event_cb, client);
 	bufferevent_enable(client->local_proxy_bev, EV_READ|EV_WRITE);
+
+	/* Pre-queue Proxy Protocol v1/v2 header before any incoming stream data */
+	if (!is_udp_proxy(client->ps) && client->pp_header && client->pp_header_len > 0) {
+		bufferevent_write(client->local_proxy_bev, client->pp_header, client->pp_header_len);
+		SAFE_FREE(client->pp_header);
+		client->pp_header_len = 0;
+	}
+
+	if (is_std_plugin_proxy(client->ps) && client->data_tail_size > 0) {
+		send_client_data_tail(client);
+	}
 
 	if (is_https2http_proxy(client->ps)) {
 		if (https2http_setup(client) < 0) {
@@ -690,6 +782,9 @@ free_proxy_client(struct proxy_client *client)
 	if (is_https2http_proxy(client->ps)) {
 		https2http_client_cleanup(client);
 	}
+	if (is_std_plugin_proxy(client->ps)) {
+		std_plugin_cleanup(client);
+	}
 
 	/* Clean up visitor session if this is a visitor client.
 	 * NULL out visitor_ctx to prevent dangling pointer.
@@ -755,6 +850,10 @@ free_proxy_client(struct proxy_client *client)
 		evbuffer_free(client->decomp_buf);
 		client->decomp_buf = NULL;
 	}
+	if (client->udp_dns_req) {
+		evdns_getaddrinfo_cancel(client->udp_dns_req);
+		client->udp_dns_req = NULL;
+	}
 	if (client->udp_clean_timer) {
 		evtimer_del(client->udp_clean_timer);
 		event_free(client->udp_clean_timer);
@@ -769,6 +868,13 @@ free_proxy_client(struct proxy_client *client)
 	if (client->decrypt_ctx) {
 		crypto_ctx_free(client->decrypt_ctx);
 		client->decrypt_ctx = NULL;
+	}
+
+	SAFE_FREE(client->pp_header);
+	client->pp_header_len = 0;
+	if (client->rate_cfg) {
+		ev_token_bucket_cfg_free(client->rate_cfg);
+		client->rate_cfg = NULL;
 	}
 
 	tmux_stream_release(&client->stream);

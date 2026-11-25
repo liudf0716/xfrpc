@@ -286,10 +286,12 @@ void https2http_ssl_read_cb(struct bufferevent *bev, void *ctx)
 	size_t len = evbuffer_get_length(src);
 	if (len == 0) return;
 
+	int is_tls2raw = (client->ps && client->ps->plugin &&
+	                  strcmp(client->ps->plugin, "tls2raw") == 0);
 	const char *new_host = client->ps->plugin_host_header_rewrite ?
 	                       client->ps->plugin_host_header_rewrite : client->ps->host_header_rewrite;
 
-	if (!client->header_rewritten && new_host && *new_host) {
+	if (!is_tls2raw && !client->header_rewritten && new_host && *new_host) {
 		struct evbuffer_ptr pos = evbuffer_search(src, "\r\n\r\n", 4, NULL);
 		if (pos.pos < 0) {
 			/* Wait until complete HTTP headers arrive, unless buffer exceeds 64KB */

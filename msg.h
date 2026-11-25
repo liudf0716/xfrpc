@@ -96,6 +96,10 @@ struct __attribute__((__packed__)) msg_hdr {
 // Response structure for start work connection requests
 struct start_work_conn_resp {
 	char    *proxy_name;    // Name of the proxy for the work connection
+	char    *src_addr;      // Client source IP (for Proxy Protocol)
+	char    *dst_addr;      // Server destination IP (for Proxy Protocol)
+	uint16_t src_port;      // Client source port
+	uint16_t dst_port;      // Server destination port
 };
 
 // Marshalling functions (Convert structures to messages)

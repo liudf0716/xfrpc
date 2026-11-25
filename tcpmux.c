@@ -102,6 +102,9 @@ void del_stream(uint32_t id) {
     HASH_FIND_INT(all_stream, &id, stream);
 
     if (stream) {
+        if (cur_stream == stream) {
+            cur_stream = NULL;
+        }
         HASH_DEL(all_stream, stream);
         debug(LOG_DEBUG, "Stream %u removed from hash table", id);
     } else {
@@ -113,6 +116,7 @@ void del_stream(uint32_t id) {
  * @brief Clears all streams from the global hash table.
  */
 void clear_stream(void) {
+    cur_stream = NULL;
     if (all_stream) {
         HASH_CLEAR(hh, all_stream);
         all_stream = NULL;
@@ -937,6 +941,20 @@ static int incr_send_window(struct bufferevent *bev,
         }
         struct bufferevent *bout = get_main_control()->connect_bev;
         if (bout) {
+            if (pc->enc_pending && evbuffer_get_length(pc->enc_pending) > 0) {
+                while (evbuffer_get_length(pc->enc_pending) > 0) {
+                    int written = tmux_stream_write(bout, pc->enc_pending, stream);
+                    if (written <= 0) {
+                        if (written < 0) {
+                            del_proxy_client_by_stream_id(stream_id);
+                        }
+                        return 1;
+                    }
+                }
+            }
+            if (stream->send_window == 0) {
+                return 1;
+            }
             debug(LOG_INFO, "Stream %d: pending_close, sending FIN", stream_id);
             pc->pending_close = 0;
             tmux_stream_close(bout, stream);
@@ -945,6 +963,19 @@ static int incr_send_window(struct bufferevent *bev,
     }
 
     if (old_window == 0 && stream->send_window > 0) {
+        struct bufferevent *bout = get_main_control()->connect_bev;
+        if (bout && pc->enc_pending && evbuffer_get_length(pc->enc_pending) > 0) {
+            while (evbuffer_get_length(pc->enc_pending) > 0) {
+                int written = tmux_stream_write(bout, pc->enc_pending, stream);
+                if (written < 0) {
+                    del_proxy_client_by_stream_id(stream_id);
+                    return 1;
+                }
+                if (written == 0) {
+                    return 1;
+                }
+            }
+        }
         if (pc->bridge_bev) {
             debug(LOG_DEBUG,
                   "Stream %u: re-enabling EV_READ after WINDOW_UPDATE bridge_bev=%p",

@@ -786,14 +786,18 @@ int nathole_decode_sid(const uint8_t *data, size_t data_len,
 	memset(msg, 0, sizeof(*msg));
 
 	struct json_object *val;
-	if (json_object_object_get_ex(jobj, "transaction_id", &val))
-		msg->transaction_id = strdup(json_object_get_string(val));
-	if (json_object_object_get_ex(jobj, "sid", &val))
-		msg->sid = strdup(json_object_get_string(val));
+	const char *s = NULL;
+	if (json_object_object_get_ex(jobj, "transaction_id", &val) &&
+	    (s = json_object_get_string(val)))
+		msg->transaction_id = strdup(s);
+	if (json_object_object_get_ex(jobj, "sid", &val) &&
+	    (s = json_object_get_string(val)))
+		msg->sid = strdup(s);
 	if (json_object_object_get_ex(jobj, "response", &val))
 		msg->response = json_object_get_boolean(val);
-	if (json_object_object_get_ex(jobj, "nonce", &val))
-		msg->nonce = strdup(json_object_get_string(val));
+	if (json_object_object_get_ex(jobj, "nonce", &val) &&
+	    (s = json_object_get_string(val)))
+		msg->nonce = strdup(s);
 
 	json_object_put(jobj);
 	return 0;

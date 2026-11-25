@@ -147,15 +147,26 @@ const char *xfrpc_toml_get(void *sec, const char *key)
 		snprintf(tls_buf, sizeof(tls_buf), "%g", val.u.fp64);
 		return tls_buf;
 	case TOML_ARRAY: {
-		int pos = 0;
-		for (int i = 0; i < val.u.arr.size && pos < (int)sizeof(tls_buf) - 4; i++) {
+		size_t pos = 0;
+		tls_buf[0] = '\0';
+		for (int i = 0; i < val.u.arr.size && pos < sizeof(tls_buf) - 1; i++) {
 			toml_datum_t elem = val.u.arr.elem[i];
-			if (i > 0)
-				pos += snprintf(tls_buf + pos, sizeof(tls_buf) - pos, ", ");
+			int added = 0;
+			if (i > 0) {
+				added = snprintf(tls_buf + pos, sizeof(tls_buf) - pos, ", ");
+				if (added < 0 || (size_t)added >= sizeof(tls_buf) - pos)
+					break;
+				pos += (size_t)added;
+			}
 			if (elem.type == TOML_STRING)
-				pos += snprintf(tls_buf + pos, sizeof(tls_buf) - pos, "%s", elem.u.s);
+				added = snprintf(tls_buf + pos, sizeof(tls_buf) - pos, "%s", elem.u.s);
 			else if (elem.type == TOML_INT64)
-				pos += snprintf(tls_buf + pos, sizeof(tls_buf) - pos, "%" PRId64, elem.u.int64);
+				added = snprintf(tls_buf + pos, sizeof(tls_buf) - pos, "%" PRId64, elem.u.int64);
+			else
+				continue;
+			if (added < 0 || (size_t)added >= sizeof(tls_buf) - pos)
+				break;
+			pos += (size_t)added;
 		}
 		return tls_buf;
 	}

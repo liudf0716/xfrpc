@@ -122,12 +122,12 @@ static ngtcp2_tstamp timestamp_ns(void)
 	return (uint64_t)ts.tv_sec * NGTCP2_SECONDS + (uint64_t)ts.tv_nsec;
 }
 
-/* Convert sockaddr_in to ngtcp2_addr */
+/* Convert sockaddr_in to ngtcp2_addr (caller keeps sa alive during use) */
 static void sockaddr_to_ngtcp2_addr(ngtcp2_addr *addr,
 				    const struct sockaddr_in *sa)
 {
+	addr->addr = (ngtcp2_sockaddr *)sa;
 	addr->addrlen = sizeof(*sa);
-	memcpy(&addr->addr, sa, sizeof(*sa));
 }
 
 /* Find or create stream state */
@@ -407,9 +407,11 @@ static int quic_flush_write(struct quic_ctx *qc)
 
 	for (;;) {
 		ngtcp2_ssize nwritten;
+		ngtcp2_ssize pdatalen = -1;
 		int64_t stream_id = -1;
 		uint32_t flags = NGTCP2_WRITE_STREAM_FLAG_NONE;
 		ngtcp2_vec datav;
+		struct quic_stream *active_stream = NULL;
 
 		/* Check if any stream has pending data */
 		for (int i = 0; i < qc->stream_count; i++) {
@@ -417,6 +419,7 @@ static int quic_flush_write(struct quic_ctx *qc)
 			if (s->write_buf && evbuffer_get_length(s->write_buf) > 0 &&
 			    !s->fin_sent) {
 				stream_id = s->id;
+				active_stream = s;
 				flags = NGTCP2_WRITE_STREAM_FLAG_MORE;
 
 				/* Peek at write buffer */
@@ -434,7 +437,7 @@ static int quic_flush_write(struct quic_ctx *qc)
 			nwritten = ngtcp2_conn_writev_stream(
 				qc->conn, &ps.path, &pi,
 				qc->write_buf, sizeof(qc->write_buf),
-				&nwritten,
+				&pdatalen,
 				flags, stream_id,
 				&datav, 1,
 				timestamp_ns());
@@ -442,25 +445,18 @@ static int quic_flush_write(struct quic_ctx *qc)
 			nwritten = ngtcp2_conn_writev_stream(
 				qc->conn, &ps.path, &pi,
 				qc->write_buf, sizeof(qc->write_buf),
-				&nwritten,
+				&pdatalen,
 				NGTCP2_WRITE_STREAM_FLAG_NONE, -1,
 				NULL, 0,
 				timestamp_ns());
 		}
 
+		if (active_stream && pdatalen > 0) {
+			evbuffer_drain(active_stream->write_buf, (size_t)pdatalen);
+		}
+
 		if (nwritten < 0) {
 			if (nwritten == NGTCP2_ERR_WRITE_MORE) {
-				/* Consumed data from stream, drain buffer */
-				for (int i = 0; i < qc->stream_count; i++) {
-					struct quic_stream *s = &qc->streams[i];
-					if (s->id == stream_id && s->write_buf) {
-						/* ngtcp2_conn_writev_stream tells us
-						 * how much was consumed via nwritten
-						 * but actually it returns packet length.
-						 * We need to track consumed bytes differently. */
-						break;
-					}
-				}
 				continue;
 			}
 			if (nwritten == NGTCP2_ERR_STREAM_DATA_BLOCKED ||

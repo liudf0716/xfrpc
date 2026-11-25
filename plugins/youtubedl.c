@@ -12,6 +12,8 @@
 #include <errno.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 
 #include <event2/http.h>
 
@@ -27,12 +29,11 @@ struct yt_dlp_param {
 
 // define yt-dlp worker function
 
-/* Shell metacharacter allowlist: the profile string is interpolated into a
- * shell command line, so anything outside this set is rejected. */
+/* Allowlist for yt-dlp target argument; never starts with '-' to prevent option injection */
 static int
 safe_shell_arg(const char *s)
 {
-    if (!s || !*s)
+    if (!s || !*s || s[0] == '-')
         return 0;
     if (strlen(s) > 200)
         return 0;
@@ -50,33 +51,52 @@ yt_dlp_worker(void *param)
 {
     struct yt_dlp_param *p = (struct yt_dlp_param *)param;
     debug(LOG_DEBUG, "yt-dlp: action: %s, url: %s\n", p->action, p->profile);
-    char cmd[512] = {0};
 
-    // create directory yt-dlp and change current directory to it
-    snprintf(cmd, sizeof(cmd), "mkdir -p yt-dlp && cd yt-dlp");
-    debug(LOG_DEBUG, "yt-dlp: cmd: %s\n", cmd);
-    int ret = system(cmd);
-    if (ret != 0) {
-        debug(LOG_ERR, "yt-dlp: failed to execute command: %s, error: %d", cmd, ret);
+    if (mkdir("yt-dlp", 0755) != 0 && errno != EEXIST) {
+        debug(LOG_ERR, "yt-dlp: mkdir failed: %s", strerror(errno));
     }
 
     if (strcmp(p->action, "download") == 0) {
-        // download profile
-        snprintf(cmd, sizeof(cmd), "yt-dlp %s", p->profile);
-        debug(LOG_DEBUG, "yt-dlp: cmd: %s\n", cmd);
-        // use popen to execute cmd and get its output
-        FILE *fp = popen(cmd, "r");
-        if (fp == NULL) {
-            debug(LOG_ERR, "yt-dlp: popen failed\n");
+        int pipefd[2];
+        if (pipe(pipefd) != 0) {
+            debug(LOG_ERR, "yt-dlp: pipe failed: %s", strerror(errno));
             free(param);
             return NULL;
         }
-        char buf[512] = {0};
-        while (fgets(buf, sizeof(buf), fp) != NULL) {
-            debug(LOG_DEBUG, "yt-dlp: %s", buf);
-            memset(buf, 0, sizeof(buf));
+        pid_t pid = fork();
+        if (pid < 0) {
+            debug(LOG_ERR, "yt-dlp: fork failed: %s", strerror(errno));
+            close(pipefd[0]);
+            close(pipefd[1]);
+            free(param);
+            return NULL;
         }
-        pclose(fp);
+        if (pid == 0) {
+            close(pipefd[0]);
+            dup2(pipefd[1], STDOUT_FILENO);
+            dup2(pipefd[1], STDERR_FILENO);
+            if (pipefd[1] > STDERR_FILENO)
+                close(pipefd[1]);
+            if (chdir("yt-dlp") != 0)
+                _exit(127);
+            char *const argv[] = {"yt-dlp", "--", p->profile, NULL};
+            execvp("yt-dlp", argv);
+            _exit(127);
+        }
+        close(pipefd[1]);
+        FILE *fp = fdopen(pipefd[0], "r");
+        if (fp) {
+            char buf[512] = {0};
+            while (fgets(buf, sizeof(buf), fp) != NULL) {
+                debug(LOG_DEBUG, "yt-dlp: %s", buf);
+                memset(buf, 0, sizeof(buf));
+            }
+            fclose(fp);
+        } else {
+            close(pipefd[0]);
+        }
+        int status = 0;
+        waitpid(pid, &status, 0);
     } else {
         debug(LOG_ERR, "yt-dlp: unknown action: %s\n", p->action);
     }
@@ -159,7 +179,6 @@ yt_dlp_read_cb(struct evhttp_request *req, void *args)
     char data[BUFF_LEN] = {0};
     struct evbuffer *input = evhttp_request_get_input_buffer(req);
     size_t len = evbuffer_get_length(input);
-    assert(len < BUFF_LEN);
     if (len >= BUFF_LEN) {
         debug(LOG_ERR, "yt-dlp: data length is too long\n");
         yt_dlp_response(req, "data length is too long");

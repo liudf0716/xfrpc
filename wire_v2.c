@@ -255,7 +255,7 @@ int wire_v2_encode_message(enum msg_type t, const char *json, size_t jlen,
 			   uint8_t **out, size_t *out_len)
 {
 	uint16_t id = wire_v2_msg_type_to_id(t);
-	if (!id)
+	if (!id || jlen > (size_t)UINT32_MAX - 2)
 		return -1;
 	uint32_t plen = (uint32_t)(2 + jlen);
 	uint8_t *payload = malloc(plen);

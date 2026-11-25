@@ -32,6 +32,12 @@
 #define JSON_MARSHAL_TYPE(jobj, key, jtype, item) \
 	json_object_object_add(jobj, key, json_object_new_##jtype((item)))
 
+static inline char *json_strdup_safe(struct json_object *val)
+{
+	const char *s = val ? json_object_get_string(val) : NULL;
+	return s ? strdup(s) : NULL;
+}
+
 /**
  * @brief Macro to safely handle NULL strings in JSON
  * @param str_target String to check
@@ -369,6 +375,51 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 	JSON_MARSHAL_TYPE(j_np_req, "use_encryption", boolean, np_req->use_encryption);
 	JSON_MARSHAL_TYPE(j_np_req, "use_compression", boolean, np_req->use_compression);
 
+	if (np_req->bandwidth_limit && *np_req->bandwidth_limit) {
+		JSON_MARSHAL_TYPE(j_np_req, "bandwidth_limit", string, np_req->bandwidth_limit);
+	}
+	if (np_req->bandwidth_limit_mode && strcmp(np_req->bandwidth_limit_mode, "client") != 0) {
+		JSON_MARSHAL_TYPE(j_np_req, "bandwidth_limit_mode", string, np_req->bandwidth_limit_mode);
+	}
+
+	// Helper to marshal comma-separated k=v pairs as JSON object
+	if (np_req->metadatas) {
+		struct json_object *j_metas = json_object_new_object();
+		char *copy = strdup(np_req->metadatas);
+		if (copy && j_metas) {
+			char *sp = NULL;
+			for (char *p = strtok_r(copy, ",", &sp); p; p = strtok_r(NULL, ",", &sp)) {
+				char *eq = strchr(p, '=');
+				if (eq) {
+					*eq = '\0';
+					json_object_object_add(j_metas, p, json_object_new_string(eq + 1));
+				}
+			}
+			json_object_object_add(j_np_req, "metas", j_metas);
+		} else if (j_metas) {
+			json_object_put(j_metas);
+		}
+		free(copy);
+	}
+	if (np_req->annotations) {
+		struct json_object *j_ann = json_object_new_object();
+		char *copy = strdup(np_req->annotations);
+		if (copy && j_ann) {
+			char *sp = NULL;
+			for (char *p = strtok_r(copy, ",", &sp); p; p = strtok_r(NULL, ",", &sp)) {
+				char *eq = strchr(p, '=');
+				if (eq) {
+					*eq = '\0';
+					json_object_object_add(j_ann, p, json_object_new_string(eq + 1));
+				}
+			}
+			json_object_object_add(j_np_req, "annotations", j_ann);
+		} else if (j_ann) {
+			json_object_put(j_ann);
+		}
+		free(copy);
+	}
+
 	// Add group settings for specific proxy types
 	if (strcmp(proxy_type, "tcp") == 0 || 
 		strcmp(proxy_type, "http") == 0 ||
@@ -475,13 +526,15 @@ int new_proxy_service_marshal(const struct proxy_service *np_req, char **msg)
 		json_object_object_add(j_np_req, "response_headers", NULL);
 	}
 
+	// Add route_by_http_user (for http, https, tcpmux)
+	if (np_req->route_by_http_user) {
+		JSON_MARSHAL_TYPE(j_np_req, "route_by_http_user", string, np_req->route_by_http_user);
+	}
+
 	// Add TCPMux specific fields
 	if (strcmp(proxy_type, "tcpmux") == 0) {
 		JSON_MARSHAL_TYPE(j_np_req, "multiplexer", string,
 			SAFE_JSON_STRING(np_req->multiplexer ? np_req->multiplexer : "httpconnect"));
-		if (np_req->route_by_http_user) {
-			JSON_MARSHAL_TYPE(j_np_req, "route_by_http_user", string, np_req->route_by_http_user);
-		}
 	}
 
 	// Add STCP/XTCP/SUDP specific fields
@@ -552,6 +605,20 @@ int new_work_conn_marshal(const struct work_conn *work_c, char **msg)
 	// Add run_id field
 	JSON_MARSHAL_TYPE(j_new_work_conn, "run_id", string, SAFE_JSON_STRING(work_c->run_id));
 
+	// Add privilege_key and timestamp if NewWorkConns is in auth.additionalScopes
+	struct common_conf *c_conf = get_common_config();
+	if (c_conf && c_conf->auth_additional_scopes &&
+	    strstr(c_conf->auth_additional_scopes, "NewWorkConns") != NULL &&
+	    c_conf->auth_token) {
+		time_t ts = time(NULL);
+		char *pkey = get_auth_key(c_conf->auth_token, &ts);
+		if (pkey) {
+			JSON_MARSHAL_TYPE(j_new_work_conn, "privilege_key", string, pkey);
+			JSON_MARSHAL_TYPE(j_new_work_conn, "timestamp", int64, (int64_t)ts);
+			free(pkey);
+		}
+	}
+
 	// Convert to JSON string
 	const char *json_str = json_object_to_json_string(j_new_work_conn);
 	int nret = 0;
@@ -617,7 +684,7 @@ struct new_proxy_response *new_proxy_resp_unmarshal(const char *jres)
 	// Get required proxy_name field
 	struct json_object *j_proxy_name = NULL;
 	if (!json_object_object_get_ex(j_np_res, "proxy_name", &j_proxy_name) ||
-		!(npr->proxy_name = strdup(json_object_get_string(j_proxy_name)))) {
+		!(npr->proxy_name = json_strdup_safe(j_proxy_name))) {
 		goto error;
 	}
 
@@ -752,6 +819,22 @@ struct start_work_conn_resp *start_work_conn_resp_unmarshal(const char *resp_msg
 		goto error;
 	}
 
+	struct json_object *jfield = NULL;
+	if (json_object_object_get_ex(j_start_w_res, "src_addr", &jfield)) {
+		const char *s = json_object_get_string(jfield);
+		if (s && *s) sr->src_addr = strdup(s);
+	}
+	if (json_object_object_get_ex(j_start_w_res, "dst_addr", &jfield)) {
+		const char *s = json_object_get_string(jfield);
+		if (s && *s) sr->dst_addr = strdup(s);
+	}
+	if (json_object_object_get_ex(j_start_w_res, "src_port", &jfield)) {
+		sr->src_port = (uint16_t)json_object_get_int(jfield);
+	}
+	if (json_object_object_get_ex(j_start_w_res, "dst_port", &jfield)) {
+		sr->dst_port = (uint16_t)json_object_get_int(jfield);
+	}
+
 	json_object_put(j_start_w_res);
 	return sr;
 
@@ -866,6 +949,8 @@ void start_work_conn_resp_free(struct start_work_conn_resp *sr)
 		return;
 
 	SAFE_FREE(sr->proxy_name);
+	SAFE_FREE(sr->src_addr);
+	SAFE_FREE(sr->dst_addr);
 	SAFE_FREE(sr);
 }
 
@@ -1027,8 +1112,9 @@ static struct udp_addr *parse_udp_addr(struct json_object *j_addr) {
 	struct udp_addr *addr = calloc(1, sizeof(struct udp_addr));
 	if (!addr) return NULL;
 
-	addr->addr = strdup(json_object_get_string(j_ip));
-	addr->zone = strdup(j_zone ? json_object_get_string(j_zone) : "");
+	addr->addr = json_strdup_safe(j_ip);
+	const char *zone_str = j_zone ? json_object_get_string(j_zone) : "";
+	addr->zone = strdup(zone_str ? zone_str : "");
 	addr->port = json_object_get_int(j_port);
 
 	if (!addr->addr || !addr->zone) {
@@ -1064,7 +1150,7 @@ struct udp_packet *udp_packet_unmarshal(const char *msg) {
 	if (!json_object_object_get_ex(j_udp, "c", &j_content)) {
 		goto error;
 	}
-	udp->content = strdup(json_object_get_string(j_content));
+	udp->content = json_strdup_safe(j_content);
 	if (!udp->content) goto error;
 
 	struct json_object *j_laddr = NULL;
@@ -1288,13 +1374,13 @@ struct nathole_resp_msg *nathole_resp_unmarshal(const char *json_str)
 	struct json_object *val;
 
 	if (json_object_object_get_ex(jobj, "transaction_id", &val))
-		resp->transaction_id = strdup(json_object_get_string(val));
+		resp->transaction_id = json_strdup_safe(val);
 	if (json_object_object_get_ex(jobj, "sid", &val))
-		resp->sid = strdup(json_object_get_string(val));
+		resp->sid = json_strdup_safe(val);
 	if (json_object_object_get_ex(jobj, "protocol", &val))
-		resp->protocol = strdup(json_object_get_string(val));
+		resp->protocol = json_strdup_safe(val);
 	if (json_object_object_get_ex(jobj, "error", &val))
-		resp->error = strdup(json_object_get_string(val));
+		resp->error = json_strdup_safe(val);
 
 	/* Parse address arrays */
 	parse_json_string_array(jobj, "candidate_addrs",
@@ -1308,7 +1394,7 @@ struct nathole_resp_msg *nathole_resp_unmarshal(const char *json_str)
 		if (json_object_object_get_ex(jbeh, "mode", &val))
 			resp->behavior_mode = json_object_get_int(val);
 		if (json_object_object_get_ex(jbeh, "role", &val))
-			resp->behavior_role = strdup(json_object_get_string(val));
+			resp->behavior_role = json_strdup_safe(val);
 		if (json_object_object_get_ex(jbeh, "ttl", &val))
 			resp->behavior_ttl = json_object_get_int(val);
 		if (json_object_object_get_ex(jbeh, "send_delay_ms", &val))

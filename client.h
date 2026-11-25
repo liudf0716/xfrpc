@@ -16,7 +16,7 @@ struct crypto_ctx;
 struct snappy_ctx;
 
 /* Constants */
-#define SOCKS5_ADDRES_LEN 20
+#define SOCKS5_ADDRES_LEN 256
 
 /* Per-client parser buffer initial capacity */
 #define SOCKS5_BUF_INIT_CAP  256
@@ -43,6 +43,7 @@ struct socks5_addr {
 
 enum socks5_state {
 	SOCKS5_INIT,
+	SOCKS5_AUTH,
 	SOCKS5_HANDSHAKE,
 	SOCKS5_CONNECT,
 	SOCKS5_ESTABLISHED,
@@ -99,6 +100,13 @@ struct proxy_client {
 	unsigned char       *data_tail;
 	size_t              data_tail_size;
 
+	/* Proxy Protocol v1/v2 header (sent before data_tail on local connect) */
+	uint8_t            *pp_header;
+	size_t              pp_header_len;
+
+	/* Bandwidth rate limiting (client-side token bucket) */
+	struct ev_token_bucket_cfg *rate_cfg;
+
 	/* Encrypted-but-unsent data when the mux window is exhausted; kept
 	 * separately so it is never re-encrypted on the next read callback */
 	struct evbuffer    *enc_pending;
@@ -139,6 +147,7 @@ struct proxy_client {
 	struct evbuffer     *udp_rx_buf;    /* Framing buffer for incoming TypeUDPPacket stream */
 	struct evbuffer     *decomp_buf;    /* Staging buffer for decompression */
 	struct event        *udp_clean_timer;/* Periodic timer for sweeping idle UDP sessions */
+	struct evdns_getaddrinfo_request *udp_dns_req; /* Pending async DNS request */
 	struct sockaddr_in   udp_local_addr; /* Pre-resolved local service address */
 	int                  udp_local_addr_valid;
 };
@@ -149,6 +158,13 @@ struct proxy_service {
 	char    *proxy_type;
 	int     use_encryption;
 	int     use_compression;
+	char    *bandwidth_limit;      /* e.g. "1MB", "500KB" */
+	uint64_t bandwidth_limit_bps;  /* parsed bytes per second (0 = unlimited) */
+	char    *bandwidth_limit_mode; /* "client" (default) or "server" */
+	char    *proxy_protocol_version; /* "v1", "v2", or NULL */
+	char    *metadatas;            /* comma-separated key=value pairs */
+	char    *annotations;          /* comma-separated key=value pairs */
+	int     disable_assisted_addrs;/* natTraversal.disableAssistedAddrs */
 
 	/* Network configuration */
 	char    *local_ip;
@@ -187,7 +203,10 @@ struct proxy_service {
 	char    *plugin_crt_path;
 	char    *plugin_key_path;
 	char    *plugin_host_header_rewrite;
-	struct ssl_ctx_st *ssl_ctx;  /* Per-service SSL context for https2http */
+	char    *plugin_strip_prefix;
+	char    *plugin_local_addr;
+	char    *plugin_request_headers;
+	struct ssl_ctx_st *ssl_ctx;  /* Per-service SSL context for https2http/https2https/tls2raw */
 
 	/* TCPMux specific */
 	char    *multiplexer;        /* Multiplexer type (e.g. "httpconnect") */

@@ -83,6 +83,10 @@ int https2http_init_service(struct proxy_service *ps)
 		return -1;
 	}
 
+#ifdef SSL_OP_IGNORE_UNEXPECTED_EOF
+	SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
+#endif
+
 	int loaded = 0;
 	if (ps->plugin_crt_path && ps->plugin_key_path) {
 		if (SSL_CTX_use_certificate_file(ctx, ps->plugin_crt_path, SSL_FILETYPE_PEM) > 0 &&
@@ -134,6 +138,14 @@ void https2http_client_cleanup(struct proxy_client *client)
 		client->ssl_bev = NULL;
 	}
 	if (client->bridge_bev) {
+		int bridge_fd = bufferevent_getfd(client->bridge_bev);
+		struct evbuffer *out = bufferevent_get_output(client->bridge_bev);
+		if (bridge_fd >= 0 && out) {
+			while (evbuffer_get_length(out) > 0) {
+				int n = evbuffer_write(out, bridge_fd);
+				if (n <= 0) break;
+			}
+		}
 		bufferevent_free(client->bridge_bev);
 		client->bridge_bev = NULL;
 	}
@@ -306,10 +318,53 @@ void https2http_ssl_event_cb(struct bufferevent *bev, short what, void *ctx)
 	struct proxy_client *client = (struct proxy_client *)ctx;
 	if (!client) return;
 
+	int is_eof = (what & BEV_EVENT_EOF);
+	unsigned long ossl_err = 0;
+	if (what & BEV_EVENT_ERROR) {
+		ossl_err = bufferevent_get_openssl_error(bev);
+#ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+		if (ERR_GET_REASON(ossl_err) == SSL_R_UNEXPECTED_EOF_WHILE_READING) {
+			is_eof = 1;
+		}
+#endif
+	}
+
 	if (what & BEV_EVENT_CONNECTED) {
 		debug(LOG_DEBUG, "https2http: TLS handshake accepted for client stream %u", client->stream_id);
-	} else if (what & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
-		debug(LOG_DEBUG, "https2http: TLS session closed (what=0x%x)", what);
+	} else if (is_eof) {
+		debug(LOG_DEBUG, "https2http: TLS session EOF for stream %u", client->stream_id);
+		if (!client->header_rewritten) {
+			client->header_rewritten = 1;
+		}
+		https2http_ssl_read_cb(bev, ctx);
+		if (client->local_proxy_bev) {
+			int local_fd = bufferevent_getfd(client->local_proxy_bev);
+			if (local_fd >= 0) {
+				struct evbuffer *out = bufferevent_get_output(client->local_proxy_bev);
+				if (out) {
+					while (evbuffer_get_length(out) > 0) {
+						int n = evbuffer_write(out, local_fd);
+						if (n <= 0) break;
+					}
+				}
+				if (out && evbuffer_get_length(out) > 0) {
+					debug(LOG_INFO, "Stream %u: https2http EOF, %zu bytes pending in local out buffer, deferring shutdown",
+					      client->stream_id, evbuffer_get_length(out));
+					client->pending_shutdown_wr = 1;
+				} else {
+					debug(LOG_INFO, "Stream %u: https2http EOF, shutting down local write (fd=%d)",
+					      client->stream_id, local_fd);
+					shutdown(local_fd, SHUT_WR);
+					client->pending_shutdown_wr = 0;
+				}
+			}
+		} else if (client->pending_close) {
+			https2http_try_finish_close(client);
+		}
+	} else if (what & BEV_EVENT_ERROR) {
+		char err_buf[256];
+		ERR_error_string_n(ossl_err, err_buf, sizeof(err_buf));
+		debug(LOG_DEBUG, "https2http: TLS session error (what=0x%x, ossl_err=%lu: %s)", what, ossl_err, err_buf);
 		if (client->local_proxy_bev) {
 			bufferevent_free(client->local_proxy_bev);
 			client->local_proxy_bev = NULL;
@@ -445,10 +500,41 @@ int https2http_try_finish_close(struct proxy_client *client)
 		tmux_stream_close(client->ctl_bev, &client->stream);
 	} else {
 		client->pending_close = 0;
-		bufferevent_flush(client->ctl_bev, EV_WRITE, BEV_FINISHED);
+		if (client->ctl_bev) {
+			struct evbuffer *dst = bufferevent_get_output(client->ctl_bev);
+			int ctl_fd = bufferevent_getfd(client->ctl_bev);
+			if (ctl_fd >= 0 && dst) {
+				while (evbuffer_get_length(dst) > 0) {
+					int n = evbuffer_write(dst, ctl_fd);
+					if (n <= 0) break;
+				}
+			}
+			bufferevent_free(client->ctl_bev);
+			client->ctl_bev = NULL;
+		}
+		del_proxy_client_by_stream_id(client->stream.id ? client->stream.id : client->stream_id);
 	}
 
 	return 1;
+}
+
+void https2http_bridge_write_cb(struct bufferevent *bev, void *ctx)
+{
+	struct proxy_client *client = (struct proxy_client *)ctx;
+	if (!client) return;
+
+	if (client->pending_shutdown_bridge) {
+		struct evbuffer *out = bufferevent_get_output(bev);
+		if (!out || evbuffer_get_length(out) == 0) {
+			int bridge_fd = bufferevent_getfd(bev);
+			if (bridge_fd >= 0) {
+				debug(LOG_INFO, "Stream %u: bridge output drained, shutting down bridge write (fd=%d)",
+				      client->stream_id, bridge_fd);
+				shutdown(bridge_fd, SHUT_WR);
+			}
+			client->pending_shutdown_bridge = 0;
+		}
+	}
 }
 
 void https2http_bridge_event_cb(struct bufferevent *bev, short what, void *ctx)
@@ -534,7 +620,7 @@ int https2http_setup(struct proxy_client *client)
 	/* Ownership of sp[1] is now transferred to bridge_bev */
 	client->bridge_fd = -1;
 
-	bufferevent_setcb(client->bridge_bev, https2http_bridge_read_cb, NULL, https2http_bridge_event_cb, client);
+	bufferevent_setcb(client->bridge_bev, https2http_bridge_read_cb, https2http_bridge_write_cb, https2http_bridge_event_cb, client);
 	bufferevent_enable(client->bridge_bev, EV_READ | EV_WRITE);
 
 	client->header_rewritten = 0;

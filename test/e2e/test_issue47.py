@@ -112,7 +112,7 @@ remote_port = {remote_port}
     time.sleep(0.5)
     assert wait_for_port(frps_port), "frps failed to start"
 
-    xfrpc_p = subprocess.Popen([str(XFRC_BIN), "-c", str(xfrpc_cfg), "-f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    xfrpc_p = subprocess.Popen([str(XFRC_BIN), "-c", str(xfrpc_cfg), "-f", "-d", "7"], stdout=xfrpc_f, stderr=xfrpc_f, text=True)
     time.sleep(0.5)
     if not wait_for_port(remote_port):
         print("xfrpc log:")
@@ -143,15 +143,20 @@ remote_port = {remote_port}
         print("SUCCESS: Case 1 PASSED (0 local connections leaked in non-MUX mode)")
     finally:
         server_running = False
+        print(f"xfrpc poll before terminate: {xfrpc_p.poll()}")
         xfrpc_p.terminate()
         try:
-            out, err = xfrpc_p.communicate(timeout=2)
-            print("--- xfrpc stderr ---")
-            print(err)
+            xfrpc_p.wait(timeout=2)
         except Exception:
             pass
+        print(f"xfrpc returncode: {xfrpc_p.returncode}")
         frps_p.terminate()
         frps_p.wait()
+        xfrpc_f.close()
+        frps_f.close()
+        print("--- xfrpc log ---")
+        with open(xfrpc_log) as f:
+            print(f.read())
 
 def test_mux_eof_and_data_integrity():
     print("\n--- Testing Issue #47 Case 2: MUX mode trailing data & EOF (half-close) ---")
@@ -234,7 +239,7 @@ remote_port = {remote_port}
     time.sleep(0.5)
     assert wait_for_port(frps_port), "frps failed to start"
 
-    xfrpc_p = subprocess.Popen([str(XFRC_BIN), "-c", str(xfrpc_cfg), "-f"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    xfrpc_p = subprocess.Popen([str(XFRC_BIN), "-c", str(xfrpc_cfg), "-f", "-d", "7"], stdout=xfrpc_f, stderr=xfrpc_f, text=True)
     time.sleep(0.5)
     if not wait_for_port(remote_port):
         print("xfrpc log:")
@@ -266,20 +271,288 @@ remote_port = {remote_port}
         print(f"SUCCESS: Case 2 PASSED (Remote sent {len(test_payload)} bytes and closed; local received full payload and EOF cleanly)")
     finally:
         server_running = False
+        print(f"xfrpc poll before terminate: {xfrpc_p.poll()}")
         xfrpc_p.terminate()
         try:
-            out, err = xfrpc_p.communicate(timeout=2)
-            print("--- xfrpc stderr ---")
-            print(err)
+            xfrpc_p.wait(timeout=2)
         except Exception:
             pass
+        print(f"xfrpc returncode: {xfrpc_p.returncode}")
         frps_p.terminate()
         frps_p.wait()
+        xfrpc_f.close()
+        frps_f.close()
+        print("--- xfrpc log ---")
+        with open(xfrpc_log) as f:
+            print(f.read())
+
+def test_https2http_remote_fin():
+    print("\n--- Testing Issue #47 Case 3: https2http remote FIN and full HTTP response ---")
+    local_port = 19103
+    server_running = True
+    received_requests = []
+
+    def local_http_server():
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", local_port))
+        srv.listen(10)
+        srv.settimeout(0.5)
+
+        while server_running:
+            try:
+                conn, _ = srv.accept()
+            except socket.timeout:
+                continue
+            def handle_client(c):
+                print("[local_http_server] client connected")
+                req = bytearray()
+                while True:
+                    data = c.recv(4096)
+                    if not data:
+                        break
+                    req.extend(data)
+                    if b"\r\n\r\n" in req:
+                        break
+                print(f"[local_http_server] received {len(req)} bytes")
+                received_requests.append(bytes(req))
+                body = b"Hello from local HTTP backend!"
+                resp = (
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + body
+                )
+                c.sendall(resp)
+                c.close()
+            threading.Thread(target=handle_client, args=(conn,), daemon=True).start()
+        srv.close()
+
+    srv_thread = threading.Thread(target=local_http_server, daemon=True)
+    srv_thread.start()
+
+    tmp_dir = Path("/tmp/issue47_test")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    frps_cfg = tmp_dir / "frps_https2http.toml"
+    xfrpc_cfg = tmp_dir / "xfrpc_https2http.ini"
+
+    frps_port = 17102
+    remote_port = 16103
+
+    frps_cfg.write_text(f"""
+bindAddr = "127.0.0.1"
+bindPort = {frps_port}
+auth.method = "token"
+auth.token = "testtoken123"
+transport.tcpMux = true
+transport.tls.force = false
+transport.heartbeatTimeout = 90
+""")
+
+    xfrpc_cfg.write_text(f"""
+[common]
+server_addr = 127.0.0.1
+server_port = {frps_port}
+token = testtoken123
+tcp_mux = 1
+log_level = 7
+
+[https2http_test]
+type = tcp
+plugin = https2http
+local_ip = 127.0.0.1
+local_port = {local_port}
+remote_port = {remote_port}
+plugin_host_header_rewrite = 127.0.0.1
+""")
+
+    frps_log = tmp_dir / "frps_https2http.log"
+    xfrpc_log = tmp_dir / "xfrpc_https2http.log"
+    frps_f = open(frps_log, "w", buffering=1)
+    xfrpc_f = open(xfrpc_log, "w", buffering=1)
+    frps_p = subprocess.Popen([str(FRPS_BIN), "-c", str(frps_cfg)], stdout=frps_f, stderr=frps_f)
+    time.sleep(0.5)
+    assert wait_for_port(frps_port), "frps failed to start"
+
+    xfrpc_p = subprocess.Popen([str(XFRC_BIN), "-c", str(xfrpc_cfg), "-f", "-d", "7"], stdout=xfrpc_f, stderr=xfrpc_f, text=True)
+    time.sleep(0.5)
+    if not wait_for_port(remote_port):
+        print("xfrpc log:")
+        with open(xfrpc_log) as f:
+            print(f.read())
+        print("frps log:")
+        with open(frps_log) as f:
+            print(f.read())
+        assert False, "xfrpc https2http proxy port not ready"
+
+    try:
+        import ssl
+        time.sleep(0.5)
+        received_requests.clear()
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        raw_sock = socket.create_connection(("127.0.0.1", remote_port), timeout=5.0)
+        tls_sock = ctx.wrap_socket(raw_sock, server_hostname="127.0.0.1")
+        req = b"GET /test HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+        tls_sock.sendall(req)
+        # Client closes connection (remote FIN)
+        tls_sock.close()
+
+        # Wait for local HTTP server to receive the decrypted and rewritten request
+        time.sleep(1.0)
+        assert len(received_requests) > 0, "Local HTTP server never received the request!"
+        print(f"Local server received decrypted HTTP request: {received_requests[0]}")
+        assert b"GET /test HTTP/1.1" in received_requests[0], f"Expected GET /test in {received_requests[0]}"
+        assert b"Host: 127.0.0.1" in received_requests[0], f"Host rewrite failed: {received_requests[0]}"
+
+        print("SUCCESS: Case 3 PASSED (https2http handled remote FIN, preserved ciphertext, decrypted request and rewrote Host)")
+    finally:
+        server_running = False
+        print(f"xfrpc poll before terminate: {xfrpc_p.poll()}")
+        xfrpc_p.terminate()
+        try:
+            xfrpc_p.wait(timeout=2)
+        except Exception:
+            pass
+        print(f"xfrpc returncode: {xfrpc_p.returncode}")
+        frps_p.terminate()
+        frps_p.wait()
+        xfrpc_f.close()
+        frps_f.close()
+        print("--- xfrpc log ---")
+        with open(xfrpc_log) as f:
+            print(f.read())
+
+def test_mux_rst_data_integrity():
+    print("\n--- Testing Issue #47 Case 4: MUX mode payload with TCP RST ---")
+    local_port = 19104
+    server_running = True
+    received_bytes = []
+
+    def local_server():
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", local_port))
+        srv.listen(10)
+        srv.settimeout(0.5)
+
+        while server_running:
+            try:
+                conn, _ = srv.accept()
+            except socket.timeout:
+                continue
+            def handle_client(c):
+                buf = bytearray()
+                while True:
+                    try:
+                        data = c.recv(4096)
+                        if not data:
+                            break
+                        buf.extend(data)
+                    except Exception:
+                        break
+                received_bytes.append(bytes(buf))
+                c.close()
+            threading.Thread(target=handle_client, args=(conn,), daemon=True).start()
+        srv.close()
+
+    srv_thread = threading.Thread(target=local_server, daemon=True)
+    srv_thread.start()
+
+    tmp_dir = Path("/tmp/issue47_test")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    frps_cfg = tmp_dir / "frps_mux_rst.toml"
+    xfrpc_cfg = tmp_dir / "xfrpc_mux_rst.ini"
+
+    frps_port = 17103
+    remote_port = 16104
+
+    frps_cfg.write_text(f"""
+bindAddr = "127.0.0.1"
+bindPort = {frps_port}
+auth.method = "token"
+auth.token = "testtoken123"
+transport.tcpMux = true
+transport.tls.force = false
+transport.heartbeatTimeout = 90
+""")
+
+    xfrpc_cfg.write_text(f"""
+[common]
+server_addr = 127.0.0.1
+server_port = {frps_port}
+token = testtoken123
+tcp_mux = 1
+log_level = 7
+
+[tcp_mux_rst_test]
+type = tcp
+local_ip = 127.0.0.1
+local_port = {local_port}
+remote_port = {remote_port}
+""")
+
+    frps_log = tmp_dir / "frps_mux_rst.log"
+    xfrpc_log = tmp_dir / "xfrpc_mux_rst.log"
+    frps_f = open(frps_log, "w", buffering=1)
+    xfrpc_f = open(xfrpc_log, "w", buffering=1)
+    frps_p = subprocess.Popen([str(FRPS_BIN), "-c", str(frps_cfg)], stdout=frps_f, stderr=frps_f)
+    time.sleep(0.5)
+    assert wait_for_port(frps_port), "frps failed to start"
+
+    xfrpc_p = subprocess.Popen([str(XFRC_BIN), "-c", str(xfrpc_cfg), "-f", "-d", "7"], stdout=xfrpc_f, stderr=xfrpc_f, text=True)
+    time.sleep(0.5)
+    if not wait_for_port(remote_port):
+        print("xfrpc log:")
+        with open(xfrpc_log) as f:
+            print(f.read())
+        print("frps log:")
+        with open(frps_log) as f:
+            print(f.read())
+        assert False, "xfrpc proxy port not ready"
+
+    try:
+        import struct
+        time.sleep(0.5)
+        received_bytes.clear()
+
+        test_payload = b"RST_PAYLOAD_DATA_" + b"K" * 4096
+        s = socket.create_connection(("127.0.0.1", remote_port), timeout=5.0)
+        s.sendall(test_payload)
+        # Reset socket via SO_LINGER (l_onoff=1, l_linger=0)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+        s.close()
+
+        time.sleep(1.0)
+        assert len(received_bytes) > 0, "Local server received nothing before RST!"
+        assert received_bytes[0] == test_payload, f"Payload mismatch on RST! Received {len(received_bytes[0])} bytes, expected {len(test_payload)}"
+
+        print(f"SUCCESS: Case 4 PASSED (Remote sent {len(test_payload)} bytes followed by RST; local received full payload)")
+    finally:
+        server_running = False
+        print(f"xfrpc poll before terminate: {xfrpc_p.poll()}")
+        xfrpc_p.terminate()
+        try:
+            xfrpc_p.wait(timeout=2)
+        except Exception:
+            pass
+        print(f"xfrpc returncode: {xfrpc_p.returncode}")
+        frps_p.terminate()
+        frps_p.wait()
+        xfrpc_f.close()
+        frps_f.close()
+        print("--- xfrpc log ---")
+        with open(xfrpc_log) as f:
+            print(f.read())
 
 if __name__ == "__main__":
     try:
         test_non_mux_connection_cleanup()
         test_mux_eof_and_data_integrity()
+        test_https2http_remote_fin()
+        test_mux_rst_data_integrity()
         print("\n===============================")
         print("ALL ISSUE #47 TESTS PASSED!")
         print("===============================\n")

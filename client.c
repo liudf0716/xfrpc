@@ -269,6 +269,9 @@ void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 		if (fd >= 0 && !is_udp_proxy(client->ps)) {
 			int one = 1;
 			setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+		}
+		handle_post_connection_data(client);
+		if (fd >= 0 && !is_udp_proxy(client->ps) && !is_https2http_proxy(client->ps)) {
 			if (client->stream.state == REMOTE_CLOSE) {
 				struct evbuffer *out = bufferevent_get_output(bev);
 				if (!out || evbuffer_get_length(out) == 0) {
@@ -280,7 +283,6 @@ void xfrp_proxy_event_cb(struct bufferevent *bev, short what, void *ctx) {
 				}
 			}
 		}
-		handle_post_connection_data(client);
 	}
 }
 
@@ -698,6 +700,14 @@ free_proxy_client(struct proxy_client *client)
 	}
 
 	if (client->local_proxy_bev) {
+		int fd = bufferevent_getfd(client->local_proxy_bev);
+		struct evbuffer *out = bufferevent_get_output(client->local_proxy_bev);
+		if (fd >= 0 && out) {
+			while (evbuffer_get_length(out) > 0) {
+				int n = evbuffer_write(out, fd);
+				if (n <= 0) break;
+			}
+		}
 		bufferevent_free(client->local_proxy_bev);
 		client->local_proxy_bev = NULL;
 	}

@@ -464,9 +464,16 @@ static void handle_remote_fin(struct tmux_stream *stream, struct proxy_client *p
                         if (n <= 0) break;
                     }
                 }
-                debug(LOG_INFO, "Stream %u: remote FIN, shutdown SHUT_WR on bridge fd=%d",
-                      stream->id, bridge_fd);
-                shutdown(bridge_fd, SHUT_WR);
+                if (out && evbuffer_get_length(out) > 0) {
+                    debug(LOG_INFO, "Stream %u: remote FIN received, %zu bytes pending in bridge out buffer, deferring shutdown",
+                          stream->id, evbuffer_get_length(out));
+                    pc->pending_shutdown_bridge = 1;
+                } else {
+                    debug(LOG_INFO, "Stream %u: remote FIN, shutdown SHUT_WR on bridge fd=%d",
+                          stream->id, bridge_fd);
+                    shutdown(bridge_fd, SHUT_WR);
+                    pc->pending_shutdown_bridge = 0;
+                }
             }
         }
         return;
@@ -542,6 +549,29 @@ static int process_flags(uint16_t flags, struct tmux_stream *stream) {
 
     if (should_close) {
         debug(LOG_DEBUG, "free stream %d", stream->id);
+        struct proxy_client *pc = get_proxy_client(stream->id);
+        if (pc) {
+            if (pc->local_proxy_bev) {
+                int fd = bufferevent_getfd(pc->local_proxy_bev);
+                struct evbuffer *out = bufferevent_get_output(pc->local_proxy_bev);
+                if (fd >= 0 && out) {
+                    while (evbuffer_get_length(out) > 0) {
+                        int n = evbuffer_write(out, fd);
+                        if (n <= 0) break;
+                    }
+                }
+            }
+            if (pc->bridge_bev) {
+                int bridge_fd = bufferevent_getfd(pc->bridge_bev);
+                struct evbuffer *out = bufferevent_get_output(pc->bridge_bev);
+                if (bridge_fd >= 0 && out) {
+                    while (evbuffer_get_length(out) > 0) {
+                        int n = evbuffer_write(out, bridge_fd);
+                        if (n <= 0) break;
+                    }
+                }
+            }
+        }
         del_proxy_client_by_stream_id(stream->id);
     }
 
@@ -625,18 +655,23 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
         return length;
     }
 
+    uint32_t orig_length = length;
+    uint32_t bytes_processed = 0;
+    struct proxy_client *pc = (struct proxy_client *)param;
+
     if (length > stream->recv_window) {
         debug(LOG_ERR, "Receive window exceeded (available: %u, requested: %u)",
               stream->recv_window, length);
         if (bev && length > 0)
             evbuffer_drain(bufferevent_get_input(bev), length);
-        return 0;
+        goto out_flags;
     }
 
     stream->recv_window -= length;
 
-    struct proxy_client *pc = (struct proxy_client *)param;
-    uint32_t bytes_processed = 0;
+    if (length == 0) {
+        goto out_flags;
+    }
 
     if (!pc || (!pc->local_proxy_bev && !is_socks5_proxy(pc->ps) && !has_service_type(pc->ps))) {
         /* Default callback path: read payload from bev and pass to handler */
@@ -645,7 +680,7 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
             debug(LOG_ERR, "Memory allocation failed for data buffer");
             if (bev && length > 0)
                 evbuffer_drain(bufferevent_get_input(bev), length);
-            return 0;
+            goto out_flags;
         }
 
         size_t nr = bufferevent_read(bev, data, length);
@@ -655,7 +690,8 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
             if (nr < length)
                 evbuffer_drain(bufferevent_get_input(bev), length - nr);
             free(data);
-            return 0;
+            bytes_processed = nr;
+            goto out_flags;
         }
 
         debug(LOG_DEBUG, "Stream %u: entering default callback path length=%u",
@@ -685,14 +721,17 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
             if (!pc->udp_rx_buf) {
                 debug(LOG_ERR, "Stream %u: failed to allocate udp_rx_buf", stream_id);
                 evbuffer_drain(bufferevent_get_input(bev), length);
-                return 0;
+                goto out_flags;
             }
         }
         struct evbuffer *src = bufferevent_get_input(bev);
         if (pc->use_encryption) {
             if (pc->decrypt_ctx && !crypto_reader_iv_received(pc->decrypt_ctx)) {
                 if (length < 16) {
-                    return 0;
+                    debug(LOG_ERR, "Stream %u: encrypted UDP frame too short for IV (%u bytes)",
+                          stream_id, length);
+                    evbuffer_drain(src, length);
+                    goto out_flags;
                 }
                 uint8_t iv[16];
                 evbuffer_remove(src, iv, 16);
@@ -701,14 +740,14 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
                 length -= 16;
                 bytes_processed += 16;
                 if (length == 0) {
-                    return bytes_processed;
+                    goto out_flags;
                 }
             }
 
             uint8_t *data = malloc(length);
             if (!data) {
                 evbuffer_drain(src, length);
-                return bytes_processed;
+                goto out_flags;
             }
             evbuffer_remove(src, data, length);
             crypto_decrypt(pc->decrypt_ctx, data, length);
@@ -751,7 +790,7 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
             if (plain) evbuffer_free(plain);
             evbuffer_drain(src, length);
             debug(LOG_ERR, "Stream %u: failed to allocate crypto buffers", stream_id);
-            return 0;
+            goto out_flags;
         }
         evbuffer_remove_buffer(src, frame, length);
         proxy_crypto_decode_evbuffer(pc, frame, plain);
@@ -788,15 +827,16 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
               stream_id, bytes_processed, length);
     }
 
+out_flags: ;
     struct bufferevent *bout = get_main_control()->connect_bev;
-    if (bytes_processed != length) {
+    if (bytes_processed != orig_length) {
         debug(LOG_ERR,
               "Stream %u: incomplete transfer processed=%u expected=%u "
               "pc=%p connected=%d work_started=%d pending_close=%d "
               "xdpi_state=%d socks5_state=%d stream_state=%d "
               "local_proxy_bev=%p recv_window=%u "
               "proxy_type=%s service_type=%d",
-              stream_id, bytes_processed, length,
+              stream_id, bytes_processed, orig_length,
               pc,
               pc ? pc->connected : -1,
               pc ? pc->work_started : -1,
@@ -818,10 +858,10 @@ int process_data(struct bufferevent *bev, struct tmux_stream *stream,
 
     if (!process_flags(flags, stream)) {
         debug(LOG_ERR, "Failed to process flags for stream %d", stream_id);
-        return length;
+        return orig_length;
     }
 
-    return length;
+    return orig_length;
 }
 
 /**

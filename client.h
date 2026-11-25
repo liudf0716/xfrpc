@@ -88,6 +88,7 @@ struct proxy_client {
 	int                 work_started;
 	int                 pending_close;   /* local proxy closed, waiting for WUP to send FIN */
 	int                 pending_shutdown_wr; /* remote FIN received, defer shutdown(SHUT_WR) until output drained */
+	int                 pending_shutdown_bridge; /* remote FIN on https2http, defer shutdown(SHUT_WR) on bridge */
 	enum xdpi_state     xdpi_state;     /* XDPI verification state */
 	
 	/* SOCKS5 specific */

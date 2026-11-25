@@ -397,17 +397,32 @@ plugin_host_header_rewrite = 127.0.0.1
         tls_sock = ctx.wrap_socket(raw_sock, server_hostname="127.0.0.1")
         req = b"GET /test HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
         tls_sock.sendall(req)
-        # Client closes connection (remote FIN)
+
+        # Read backend HTTP response on TLS socket before closing
+        resp = bytearray()
+        tls_sock.settimeout(5.0)
+        while True:
+            try:
+                data = tls_sock.recv(4096)
+                if not data:
+                    break
+                resp.extend(data)
+            except Exception:
+                break
         tls_sock.close()
 
+        print(f"Client received TLS response: {bytes(resp)}")
+        assert b"HTTP/1.1 200 OK" in resp, f"Expected HTTP 200 in response, got: {resp}"
+        assert b"Hello from local HTTP backend!" in resp, f"Expected body in response, got: {resp}"
+
         # Wait for local HTTP server to receive the decrypted and rewritten request
-        time.sleep(1.0)
+        time.sleep(0.5)
         assert len(received_requests) > 0, "Local HTTP server never received the request!"
         print(f"Local server received decrypted HTTP request: {received_requests[0]}")
         assert b"GET /test HTTP/1.1" in received_requests[0], f"Expected GET /test in {received_requests[0]}"
         assert b"Host: 127.0.0.1" in received_requests[0], f"Host rewrite failed: {received_requests[0]}"
 
-        print("SUCCESS: Case 3 PASSED (https2http handled remote FIN, preserved ciphertext, decrypted request and rewrote Host)")
+        print("SUCCESS: Case 3 PASSED (https2http handled remote FIN, preserved ciphertext, decrypted request and rewrote Host, returned 200 OK)")
     finally:
         server_running = False
         print(f"xfrpc poll before terminate: {xfrpc_p.poll()}")
@@ -547,12 +562,138 @@ remote_port = {remote_port}
         with open(xfrpc_log) as f:
             print(f.read())
 
+def test_https2http_rst_payload_integrity():
+    print("\n--- Testing Issue #47 Case 5: https2http payload with TCP RST ---")
+    local_port = 19105
+    server_running = True
+    received_requests = []
+
+    def local_http_server():
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", local_port))
+        srv.listen(10)
+        srv.settimeout(0.5)
+
+        while server_running:
+            try:
+                conn, _ = srv.accept()
+            except socket.timeout:
+                continue
+            def handle_client(c):
+                req = bytearray()
+                while True:
+                    data = c.recv(4096)
+                    if not data:
+                        break
+                    req.extend(data)
+                    if b"\r\n\r\n" in req:
+                        break
+                received_requests.append(bytes(req))
+                c.close()
+            threading.Thread(target=handle_client, args=(conn,), daemon=True).start()
+        srv.close()
+
+    srv_thread = threading.Thread(target=local_http_server, daemon=True)
+    srv_thread.start()
+
+    tmp_dir = Path("/tmp/issue47_test")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    frps_cfg = tmp_dir / "frps_https2http_rst.toml"
+    xfrpc_cfg = tmp_dir / "xfrpc_https2http_rst.ini"
+
+    frps_port = 17104
+    remote_port = 16105
+
+    frps_cfg.write_text(f"""
+bindAddr = "127.0.0.1"
+bindPort = {frps_port}
+auth.method = "token"
+auth.token = "testtoken123"
+transport.tcpMux = true
+transport.tls.force = false
+transport.heartbeatTimeout = 90
+""")
+
+    xfrpc_cfg.write_text(f"""
+[common]
+server_addr = 127.0.0.1
+server_port = {frps_port}
+token = testtoken123
+tcp_mux = 1
+log_level = 7
+
+[https2http_rst_test]
+type = tcp
+plugin = https2http
+local_ip = 127.0.0.1
+local_port = {local_port}
+remote_port = {remote_port}
+plugin_host_header_rewrite = 127.0.0.1
+""")
+
+    frps_log = tmp_dir / "frps_https2http_rst.log"
+    xfrpc_log = tmp_dir / "xfrpc_https2http_rst.log"
+    frps_f = open(frps_log, "w", buffering=1)
+    xfrpc_f = open(xfrpc_log, "w", buffering=1)
+    frps_p = subprocess.Popen([str(FRPS_BIN), "-c", str(frps_cfg)], stdout=frps_f, stderr=frps_f)
+    time.sleep(0.5)
+    assert wait_for_port(frps_port), "frps failed to start"
+
+    xfrpc_p = subprocess.Popen([str(XFRC_BIN), "-c", str(xfrpc_cfg), "-f", "-d", "7"], stdout=xfrpc_f, stderr=xfrpc_f, text=True)
+    time.sleep(0.5)
+    if not wait_for_port(remote_port):
+        assert False, "xfrpc https2http proxy port not ready"
+
+    try:
+        import ssl, struct
+        time.sleep(0.5)
+        received_requests.clear()
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        raw_sock = socket.create_connection(("127.0.0.1", remote_port), timeout=5.0)
+        tls_sock = ctx.wrap_socket(raw_sock, server_hostname="127.0.0.1")
+        req = b"GET /rst_test HTTP/1.1\r\nHost: original-host.com\r\nConnection: close\r\n\r\n"
+        tls_sock.sendall(req)
+        # Give loopback TCP time to deliver payload to frps before aborting with RST
+        time.sleep(0.05)
+
+        # Force TCP RST on client socket using SO_LINGER (l_onoff=1, l_linger=0)
+        raw_fd = tls_sock.fileno()
+        s_dup = socket.fromfd(raw_fd, socket.AF_INET, socket.SOCK_STREAM)
+        s_dup.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+        s_dup.close()
+        tls_sock.close()
+
+        # Wait for local HTTP server to receive the decrypted and rewritten request
+        time.sleep(1.0)
+        assert len(received_requests) > 0, "Local HTTP server never received the request across RST!"
+        print(f"Local server received decrypted HTTP request on RST: {received_requests[0]}")
+        assert b"GET /rst_test HTTP/1.1" in received_requests[0], f"Expected GET /rst_test in {received_requests[0]}"
+        assert b"Host: 127.0.0.1" in received_requests[0], f"Host rewrite failed on RST: {received_requests[0]}"
+
+        print("SUCCESS: Case 5 PASSED (https2http handled client RST, drained bridge ciphertext, decrypted request and rewrote Host)")
+    finally:
+        server_running = False
+        xfrpc_p.terminate()
+        try:
+            xfrpc_p.wait(timeout=2)
+        except Exception:
+            pass
+        frps_p.terminate()
+        frps_p.wait()
+        xfrpc_f.close()
+        frps_f.close()
+
 if __name__ == "__main__":
     try:
         test_non_mux_connection_cleanup()
         test_mux_eof_and_data_integrity()
         test_https2http_remote_fin()
         test_mux_rst_data_integrity()
+        test_https2http_rst_payload_integrity()
         print("\n===============================")
         print("ALL ISSUE #47 TESTS PASSED!")
         print("===============================\n")

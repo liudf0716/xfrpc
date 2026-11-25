@@ -43,6 +43,9 @@ int https2http_bridge_drain(struct proxy_client *client);
 /* Trigger TLS shutdown when local HTTP is done and all plaintext is submitted to ssl_bev */
 void https2http_trigger_shutdown(struct proxy_client *client);
 
+/* Drain bridge ciphertext, decrypt via SSL, rewrite Host, and flush to local_proxy_bev */
+void https2http_drain_bridge(struct proxy_client *client);
+
 /* Finish closing the stream once bridge_bev has received EOF from ssl_bev and drained */
 int https2http_try_finish_close(struct proxy_client *client);
 

@@ -9,6 +9,8 @@
 #include <sys/uio.h>
 #include <netinet/tcp.h>
 #include <stdatomic.h>
+#include <poll.h>
+#include <errno.h>
 
 #include "client.h"
 #include "common.h"
@@ -551,23 +553,21 @@ static int process_flags(uint16_t flags, struct tmux_stream *stream) {
         debug(LOG_DEBUG, "free stream %d", stream->id);
         struct proxy_client *pc = get_proxy_client(stream->id);
         if (pc) {
-            if (pc->local_proxy_bev) {
+            if (is_https2http_proxy(pc->ps)) {
+                https2http_drain_bridge(pc);
+            } else if (pc->local_proxy_bev) {
                 int fd = bufferevent_getfd(pc->local_proxy_bev);
                 struct evbuffer *out = bufferevent_get_output(pc->local_proxy_bev);
                 if (fd >= 0 && out) {
                     while (evbuffer_get_length(out) > 0) {
                         int n = evbuffer_write(out, fd);
-                        if (n <= 0) break;
-                    }
-                }
-            }
-            if (pc->bridge_bev) {
-                int bridge_fd = bufferevent_getfd(pc->bridge_bev);
-                struct evbuffer *out = bufferevent_get_output(pc->bridge_bev);
-                if (bridge_fd >= 0 && out) {
-                    while (evbuffer_get_length(out) > 0) {
-                        int n = evbuffer_write(out, bridge_fd);
-                        if (n <= 0) break;
+                        if (n <= 0) {
+                            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                                struct pollfd pfd = { .fd = fd, .events = POLLOUT };
+                                if (poll(&pfd, 1, 50) > 0) continue;
+                            }
+                            break;
+                        }
                     }
                 }
             }

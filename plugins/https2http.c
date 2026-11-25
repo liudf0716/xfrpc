@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include <errno.h>
 
 #include <event2/bufferevent.h>
@@ -129,25 +130,91 @@ void https2http_free_service(struct proxy_service *ps)
 	}
 }
 
-void https2http_client_cleanup(struct proxy_client *client)
+void https2http_drain_bridge(struct proxy_client *client)
 {
 	if (!client) return;
 
-	if (client->ssl_bev) {
-		bufferevent_free(client->ssl_bev);
-		client->ssl_bev = NULL;
-	}
+	/* 1. Flush any pending ciphertext in bridge_bev to bridge_fd (sp[1]) */
 	if (client->bridge_bev) {
 		int bridge_fd = bufferevent_getfd(client->bridge_bev);
 		struct evbuffer *out = bufferevent_get_output(client->bridge_bev);
 		if (bridge_fd >= 0 && out) {
 			while (evbuffer_get_length(out) > 0) {
 				int n = evbuffer_write(out, bridge_fd);
-				if (n <= 0) break;
+				if (n <= 0) {
+					if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+						struct pollfd pfd = { .fd = bridge_fd, .events = POLLOUT };
+						if (poll(&pfd, 1, 50) > 0) continue;
+					}
+					break;
+				}
 			}
 		}
+	}
+
+	/* 2. Read and decrypt ciphertext from sp[0] using OpenSSL */
+	if (client->ssl_bev) {
+		SSL *ssl = bufferevent_openssl_get_ssl(client->ssl_bev);
+		if (ssl) {
+			struct evbuffer *in = bufferevent_get_input(client->ssl_bev);
+			char buf[4096];
+			int n;
+			while ((n = SSL_read(ssl, buf, sizeof(buf))) > 0) {
+				if (in) {
+					evbuffer_add(in, buf, n);
+				}
+			}
+		}
+
+		/* 3. Process plaintext and rewrite Host header */
+		https2http_ssl_read_cb(client->ssl_bev, client);
+
+		/* 4. If headers were incomplete or header_rewritten still 0, drain remaining input */
+		struct evbuffer *in = bufferevent_get_input(client->ssl_bev);
+		if (in && evbuffer_get_length(in) > 0) {
+			client->header_rewritten = 1;
+			if (client->local_proxy_bev) {
+				struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+				if (dst) {
+					evbuffer_add_buffer(dst, in);
+				}
+			}
+		}
+	}
+
+	/* 5. Flush decrypted plaintext to local backend */
+	if (client->local_proxy_bev) {
+		int local_fd = bufferevent_getfd(client->local_proxy_bev);
+		struct evbuffer *out = bufferevent_get_output(client->local_proxy_bev);
+		if (local_fd >= 0 && out) {
+			while (evbuffer_get_length(out) > 0) {
+				int n = evbuffer_write(out, local_fd);
+				if (n <= 0) {
+					if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+						struct pollfd pfd = { .fd = local_fd, .events = POLLOUT };
+						if (poll(&pfd, 1, 50) > 0) continue;
+					}
+					break;
+				}
+			}
+		}
+	}
+}
+
+void https2http_client_cleanup(struct proxy_client *client)
+{
+	if (!client) return;
+
+	/* Drain and decrypt any pending payload before freeing bufferevents */
+	https2http_drain_bridge(client);
+
+	if (client->bridge_bev) {
 		bufferevent_free(client->bridge_bev);
 		client->bridge_bev = NULL;
+	}
+	if (client->ssl_bev) {
+		bufferevent_free(client->ssl_bev);
+		client->ssl_bev = NULL;
 	}
 	if (client->bridge_fd >= 0) {
 		close(client->bridge_fd);
@@ -333,10 +400,17 @@ void https2http_ssl_event_cb(struct bufferevent *bev, short what, void *ctx)
 		debug(LOG_DEBUG, "https2http: TLS handshake accepted for client stream %u", client->stream_id);
 	} else if (is_eof) {
 		debug(LOG_DEBUG, "https2http: TLS session EOF for stream %u", client->stream_id);
-		if (!client->header_rewritten) {
-			client->header_rewritten = 1;
-		}
 		https2http_ssl_read_cb(bev, ctx);
+		struct evbuffer *src = bufferevent_get_input(bev);
+		if (!client->header_rewritten && src && evbuffer_get_length(src) > 0) {
+			client->header_rewritten = 1;
+			if (client->local_proxy_bev) {
+				struct evbuffer *dst = bufferevent_get_output(client->local_proxy_bev);
+				if (dst) {
+					evbuffer_add_buffer(dst, src);
+				}
+			}
+		}
 		if (client->local_proxy_bev) {
 			int local_fd = bufferevent_getfd(client->local_proxy_bev);
 			if (local_fd >= 0) {
@@ -344,7 +418,13 @@ void https2http_ssl_event_cb(struct bufferevent *bev, short what, void *ctx)
 				if (out) {
 					while (evbuffer_get_length(out) > 0) {
 						int n = evbuffer_write(out, local_fd);
-						if (n <= 0) break;
+						if (n <= 0) {
+							if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+								struct pollfd pfd = { .fd = local_fd, .events = POLLOUT };
+								if (poll(&pfd, 1, 50) > 0) continue;
+							}
+							break;
+						}
 					}
 				}
 				if (out && evbuffer_get_length(out) > 0) {

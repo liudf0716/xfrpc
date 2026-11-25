@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -705,7 +706,13 @@ free_proxy_client(struct proxy_client *client)
 		if (fd >= 0 && out) {
 			while (evbuffer_get_length(out) > 0) {
 				int n = evbuffer_write(out, fd);
-				if (n <= 0) break;
+				if (n <= 0) {
+					if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+						struct pollfd pfd = { .fd = fd, .events = POLLOUT };
+						if (poll(&pfd, 1, 50) > 0) continue;
+					}
+					break;
+				}
 			}
 		}
 		bufferevent_free(client->local_proxy_bev);

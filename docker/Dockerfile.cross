@@ -71,7 +71,7 @@ RUN mkdir -p /tmp/deps/openssl && \
       --cross-compile-prefix="${TARGET_TRIPLE}-" \
       --prefix="${SYSROOT}/usr" \
       --libdir=lib \
-      no-shared no-tests no-docs && \
+      no-shared no-tests && \
     make -j"$(nproc)" && \
     make install_sw && \
     rm -rf /tmp/deps/openssl

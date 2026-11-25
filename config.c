@@ -868,7 +868,7 @@ static int common_handler(void *user, const char *section, const char *name, con
 		assert(config->auth_token);
 	}
 	else if (MATCH("common", "tcp_mux")) {
-		config->tcp_mux = !!atoi(value); // Convert to boolean
+		config->tcp_mux = is_true(value);
 	}
 	else if (MATCH("common", "protocol")) {
 		SAFE_FREE(config->protocol);
@@ -887,7 +887,7 @@ static int common_handler(void *user, const char *section, const char *name, con
 	}
 	/* TLS settings */
 	else if (MATCH("common", "tls_enable")) {
-		config->tls_enable = !!atoi(value);
+		config->tls_enable = is_true(value);
 	}
 	else if (MATCH("common", "tls_cert_file")) {
 		SAFE_FREE(config->tls_cert_file);
@@ -939,7 +939,7 @@ static int common_handler(void *user, const char *section, const char *name, con
 		config->oidc_trusted_ca_file = strdup(value);
 	}
 	else if (MATCH("common", "oidc_insecure_skip_verify")) {
-		config->oidc_insecure_skip_verify = !!atoi(value);
+		config->oidc_insecure_skip_verify = is_true(value);
 	}
 	
 	return 1;

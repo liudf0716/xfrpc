@@ -1157,11 +1157,8 @@ int data_len = (int)msg_hton(msg->length);
 
     if (remaining_len > 0) {
         if (is_udp_proxy(client->ps)) {
-            if (!client->udp_rx_buf)
-                client->udp_rx_buf = evbuffer_new();
-            if (client->udp_rx_buf) {
-                evbuffer_add(client->udp_rx_buf, msg->data + msg_hton(msg->length), remaining_len);
-            }
+            udp_deliver_tail_bytes(client, (const uint8_t *)(msg->data + msg_hton(msg->length)),
+                                   (size_t)remaining_len);
         } else {
             SAFE_FREE(client->data_tail);
             uint8_t *tail = malloc(remaining_len);
@@ -1197,6 +1194,16 @@ int data_len = (int)msg_hton(msg->length);
     if (is_udp_proxy(client->ps) && client->udp_rx_buf &&
         evbuffer_get_length(client->udp_rx_buf) > 0) {
         process_udp_rx_buf(client);
+    }
+    if (is_udp_proxy(client->ps) && client->udp_enc_rx_buf &&
+        evbuffer_get_length(client->udp_enc_rx_buf) > 0 &&
+        (client->use_encryption || client->use_compression)) {
+        if (!client->udp_rx_buf)
+            client->udp_rx_buf = evbuffer_new();
+        if (client->udp_rx_buf) {
+            proxy_crypto_decode_evbuffer(client, client->udp_enc_rx_buf, client->udp_rx_buf);
+            process_udp_rx_buf(client);
+        }
     }
     start_work_conn_resp_free(sr);
 }
@@ -1613,13 +1620,10 @@ static void v2_consume_plain_frames(struct tmux_stream *st, void *ctx)
 				struct proxy_client *client = (struct proxy_client *)ctx;
 				if (st->v2_rx_len > 0) {
 					if (is_udp_proxy(client->ps)) {
-						if (!client->udp_rx_buf)
-							client->udp_rx_buf = evbuffer_new();
-						if (client->udp_rx_buf) {
-							evbuffer_add(client->udp_rx_buf, st->v2_rx, st->v2_rx_len);
-							st->v2_rx_len = 0;
+						udp_deliver_tail_bytes(client, st->v2_rx, st->v2_rx_len);
+						st->v2_rx_len = 0;
+						if (client->udp_rx_buf && evbuffer_get_length(client->udp_rx_buf) > 0)
 							process_udp_rx_buf(client);
-						}
 					} else {
 						SAFE_FREE(client->data_tail);
 						uint8_t *tail = malloc(st->v2_rx_len);

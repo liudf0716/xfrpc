@@ -125,4 +125,25 @@ int xfrpc_compress(const uint8_t *in, size_t in_len, uint8_t *out, size_t *out_l
 int xfrpc_decompress(const uint8_t *in, size_t in_len,
                      uint8_t *out, size_t out_buf_size, size_t *out_len);
 
+struct evbuffer;
+
+/**
+ * @brief Encode raw bytes into Snappy Framing Format into dst evbuffer
+ * @param in          Input bytes
+ * @param in_len      Input length
+ * @param header_sent Pointer to per-stream flag (writes 10-byte stream identifier once if 0)
+ * @param dst         Destination evbuffer
+ * @return 0 on success, -1 on error
+ */
+int xfrpc_snappy_frame_encode(const uint8_t *in, size_t in_len,
+                              int *header_sent, struct evbuffer *dst);
+
+/**
+ * @brief Decode Snappy Framing Format chunks from decomp_buf into dst evbuffer
+ * @param decomp_buf Staging evbuffer containing framed bytes (incomplete chunks left intact)
+ * @param dst        Destination evbuffer for uncompressed output
+ * @return 0 on success, -1 on framing/decompression error
+ */
+int xfrpc_snappy_frame_decode(struct evbuffer *decomp_buf, struct evbuffer *dst);
+
 #endif /* XFRPC_CRYPTO_STREAM_H */

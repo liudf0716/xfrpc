@@ -133,6 +133,7 @@ struct proxy_client {
 	/* Encryption state (populated from proxy_service) */
 	int                 use_encryption;
 	int                 use_compression;
+	int                 comp_header_sent;/* 1 after Snappy stream identifier written */
 	struct crypto_ctx   *encrypt_ctx;   /* AES-128-CFB writer context */
 	struct crypto_ctx   *decrypt_ctx;   /* AES-128-CFB reader context */
 
@@ -145,11 +146,14 @@ struct proxy_client {
 	char                *udp_rzone;
 	struct udp_session  *udp_sessions;  /* UDP sessions indexed by raddr:rport */
 	struct evbuffer     *udp_rx_buf;    /* Framing buffer for incoming TypeUDPPacket stream */
+	struct evbuffer     *udp_enc_rx_buf;/* Staging buffer for encrypted/compressed UDP input */
 	struct evbuffer     *decomp_buf;    /* Staging buffer for decompression */
 	struct event        *udp_clean_timer;/* Periodic timer for sweeping idle UDP sessions */
 	struct evdns_getaddrinfo_request *udp_dns_req; /* Pending async DNS request */
 	struct sockaddr_in   udp_local_addr; /* Pre-resolved local service address */
 	int                  udp_local_addr_valid;
+	struct udp_packet   *udp_dns_pending[32]; /* Packets queued during async DNS */
+	int                  udp_dns_pending_count;
 };
 
 struct proxy_service {

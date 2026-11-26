@@ -21,6 +21,7 @@
 
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <event2/buffer.h>
 #include "vendor/snappy/snappy.h"
 
 #include "crypto_stream.h"
@@ -226,4 +227,146 @@ int xfrpc_decompress(const uint8_t *in, size_t in_len,
 	}
 	*out_len = uncomp_len;
 	return 0;
+}
+
+/* ---- Snappy Framing Format (compatible with golang/snappy used by frp) ---- */
+
+static uint32_t snappy_crc32c_masked(const uint8_t *data, size_t len)
+{
+	uint32_t crc = 0xffffffffU;
+	for (size_t i = 0; i < len; i++) {
+		crc ^= data[i];
+		for (int b = 0; b < 8; b++) {
+			crc = (crc >> 1) ^ ((crc & 1) ? 0x82f63b78U : 0U);
+		}
+	}
+	crc ^= 0xffffffffU;
+	return ((crc >> 15) | (crc << 17)) + 0xa282ead8U;
+}
+
+int xfrpc_snappy_frame_encode(const uint8_t *in, size_t in_len,
+                              int *header_sent, struct evbuffer *dst)
+{
+	if (!in || !dst || in_len == 0) return -1;
+
+	static const uint8_t stream_id[10] = {
+		0xff, 0x06, 0x00, 0x00, 's', 'N', 'a', 'P', 'p', 'Y'
+	};
+	if (!header_sent || !*header_sent) {
+		if (evbuffer_add(dst, stream_id, sizeof(stream_id)) != 0)
+			return -1;
+		if (header_sent)
+			*header_sent = 1;
+	}
+
+	const size_t max_block = 65536;
+	size_t offset = 0;
+	while (offset < in_len) {
+		size_t blk_len = in_len - offset;
+		if (blk_len > max_block) blk_len = max_block;
+
+		const uint8_t *blk = in + offset;
+		uint32_t mcrc = snappy_crc32c_masked(blk, blk_len);
+
+		size_t max_comp = snappy_max_compressed_length(blk_len);
+		uint8_t *comp = malloc(max_comp);
+		size_t comp_len = max_comp;
+		int compressed = (comp && xfrpc_compress(blk, blk_len, comp, &comp_len) == 0 && comp_len < blk_len);
+
+		uint8_t hdr[8];
+		uint32_t payload_len = (uint32_t)(4 + (compressed ? comp_len : blk_len));
+		hdr[0] = compressed ? 0x00 : 0x01;
+		hdr[1] = (uint8_t)(payload_len & 0xff);
+		hdr[2] = (uint8_t)((payload_len >> 8) & 0xff);
+		hdr[3] = (uint8_t)((payload_len >> 16) & 0xff);
+		hdr[4] = (uint8_t)(mcrc & 0xff);
+		hdr[5] = (uint8_t)((mcrc >> 8) & 0xff);
+		hdr[6] = (uint8_t)((mcrc >> 16) & 0xff);
+		hdr[7] = (uint8_t)((mcrc >> 24) & 0xff);
+
+		if (evbuffer_add(dst, hdr, sizeof(hdr)) != 0 ||
+		    evbuffer_add(dst, compressed ? comp : blk, compressed ? comp_len : blk_len) != 0) {
+			free(comp);
+			return -1;
+		}
+		free(comp);
+		offset += blk_len;
+	}
+	return 0;
+}
+
+int xfrpc_snappy_frame_decode(struct evbuffer *decomp_buf, struct evbuffer *dst)
+{
+	if (!decomp_buf || !dst) return -1;
+
+	while (1) {
+		size_t cur_len = evbuffer_get_length(decomp_buf);
+		if (cur_len == 0)
+			return 0;
+
+		if (cur_len >= 10) {
+			uint8_t magic[10];
+			evbuffer_copyout(decomp_buf, magic, 10);
+			if (magic[0] == 0xff && magic[1] == 0x06 && magic[2] == 0x00 && magic[3] == 0x00 &&
+			    memcmp(magic + 4, "sNaPpY", 6) == 0) {
+				evbuffer_drain(decomp_buf, 10);
+				continue;
+			}
+		}
+
+		if (cur_len < 4)
+			return 0;
+
+		uint8_t hdr[4];
+		evbuffer_copyout(decomp_buf, hdr, 4);
+		uint8_t type = hdr[0];
+		uint32_t chunk_len = (uint32_t)hdr[1] | ((uint32_t)hdr[2] << 8) | ((uint32_t)hdr[3] << 16);
+
+		if (chunk_len > 65536 + 4 || ((type == 0x00 || type == 0x01) && chunk_len < 4)) {
+			debug(LOG_ERR, "Invalid snappy frame header: type=0x%02x len=%u", type, chunk_len);
+			evbuffer_drain(decomp_buf, cur_len);
+			return -1;
+		}
+
+		if (cur_len < 4 + (size_t)chunk_len)
+			return 0;
+
+		uint8_t *chunk = malloc(4 + (size_t)chunk_len);
+		if (!chunk) return -1;
+		evbuffer_remove(decomp_buf, chunk, 4 + (size_t)chunk_len);
+
+		if (type == 0x00) {
+			const uint8_t *cdata = chunk + 8;
+			size_t clen = chunk_len - 4;
+			size_t uncomp_len = 0;
+			if (!snappy_uncompressed_length((const char *)cdata, clen, &uncomp_len) || uncomp_len == 0) {
+				debug(LOG_ERR, "Snappy frame invalid uncompressed length");
+				free(chunk);
+				return -1;
+			}
+			uint8_t *uncomp = malloc(uncomp_len);
+			if (!uncomp) {
+				free(chunk);
+				return -1;
+			}
+			if (snappy_uncompress((const char *)cdata, clen, (char *)uncomp) != 0) {
+				debug(LOG_ERR, "Snappy frame decompression failed");
+				free(uncomp);
+				free(chunk);
+				return -1;
+			}
+			evbuffer_add(dst, uncomp, uncomp_len);
+			free(uncomp);
+		} else if (type == 0x01) {
+			if (chunk_len > 4)
+				evbuffer_add(dst, chunk + 8, chunk_len - 4);
+		} else if (type == 0xff || (type >= 0x80 && type <= 0xfd)) {
+			/* Stream identifier or skippable chunk */
+		} else {
+			debug(LOG_ERR, "Unsupported unskippable snappy chunk type 0x%02x", type);
+			free(chunk);
+			return -1;
+		}
+		free(chunk);
+	}
 }

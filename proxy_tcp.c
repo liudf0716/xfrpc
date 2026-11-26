@@ -525,28 +525,22 @@ void proxy_crypto_encode_evbuffer(struct proxy_client *client,
 	uint8_t *data = evbuffer_pullup(src, len);
 	if (!data) return;
 
-	/* Compression: output may be larger than input */
-	size_t comp_len = 0;
-	uint8_t *comp_data = NULL;
+	/* Compression: standard Snappy Framing Format (compatible with frp) */
+	struct evbuffer *comp_buf = NULL;
+	uint8_t *work_data = data;
+	size_t work_len = len;
 	if (client->use_compression) {
-		size_t max_comp = snappy_max_compressed_length(len);
-		comp_data = malloc(max_comp + 4);
-		if (comp_data) {
-			size_t actual_comp = max_comp;
-			if (xfrpc_compress(data, len, comp_data + 4, &actual_comp) == 0) {
-				uint32_t net_len = htonl((uint32_t)actual_comp);
-				memcpy(comp_data, &net_len, 4);
-				comp_len = actual_comp + 4;
-			} else {
-				free(comp_data);
-				comp_data = NULL;
+		comp_buf = evbuffer_new();
+		if (comp_buf && xfrpc_snappy_frame_encode(data, len, &client->comp_header_sent, comp_buf) == 0) {
+			work_len = evbuffer_get_length(comp_buf);
+			work_data = work_len > 0 ? evbuffer_pullup(comp_buf, work_len) : data;
+		} else {
+			if (comp_buf) {
+				evbuffer_free(comp_buf);
+				comp_buf = NULL;
 			}
 		}
 	}
-
-	/* Use compressed data if available, otherwise raw */
-	uint8_t *work_data = comp_data ? comp_data : data;
-	size_t work_len = comp_data ? comp_len : len;
 
 	/* Encryption: encrypt in-place, prepend IV on first call */
 	if (client->use_encryption && client->encrypt_ctx) {
@@ -563,7 +557,8 @@ void proxy_crypto_encode_evbuffer(struct proxy_client *client,
 	evbuffer_add(dst, work_data, work_len);
 	evbuffer_drain(src, len);
 
-	free(comp_data);
+	if (comp_buf)
+		evbuffer_free(comp_buf);
 }
 
 /**
@@ -609,7 +604,7 @@ void proxy_crypto_decode_evbuffer(struct proxy_client *client,
 		crypto_decrypt(client->decrypt_ctx, work_data, len);
 	}
 
-	/* Decompress using staging buffer so coalesced/split 4-byte framed chunks work cleanly */
+	/* Decompress using staging buffer and standard Snappy Framing Format */
 	if (client->use_compression) {
 		if (!client->decomp_buf) {
 			client->decomp_buf = evbuffer_new();
@@ -620,73 +615,7 @@ void proxy_crypto_decode_evbuffer(struct proxy_client *client,
 		}
 		evbuffer_add(client->decomp_buf, work_data, len);
 		free(work_data);
-
-		while (evbuffer_get_length(client->decomp_buf) > 0) {
-			size_t avail = evbuffer_get_length(client->decomp_buf);
-			uint8_t *buf = evbuffer_pullup(client->decomp_buf, avail);
-			if (!buf) break;
-
-			if (avail >= 4) {
-				uint32_t net_len = 0;
-				memcpy(&net_len, buf, 4);
-				uint32_t comp_len = ntohl(net_len);
-				if (comp_len > 0 && comp_len <= 16 * 1024 * 1024) {
-					if (avail >= 4 + (size_t)comp_len) {
-						size_t uncomp_len = 0;
-						if (snappy_uncompressed_length((const char *)buf + 4, comp_len, &uncomp_len) && uncomp_len > 0) {
-							uint8_t *uncomp = malloc(uncomp_len);
-							if (uncomp) {
-								if (snappy_uncompress((const char *)buf + 4, comp_len, (char *)uncomp) == 0) {
-									evbuffer_add(dst, uncomp, uncomp_len);
-									free(uncomp);
-									evbuffer_drain(client->decomp_buf, 4 + (size_t)comp_len);
-									continue;
-								}
-								free(uncomp);
-							}
-						}
-					} else {
-						/* Wait for remaining bytes unless this is already a complete unframed snappy block */
-						size_t uncomp_len = 0;
-						if (snappy_uncompressed_length((const char *)buf, avail, &uncomp_len) && uncomp_len > 0) {
-							uint8_t *uncomp_data = malloc(uncomp_len);
-							if (uncomp_data) {
-								size_t out_len = uncomp_len;
-								if (xfrpc_decompress(buf, avail, uncomp_data, uncomp_len, &out_len) == 0) {
-									evbuffer_add(dst, uncomp_data, out_len);
-									free(uncomp_data);
-									evbuffer_drain(client->decomp_buf, avail);
-									break;
-								}
-								free(uncomp_data);
-							}
-						}
-						return;
-					}
-				}
-			}
-
-			/* Try raw snappy block decompression on the buffered bytes */
-			size_t uncomp_len = 0;
-			if (snappy_uncompressed_length((const char *)buf, avail, &uncomp_len) && uncomp_len > 0) {
-				uint8_t *uncomp_data = malloc(uncomp_len);
-				if (uncomp_data) {
-					size_t out_len = uncomp_len;
-					if (xfrpc_decompress(buf, avail, uncomp_data, uncomp_len, &out_len) == 0) {
-						evbuffer_add(dst, uncomp_data, out_len);
-						free(uncomp_data);
-						evbuffer_drain(client->decomp_buf, avail);
-						continue;
-					}
-					free(uncomp_data);
-				}
-			}
-
-			/* Do NOT treat a failed decompress as raw proxy bytes! */
-			debug(LOG_ERR, "Decompression failed for %zu bytes, dropping corrupted block", avail);
-			evbuffer_drain(client->decomp_buf, avail);
-			break;
-		}
+		xfrpc_snappy_frame_decode(client->decomp_buf, dst);
 		return;
 	}
 

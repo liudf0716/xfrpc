@@ -515,6 +515,7 @@ static void udp_local_dns_cb(int errcode, struct addrinfo *addr, void *ptr)
 					      client->ps->local_ip, client->ps->local_port, strerror(errno));
 				}
 			}
+			flush_udp_dns_pending(client);
 			break;
 		}
 	}
@@ -846,6 +847,11 @@ free_proxy_client(struct proxy_client *client)
 		evbuffer_free(client->udp_rx_buf);
 		client->udp_rx_buf = NULL;
 	}
+	if (client->udp_enc_rx_buf) {
+		evbuffer_free(client->udp_enc_rx_buf);
+		client->udp_enc_rx_buf = NULL;
+	}
+	clear_udp_dns_pending(client);
 	if (client->decomp_buf) {
 		evbuffer_free(client->decomp_buf);
 		client->decomp_buf = NULL;

@@ -45,6 +45,9 @@ void process_udp_rx_buf(struct proxy_client *client);
 void process_udp_decomp_buf(struct proxy_client *client);
 void init_udp_clean_timer(struct proxy_client *client);
 void handle_udp_packet(struct udp_packet *udp_pkt, struct proxy_client *client);
+void flush_udp_dns_pending(struct proxy_client *client);
+void clear_udp_dns_pending(struct proxy_client *client);
+void udp_deliver_tail_bytes(struct proxy_client *client, const uint8_t *data, size_t len);
 int resolve_local_addr(const char *ip, struct sockaddr_in *addr);
 
 // SOCKS5 protocol handler (reads directly from bev, no ring buffer)

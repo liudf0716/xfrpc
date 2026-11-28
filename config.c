@@ -933,6 +933,9 @@ static int common_handler(void *user, const char *section, const char *name, con
 		SAFE_FREE(config->tls_server_name);
 		config->tls_server_name = strdup(value);
 	}
+	else if (MATCH("common", "disable_custom_tls_first_byte")) {
+		config->tls_disable_custom_first_byte = is_true(value);
+	}
 	else if (MATCH("common", "user")) {
 		SAFE_FREE(config->user);
 		config->user = strdup(value);
@@ -1086,7 +1089,7 @@ static void apply_log_config(void)
 {
 	if (!c_conf)
 		return;
-	if (c_conf->log_level) {
+	if (c_conf->log_level && !debugconf.cli_debuglevel_set) {
 		if (strcasecmp(c_conf->log_level, "trace") == 0 ||
 		    strcasecmp(c_conf->log_level, "debug") == 0) {
 			debugconf.debuglevel = LOG_DEBUG;
@@ -1584,6 +1587,34 @@ static void load_toml_visitors(struct toml_doc *doc)
  * - Inline arrays (customDomains = ["a", "b"])
  * - String, integer, and boolean values
  */
+static void apply_user_proxy_prefix(void)
+{
+	if (!c_conf || !c_conf->user || c_conf->user[0] == '\0')
+		return;
+
+	size_t ulen = strlen(c_conf->user);
+	struct proxy_service *cur = NULL, *tmp = NULL;
+	struct proxy_service *renamed_list = NULL;
+	HASH_ITER(hh, all_ps, cur, tmp) {
+		if (strncmp(cur->proxy_name, c_conf->user, ulen) == 0 &&
+		    cur->proxy_name[ulen] == '.') {
+			continue;
+		}
+		HASH_DEL(all_ps, cur);
+		size_t nlen = strlen(cur->proxy_name);
+		char *prefixed = malloc(ulen + 1 + nlen + 1);
+		assert(prefixed);
+		snprintf(prefixed, ulen + 1 + nlen + 1, "%s.%s", c_conf->user, cur->proxy_name);
+		free(cur->proxy_name);
+		cur->proxy_name = prefixed;
+		HASH_ADD_KEYPTR(hh, renamed_list, cur->proxy_name, strlen(cur->proxy_name), cur);
+	}
+	HASH_ITER(hh, renamed_list, cur, tmp) {
+		HASH_DEL(renamed_list, cur);
+		HASH_ADD_KEYPTR(hh, all_ps, cur->proxy_name, strlen(cur->proxy_name), cur);
+	}
+}
+
 static void load_toml_config(const char *confile)
 {
 	struct toml_doc *doc = NULL;
@@ -1663,6 +1694,7 @@ static void load_toml_config(const char *confile)
 		}
 	}
 
+	apply_user_proxy_prefix();
 	dump_all_ps();
 
 	toml_doc_free(doc);
@@ -1721,6 +1753,7 @@ void load_config(const char *confile) {
 	// Parse proxy services
 	ini_parse(confile, proxy_service_handler, NULL);
 
+	apply_user_proxy_prefix();
 	dump_all_ps();
 }
 

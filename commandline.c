@@ -230,6 +230,7 @@ void parse_commandline(int argc, char **argv)
             case 'd':
                 if (optarg) {
                     debugconf.debuglevel = atoi(optarg);
+                    debugconf.cli_debuglevel_set = 1;
                 }
                 break;
                 

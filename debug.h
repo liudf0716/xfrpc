@@ -18,6 +18,7 @@ typedef struct _debug_conf {
     int log_stderr;      /**< @brief Output log to stdout */
     int log_syslog;      /**< @brief Output log to syslog */
     int syslog_facility; /**< @brief facility to use when using syslog for logging */
+    int cli_debuglevel_set; /**< @brief 1 if -d was explicitly passed on CLI */
 } debugconf_t;
 
 extern debugconf_t debugconf;
@@ -27,11 +28,7 @@ extern debugconf_t debugconf;
  * @param level Debug level
  * @param format... sprintf like format string
  */
-#ifdef XFRPC_DEBUG
 #define debug(level, format...) _debug(__FILENAME__ , __LINE__, level, format)
-#else
-#define debug(level, format...) do { if (level <= LOG_ERR) _debug(__FILENAME__ , __LINE__, level, format); } while(0)
-#endif
 
 /** @internal */
 void _debug(const char *, int, int, const char *, ...);

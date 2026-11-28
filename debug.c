@@ -20,7 +20,8 @@ debugconf_t debugconf = {
     .debuglevel = LOG_INFO,
     .log_stderr = 1,
     .log_syslog = 0,
-    .syslog_facility = 0
+    .syslog_facility = 0,
+    .cli_debuglevel_set = 0
 };
 
 
